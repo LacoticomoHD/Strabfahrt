@@ -1,0 +1,39 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "STRABFAHRT starten",
+      "type": "npm",
+      "script": "dev",
+      "isBackground": true,
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Daten neu bauen (KVV-Feed)",
+      "type": "npm",
+      "script": "build:data",
+      "problemMatcher": []
+    },
+    {
+      "label": "Gleise und Straßen matchen",
+      "type": "npm",
+      "script": "snap:rail",
+      "problemMatcher": []
+    },
+    {
+      "label": "Tests",
+      "type": "npm",
+      "script": "test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "Statische Variante bauen (mit Karte)",
+      "type": "shell",
+      "command": "npm run build:static -- --tiles",
+      "problemMatcher": []
+    }
+  ]
+}

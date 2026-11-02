@@ -9,6 +9,7 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "build:data": "node scripts/build-data.mjs",
     "snap:rail": "node scripts/snap-rail.mjs",
     "build:static": "node scripts/build-static.mjs",

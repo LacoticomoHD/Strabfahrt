@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "STRABFAHRT starten (Debug)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/dev.mjs",
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      "name": "STRABFAHRT starten ohne Browser",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/dev.mjs",
+      "args": ["--no-open"],
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

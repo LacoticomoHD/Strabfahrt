@@ -241,4 +241,10 @@ const server = http.createServer((req, res) => {
   }
 });
 
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') console.error(`Port ${PORT} ist belegt. Anderen Port nutzen, z. B. PORT=${PORT + 1} npm run dev (Windows PowerShell: $env:PORT=${PORT + 1}; npm run dev)`);
+  else console.error(e);
+  process.exit(1);
+});
+
 server.listen(PORT, HOST, () => console.log(`STRABFAHRT laeuft auf http://${HOST}:${PORT}`));
