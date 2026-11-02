@@ -1,0 +1,19 @@
+{
+  "name": "strabfahrt",
+  "version": "0.1.0",
+  "description": "Live-Karte der Fahrzeuge im Raum Karlsruhe (KVV-Fahrplandaten) mit eigener Abfahrtsanzeige",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build:data": "node scripts/build-data.mjs",
+    "start": "node server/index.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4"
+  }
+}

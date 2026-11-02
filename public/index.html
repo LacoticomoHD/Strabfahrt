@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>STRABFAHRT – Fahrzeuge im Raum Karlsruhe</title>
+  <meta name="description" content="Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit Abfahrtsanzeige je Haltestelle.">
+  <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="map" role="application" aria-label="Karte"></div>
+
+  <header id="top">
+    <h1>STRABFAHRT</h1>
+    <div id="searchbox">
+      <label for="search" class="sr">Haltestelle suchen</label>
+      <input id="search" type="search" placeholder="Haltestelle suchen" autocomplete="off" spellcheck="false">
+      <ul id="results" hidden></ul>
+    </div>
+  </header>
+
+  <aside id="panel" hidden aria-live="polite">
+    <button id="panel-close" type="button" aria-label="Schließen">×</button>
+    <div id="panel-body"></div>
+  </aside>
+
+  <footer id="bar">
+    <div class="row">
+      <button id="play" type="button" aria-label="Pause">❚❚</button>
+      <label class="sr" for="speed">Geschwindigkeit</label>
+      <select id="speed">
+        <option value="1">1×</option>
+        <option value="5">5×</option>
+        <option value="10">10×</option>
+        <option value="30">30×</option>
+        <option value="60">60×</option>
+        <option value="120">120×</option>
+      </select>
+      <span id="clock" aria-label="Simulierte Uhrzeit">--:--:--</span>
+      <label class="sr" for="when">Datum und Uhrzeit</label>
+      <input id="when" type="datetime-local">
+      <button id="now" type="button">Jetzt</button>
+      <span id="count" aria-live="off"></span>
+    </div>
+    <div class="row filters">
+      <label><input type="checkbox" data-type="tram" checked> Tram</label>
+      <label><input type="checkbox" data-type="rail" checked> Bahn</label>
+      <label><input type="checkbox" data-type="bus" checked> Bus</label>
+      <label><input type="checkbox" data-type="other" checked> Sonstige</label>
+      <span class="sep"></span>
+      <label><input type="checkbox" id="ovl-infra"> Gleise</label>
+      <label><input type="checkbox" id="ovl-signals"> Signale</label>
+      <label><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
+    </div>
+    <p id="note">Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0), Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.</p>
+  </footer>
+
+  <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
