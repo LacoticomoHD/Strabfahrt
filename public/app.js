@@ -135,6 +135,10 @@ const state = {
   onlyBikes: false,
   trails: false,
   myReverse: null, // null = nach Tageszeit, sonst 'there' oder 'back'
+  routeAcc: false, // barrierefrei reisen in der Verbindungssuche
+  saver: false,
+  groupDraft: null,
+  children: new Map(), // Station -> Kinder-Halte
   follow: null, // Fahrt-ID, der die Karte folgt
   lineView: null, // { name, dirs, active }
   route: { from: null, to: null },
@@ -173,7 +177,7 @@ const ctx = canvas.getContext('2d');
 
 function resizeCanvas() {
   const size = map.getSize();
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, state.saver ? 1.5 : 3);
   canvas.width = size.x * dpr;
   canvas.height = size.y * dpr;
   canvas.style.width = `${size.x}px`;
@@ -181,6 +185,9 @@ function resizeCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 map.on('resize', resizeCanvas);
+let needsDraw = true;
+let lastDraw = 0;
+map.on('move zoom resize', () => { needsDraw = true; });
 
 // ---------- Hash (Ansicht teilen) ----------
 
@@ -202,8 +209,8 @@ function scheduleHash() {
   hashTimer = setTimeout(writeHash, 400);
 }
 function writeHash() {
-  if (state.board !== null && state.stops[state.board]) {
-    try { history.replaceState(null, '', `#${new URLSearchParams({ tafel: state.stops[state.board][0] })}`); } catch { /* eingebetteter Rahmen */ }
+  if (state.board && state.board.length) {
+    try { history.replaceState(null, '', `#${new URLSearchParams({ tafel: state.board.map((i) => state.stops[i][0]).join('~') })}`); } catch { /* eingebetteter Rahmen */ }
     return;
   }
   const c = map.getCenter();
@@ -691,7 +698,13 @@ function tick(now) {
   }
   if (state.meta) {
     loadWindow();
-    drawFrame();
+    // Bildrate: normal voll, bei Pause 4/s, im Sparmodus 8/s (bei Pause 2,5/s); Kartenbewegung zeichnet sofort
+    const interval = state.saver ? (state.playing ? 125 : 400) : (state.playing ? 0 : 250);
+    if (needsDraw || now - lastDraw >= interval) {
+      drawFrame();
+      lastDraw = now;
+      needsDraw = false;
+    }
   }
   requestAnimationFrame(tick);
 }
@@ -706,7 +719,10 @@ $('play').addEventListener('click', () => {
 $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if (state.selected) renderVehiclePanel(); });
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
-$('trails').addEventListener('change', (e) => { state.trails = e.target.checked; });
+$('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
+state.saver = load('strab.saver', typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+$('saver').checked = state.saver;
+$('saver').addEventListener('change', (e) => { state.saver = e.target.checked; save('strab.saver', state.saver); resizeCanvas(); needsDraw = true; });
 $('speed').addEventListener('change', (e) => { state.speed = Number(e.target.value); state.window = null; });
 $('now').addEventListener('click', () => { state.sim = wallNow(); state.speed = 1; $('speed').value = '1'; state.window = null; });
 $('when').addEventListener('change', (e) => {
@@ -742,7 +758,7 @@ map.on('click', (e) => {
     }
     if (bs) { openStation(bs.index); return; }
   }
-  if (state.list === 'route' || state.list === 'line') return; // Panel bleibt offen
+  if (['route', 'line', 'detours', 'groupedit'].includes(state.list)) return; // Panel bleibt offen
   closePanel();
 });
 
@@ -901,7 +917,11 @@ async function renderStation() {
     reachRow.append(b);
   }
   body.append(reachRow);
+  const members = [index, ...(state.children.get(index) || [])];
+  const yes = members.filter((m) => state.stops[m][7] === 1).length;
+  const no = members.filter((m) => state.stops[m][7] === 2).length;
   body.append(el('div', { class: 'sub' }, `Abfahrten nach Fahrplan ab ${hhmm(state.sim)} (Soll, keine Echtzeit)`));
+  body.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
   if (platforms.length > 1) {
@@ -950,6 +970,7 @@ function specFromLink(txt) {
   const i = state.stops.findIndex((x) => x[0] === txt);
   return i >= 0 ? mkStation(i) : null;
 }
+const accParam = () => (state.routeAcc ? { acc: 1 } : {});
 const specToSaved = (r) => (r.point ? { lat: r.lat, lon: r.lon, name: r.name } : state.stops[r.index][0]);
 function specFromSaved(v) {
   if (typeof v === 'string') return specFromLink(v);
@@ -1044,13 +1065,16 @@ async function renderFavs() {
   const idxById = new Map(state.stops.map((s2, i) => [s2[0], i]));
   const items = state.favorites.map((id) => idxById.get(id)).filter((i) => i !== undefined);
   const mine = getMyRoute();
+  const groups = getGroups();
   const ymd = ymdOf(state.sim);
   const hour = Math.floor((state.sim - dayStart(ymd)) / 3600);
   const dir = state.myReverse || (hour >= 12 ? 'back' : 'there');
   const [A, B] = mine ? (dir === 'back' ? [mine.to, mine.from] : [mine.from, mine.to]) : [null, null];
-  const [results, myJourneys] = await Promise.all([
+  const groupIdx = groups.map((g) => g.stops.map((id) => idxById.get(id)).filter((i) => i !== undefined));
+  const [results, myJourneys, groupResults] = await Promise.all([
     Promise.all(items.map((i) => departuresFor(i, 3))),
     mine ? api('/api/plan', { ...specParams('from', A), ...specParams('to', B), date: ymd, t: Math.floor(state.sim - dayStart(ymd)) }).catch(() => []) : Promise.resolve([]),
+    Promise.all(groupIdx.map((list) => Promise.all(list.map((i) => departuresFor(i, 6))))),
   ]);
   if (state.list !== 'favs') return;
   const body = $('panel-body');
@@ -1073,7 +1097,36 @@ async function renderFavs() {
     }
     body.append(blk);
   }
-  if (!items.length && !mine) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
+
+  // Gruppen: mehrere Haltestellen als ein Favorit, Abfahrten nach Zeit gemischt
+  const base = dayStart(ymd);
+  groups.forEach((g, gi) => {
+    const merged = [];
+    groupIdx[gi].forEach((stationIdx, k) => {
+      for (const d of groupResults[gi][k]) if (flagsOk(d.flags)) merged.push({ ...d, station: state.stops[stationIdx][1] });
+    });
+    merged.sort((a, b) => a.t - b.t);
+    const edit = el('button', { class: 'chip', type: 'button' }, 'bearbeiten');
+    edit.addEventListener('click', () => openGroupEditor(gi));
+    const blk = el('div', { class: 'block' }, el('div', { class: 'bh' }, `📍 ${g.name} `, edit), el('div', { class: 'sub' }, groupIdx[gi].map((i) => state.stops[i][1]).join(' · ')));
+    if (!merged.length) blk.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
+    else {
+      const table = el('table');
+      for (const d of merged.slice(0, 6)) {
+        const mins = Math.round((base + d.t - state.sim) / 60);
+        table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
+          el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : '', el('div', { class: 'sub' }, d.station)),
+          el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
+      }
+      blk.append(table);
+    }
+    body.append(blk);
+  });
+  const add = el('button', { class: 'chip', type: 'button' }, '＋ Gruppe anlegen');
+  add.addEventListener('click', () => openGroupEditor(null));
+  body.append(el('div', { class: 'chips' }, add));
+
+  if (!items.length && !mine && !groups.length) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
   items.forEach((i, n) => body.append(stationBlock(i, results[n])));
   showPanel();
 }
@@ -1325,10 +1378,14 @@ function drawReach(zoom) {
 
 let boardTimer = null;
 let wakeLock = null;
+let boardCountdown = 0;
+let boardSeq = 0;
+let boardUi = { adding: false, qr: false };
 
-async function openBoard(index) {
+async function openBoard(stations) {
   closePanel();
-  state.board = index;
+  state.board = (Array.isArray(stations) ? stations : [stations]).slice(0, 6);
+  boardUi = { adding: false, qr: false };
   $('board').hidden = false;
   document.body.classList.add('board-open');
   writeHash();
@@ -1341,6 +1398,7 @@ async function openBoard(index) {
 function closeBoard() {
   clearInterval(boardTimer);
   state.board = null;
+  boardSeq++;
   $('board').hidden = true;
   document.body.classList.remove('board-open');
   try { if (wakeLock) wakeLock.release(); } catch { /* egal */ }
@@ -1348,45 +1406,84 @@ function closeBoard() {
   writeHash();
 }
 
-let boardCountdown = 0;
 function boardTick() {
   const clock = document.getElementById('bclock');
   if (clock) clock.textContent = hhmmss(wallNow());
   if (++boardCountdown >= 10) { boardCountdown = 0; renderBoard(); }
 }
 
+function qrElement(url) {
+  if (typeof qrcode !== 'function') return null;
+  const qr = qrcode(0, 'M');
+  qr.addData(url);
+  qr.make();
+  const doc = new DOMParser().parseFromString(qr.createSvgTag(4, 2), 'image/svg+xml');
+  const svg = document.importNode(doc.documentElement, true);
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  return svg;
+}
+
 async function renderBoard() {
-  const index = state.board;
-  if (index === null) return;
+  const stations = state.board;
+  if (!stations || !stations.length) return;
+  const mySeq = ++boardSeq;
   const now = wallNow();
   const ymd = ymdOf(now);
-  let list = [];
-  try {
-    list = await api('/api/departures', { station: index, date: ymd, from: Math.floor(now - dayStart(ymd)), limit: 14 });
-  } catch (e) {
-    console.error(e);
-  }
-  if (state.board !== index) return;
+  const per = stations.length === 1 ? 14 : stations.length === 2 ? 10 : 7;
+  const data = await Promise.all(stations.map((i) => api('/api/departures', { station: i, date: ymd, from: Math.floor(now - dayStart(ymd)), limit: per }).catch(() => [])));
+  if (mySeq !== boardSeq || state.board !== stations) return;
   const base = dayStart(ymd);
   const view = $('board');
   view.replaceChildren();
-  const close = el('button', { type: 'button', class: 'chip' }, 'Zur Karte');
-  close.addEventListener('click', closeBoard);
-  const full = el('button', { type: 'button', class: 'chip' }, 'Vollbild');
-  full.addEventListener('click', () => { try { document.documentElement.requestFullscreen(); } catch { /* nicht erlaubt */ } });
-  view.append(el('div', { class: 'bhead' }, el('div', { class: 'bname' }, state.stops[index][1]), el('div', { class: 'bclock', id: 'bclock' }, hhmmss(now)), el('div', { class: 'bbtns' }, full, close)));
-  const rows = el('div', { class: 'brows' });
-  if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
-  for (const d of list) {
-    const mins = Math.round((base + d.t - now) / 60);
-    rows.append(el('div', { class: 'brow' },
-      el('span', { class: 'bt' }, hhmm(d.t)),
-      pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
-      el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
-      el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
-      el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
+
+  const mk = (label, fn) => { const b = el('button', { type: 'button', class: 'chip' }, label); b.addEventListener('click', fn); return b; };
+  const buttons = el('div', { class: 'bbtns' },
+    mk('＋ Haltestelle', () => { boardUi.adding = !boardUi.adding; renderBoard(); }),
+    mk('QR-Code', () => { writeHash(); boardUi.qr = !boardUi.qr; renderBoard(); }),
+    mk('Vollbild', () => { try { document.documentElement.requestFullscreen(); } catch { /* nicht erlaubt */ } }),
+    mk('Zur Karte', closeBoard));
+  view.append(el('div', { class: 'bhead' }, el('div', { class: 'bname' }, stations.map((i) => state.stops[i][1]).join(' · ')), el('div', { class: 'bclock', id: 'bclock' }, hhmmss(now)), buttons));
+
+  if (boardUi.adding) {
+    view.append(el('div', { class: 'badd' }, suggestField('Haltestelle hinzufügen', null, (r) => {
+      if (!r) return;
+      if (!stations.includes(r.index) && stations.length < 6) stations.push(r.index);
+      boardUi.adding = false;
+      writeHash();
+      renderBoard();
+    }, { stationsOnly: true })));
   }
-  view.append(rows, el('div', { class: 'bnote sub' }, `Nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution || 'KVV (CC0)'}.`));
+  if (boardUi.qr) {
+    const qr = qrElement(location.href);
+    view.append(el('div', { class: 'bqr' }, qr ? el('div', { class: 'qrbox' }, qr) : el('div', { class: 'empty' }, 'QR-Code nicht verfügbar'),
+      el('div', { class: 'sub' }, 'Mit dem Handy scannen, um diese Tafel zu öffnen.'), el('div', { class: 'sub urltext' }, location.href)));
+  }
+
+  const cols = el('div', { class: stations.length > 1 ? 'bcols multi' : 'bcols' });
+  stations.forEach((idx, n) => {
+    const col = el('div', { class: 'bcol' });
+    if (stations.length > 1) {
+      const rm = el('button', { type: 'button', class: 'chip', 'aria-label': 'Haltestelle entfernen' }, '✕');
+      rm.addEventListener('click', () => { stations.splice(n, 1); writeHash(); renderBoard(); });
+      col.append(el('div', { class: 'bsub' }, state.stops[idx][1], ' ', rm));
+    }
+    const rows = el('div', { class: 'brows' });
+    const list = data[n].filter((d) => flagsOk(d.flags));
+    if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
+    for (const d of list) {
+      const mins = Math.round((base + d.t - now) / 60);
+      rows.append(el('div', { class: 'brow' },
+        el('span', { class: 'bt' }, hhmm(d.t)),
+        pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
+        el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
+        el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
+        el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
+    }
+    col.append(rows);
+    cols.append(col);
+  });
+  view.append(cols, el('div', { class: 'bnote sub' }, `Nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution || 'KVV (CC0)'}.`));
 }
 
 // ---------- Linienansicht ----------
@@ -1445,7 +1542,7 @@ function renderLine() {
 
 // ---------- Verbindungssuche ----------
 
-function suggestField(label, initial, onPick) {
+function suggestField(label, initial, onPick, opts = {}) {
   const wrap = el('div', { class: 'sf' });
   const input = el('input', { type: 'search', placeholder: label, autocomplete: 'off', 'aria-label': label });
   if (initial) input.value = initial.name;
@@ -1492,8 +1589,8 @@ function suggestField(label, initial, onPick) {
         li.addEventListener('click', () => pick(mkStation(r.index)));
         ul.append(li);
       }
-      ul.append(addressRow(q));
-      ul.hidden = false;
+      if (!opts.stationsOnly) ul.append(addressRow(q));
+      ul.hidden = ul.children.length === 0;
     }, 160);
   });
   input.addEventListener('keydown', (e) => {
@@ -1551,13 +1648,13 @@ function renderRoutePanel(autorun = false) {
     state.journey = null;
     const ymd = ymdOf(state.sim);
     try {
-      state.journeys = await api('/api/plan', { ...specParams('from', from), ...specParams('to', to), date: ymd, t: hh * 3600 + mm * 60 });
+      state.journeys = await api('/api/plan', { ...specParams('from', from), ...specParams('to', to), date: ymd, t: hh * 3600 + mm * 60, ...accParam() });
     } catch (e) {
       console.error(e);
       status.textContent = 'Suche fehlgeschlagen.';
       return;
     }
-    status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''} nach Fahrplan (Soll)` : 'Keine Verbindung in den nächsten 5 Stunden gefunden.';
+    status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''} nach Fahrplan (Soll)${state.routeAcc ? ', nur barrierefreie Fahrten' : ''}` : `Keine Verbindung in den nächsten 5 Stunden gefunden${state.routeAcc ? ' (nur barrierefreie Fahrten)' : ''}.`;
     renderJourneys(results);
     scheduleHash();
   };
@@ -1581,6 +1678,33 @@ function renderRoutePanel(autorun = false) {
     search();
   });
 
+  const lastBtn = el('button', { class: 'chip', type: 'button' }, 'Letzte Verbindung');
+  lastBtn.addEventListener('click', async () => {
+    const { from, to } = state.route;
+    if (!from || !to) { status.textContent = 'Bitte Start und Ziel aus der Liste wählen.'; return; }
+    const [hh, mm] = timeInput.value.split(':').map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) { status.textContent = 'Bitte eine Uhrzeit angeben.'; return; }
+    status.textContent = 'Suche läuft …';
+    results.replaceChildren();
+    state.journey = null;
+    try {
+      state.journeys = await api('/api/last', { ...specParams('from', from), ...specParams('to', to), date: ymdOf(state.sim), t: hh * 3600 + mm * 60, ...accParam() });
+    } catch (e) {
+      console.error(e);
+      status.textContent = 'Suche fehlgeschlagen.';
+      return;
+    }
+    status.textContent = state.journeys.length
+      ? `Letzte Verbindung ab ${timeInput.value} Uhr, bevor die Nachtpause beginnt (nach Fahrplan, Soll)`
+      : `Ab ${timeInput.value} Uhr fährt nichts mehr.`;
+    renderJourneys(results);
+  });
+  const accBtn = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.routeAcc), title: 'Nutzt nur Fahrten mit ♿ und meidet Halte, die laut Feed nicht stufenfrei sind. Bei den meisten Halten fehlt die Angabe, sie gelten dann als nutzbar.' }, '♿ barrierefrei reisen');
+  accBtn.addEventListener('click', () => {
+    state.routeAcc = !state.routeAcc;
+    accBtn.setAttribute('aria-pressed', String(state.routeAcc));
+    if (state.journeys.length) search();
+  });
   const profile = el('button', { class: 'chip', type: 'button' }, 'Reisezeit über den Tag');
   profile.addEventListener('click', async () => {
     const { from, to } = state.route;
@@ -1588,7 +1712,7 @@ function renderRoutePanel(autorun = false) {
     chart.replaceChildren(el('div', { class: 'sub' }, 'Berechne …'));
     let rows = [];
     try {
-      rows = await api('/api/profile', { ...specParams('from', from), ...specParams('to', to), date: ymdOf(state.sim) });
+      rows = await api('/api/profile', { ...specParams('from', from), ...specParams('to', to), date: ymdOf(state.sim), ...accParam() });
     } catch (e) {
       console.error(e);
       chart.replaceChildren(el('div', { class: 'sub' }, 'Berechnung fehlgeschlagen.'));
@@ -1628,7 +1752,7 @@ function renderRoutePanel(autorun = false) {
   extras.append(link);
 
   body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput),
-    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later, profile), status, results, chart, extras);
+    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later, profile), el('div', { class: 'chips' }, lastBtn, accBtn), status, results, chart, extras);
   if (state.journeys.length) renderJourneys(results);
   showPanel();
   if (autorun) search();
@@ -1707,6 +1831,110 @@ function renderJourneys(container) {
 
 $('btn-route').addEventListener('click', () => (state.list === 'route' ? closePanel() : openRoute()));
 
+// ---------- Haltestellengruppen ----------
+
+const getGroups = () => {
+  const g = load('strab.groups', []);
+  return Array.isArray(g) ? g.filter((x) => x && typeof x.name === 'string' && Array.isArray(x.stops)) : [];
+};
+
+function openGroupEditor(index) {
+  const groups = getGroups();
+  state.groupDraft = index === null ? { index: null, name: '', ids: [] } : { index, name: groups[index].name, ids: [...groups[index].stops] };
+  state.selected = null;
+  state.station = null;
+  state.follow = null;
+  clearInterval(stationTimer);
+  state.list = 'groupedit';
+  renderGroupEditor();
+}
+
+function renderGroupEditor() {
+  const d = state.groupDraft;
+  if (!d) return;
+  const body = $('panel-body');
+  const byId = new Map(state.stops.map((s2, i) => [s2[0], i]));
+  body.replaceChildren(el('h2', {}, d.index === null ? 'Neue Gruppe' : 'Gruppe bearbeiten'),
+    el('div', { class: 'sub' }, 'Mehrere Haltestellen als ein Favorit, zum Beispiel alle Haltestellen rund ums Zuhause.'));
+  const name = el('input', { type: 'text', class: 'urlbox', placeholder: 'Name der Gruppe, z. B. Zuhause', 'aria-label': 'Name der Gruppe', maxlength: '40', value: d.name });
+  name.addEventListener('input', () => { d.name = name.value; });
+  body.append(name);
+  const list = el('div', { class: 'block' });
+  if (!d.ids.length) list.append(el('div', { class: 'empty' }, 'Noch keine Haltestelle in der Gruppe.'));
+  for (const id of d.ids) {
+    const i = byId.get(id);
+    const rm = el('button', { class: 'chip', type: 'button', 'aria-label': 'Entfernen' }, '✕');
+    rm.addEventListener('click', () => { d.ids = d.ids.filter((x) => x !== id); renderGroupEditor(); });
+    list.append(el('div', { class: 'leg' }, i === undefined ? id : state.stops[i][1], ' ', rm));
+  }
+  body.append(list);
+  body.append(suggestField('Haltestelle hinzufügen', null, (r) => {
+    if (!r) return;
+    const id = state.stops[r.index][0];
+    if (!d.ids.includes(id)) d.ids.push(id);
+    renderGroupEditor();
+  }, { stationsOnly: true }));
+  const note = el('div', { class: 'sub' });
+  const save1 = el('button', { class: 'chip go', type: 'button' }, 'Speichern');
+  save1.addEventListener('click', () => {
+    if (!d.name.trim()) { note.textContent = 'Bitte einen Namen eingeben.'; return; }
+    if (!d.ids.length) { note.textContent = 'Bitte mindestens eine Haltestelle hinzufügen.'; return; }
+    const groups = getGroups();
+    const entry = { name: d.name.trim(), stops: d.ids };
+    if (d.index === null) groups.push(entry); else groups[d.index] = entry;
+    save('strab.groups', groups);
+    state.groupDraft = null;
+    startList('favs');
+  });
+  const cancel = el('button', { class: 'chip', type: 'button' }, 'Abbrechen');
+  cancel.addEventListener('click', () => { state.groupDraft = null; startList('favs'); });
+  const row = el('div', { class: 'chips' }, save1, cancel);
+  if (d.index !== null) {
+    const del = el('button', { class: 'chip', type: 'button' }, 'Gruppe löschen');
+    del.addEventListener('click', () => {
+      const groups = getGroups();
+      groups.splice(d.index, 1);
+      save('strab.groups', groups);
+      state.groupDraft = null;
+      startList('favs');
+    });
+    row.append(del);
+  }
+  body.append(row, note);
+  showPanel();
+}
+
+// ---------- Umleitungen heute ----------
+
+async function openDetours() {
+  state.selected = null;
+  state.station = null;
+  state.follow = null;
+  state.lineView = null;
+  state.journey = null;
+  clearInterval(stationTimer);
+  state.list = 'detours';
+  const ymd = ymdOf(state.sim);
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, '⚠ Umleitungen und Ersatzverkehr'), el('div', { class: 'sub' }, 'Lade …'));
+  showPanel();
+  let rows = [];
+  try { rows = await api('/api/disruptions', { date: ymd }); } catch (e) { console.error(e); }
+  if (state.list !== 'detours') return;
+  body.replaceChildren(el('h2', {}, '⚠ Umleitungen und Ersatzverkehr'),
+    el('div', { class: 'sub' }, `${fmtDate(ymd)}. Aus den Zielangaben im Fahrplan abgeleitet, keine Störungsmeldungen des KVV. Aktuelle Meldungen stehen auf kvv.de.`));
+  if (!rows.length) body.append(el('div', { class: 'empty' }, 'Für diesen Tag sind im Fahrplan keine Umleitungen oder Ersatzverkehre vermerkt.'));
+  for (const r of rows) {
+    const style = routeStyle([r.line, r.type, r.color, r.textColor]);
+    body.append(el('div', { class: 'block' },
+      el('div', { class: 'bh' }, pill(r.line, style, () => openLine(r.line)), ` ${r.detour} von ${r.total} Fahrten`),
+      el('div', { class: 'sub' }, `Abfahrten von ${hhmm(r.first)} bis ${hhmm(r.last)} Uhr`),
+      ...r.headsigns.map((h) => el('div', { class: 'sub' }, h))));
+  }
+  showPanel();
+}
+$('btn-detours').addEventListener('click', () => (state.list === 'detours' ? closePanel() : openDetours()));
+
 // ---------- Darstellung ----------
 
 function applyTheme(theme) {
@@ -1720,10 +1948,13 @@ $('btn-theme').addEventListener('click', () => {
   save('strab.theme', next);
 });
 
-if (window.innerWidth < 700) $('bar').classList.add('collapsed');
+if (window.innerWidth < 900) $('bar').classList.add('collapsed');
+$('collapse').setAttribute('aria-expanded', String(!$('bar').classList.contains('collapsed')));
+$('collapse').textContent = $('bar').classList.contains('collapsed') ? 'Optionen ▸' : 'Optionen ▾';
 $('collapse').addEventListener('click', () => {
   const c = $('bar').classList.toggle('collapsed');
   $('collapse').setAttribute('aria-expanded', String(!c));
+  $('collapse').textContent = c ? 'Optionen ▸' : 'Optionen ▾';
 });
 
 // ---------- Suche ----------
@@ -1796,6 +2027,7 @@ async function init() {
   const [meta, stops] = await Promise.all([api('/api/meta'), api('/api/stops')]);
   state.meta = meta;
   state.stops = stops;
+  stops.forEach((st, i) => { if (st[4] >= 0) { if (!state.children.has(st[4])) state.children.set(st[4], []); state.children.get(st[4]).push(i); } });
   try {
     const shapes = await api('/api/shapes');
     for (const [k, v] of Object.entries(shapes.segs)) shapeData.set(k, v);
@@ -1837,8 +2069,9 @@ async function init() {
   resizeCanvas();
   writeHash();
   const idOf = (id) => stops.findIndex((x) => x[0] === id);
-  if (h && h.tafel && idOf(h.tafel) >= 0) {
-    openBoard(idOf(h.tafel));
+  const boardIdx = h && h.tafel ? h.tafel.split('~').map(idOf).filter((i) => i >= 0) : [];
+  if (boardIdx.length) {
+    openBoard(boardIdx);
   } else if (h && h.rt) {
     const [a, b] = h.rt.split('~');
     const fa = specFromLink(a);

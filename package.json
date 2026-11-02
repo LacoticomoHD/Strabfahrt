@@ -17,6 +17,7 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
-    "leaflet": "^1.9.4"
+    "leaflet": "^1.9.4",
+    "qrcode-generator": "^2.0.4"
   }
 }

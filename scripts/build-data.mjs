@@ -212,6 +212,7 @@ async function processFeed(feed, raw) {
     shared.stopRows.set(px + g('stop_id'), {
       id: px + g('stop_id'), feed: feed.id, name: g('stop_name'), lat: Number(g('stop_lat')), lon: Number(g('stop_lon')),
       parent: parent ? px + parent : '', platform: g('platform_code'), type: g('location_type'),
+      wb: Number(g('wheelchair_boarding')) || 0, // 0 keine Angabe (erbt von der Station), 1 stufenfrei, 2 nicht stufenfrei
     });
   });
 
@@ -368,7 +369,7 @@ async function main() {
     if (!s) return -1;
     const i = outStops.length;
     outIdx.set(id, i);
-    outStops.push([s.id, s.name, s.lat, s.lon, -1, s.platform, s.type === '1' ? 1 : 0]);
+    outStops.push([s.id, s.name, s.lat, s.lon, -1, s.platform, s.type === '1' ? 1 : 0, s.wb]);
     return i;
   };
   shared.stopList.forEach((id) => addStop(id));
@@ -413,6 +414,11 @@ async function main() {
     else if (row.parent && shared.stopRows.has(row.parent)) outStops[i][4] = addStop(row.parent);
   }
   console.log(`Haltestellen: ${base} Halte, ${outStops.length - base} Elternstationen, ${merged} Stationen anderer Feeds mit dem KVV-Feed zusammengefuehrt`);
+
+  // Stufenfreiheit: ohne eigene Angabe gilt die der Station
+  for (let i = 0; i < outStops.length; i++) {
+    if (outStops[i][7] === 0 && outStops[i][4] >= 0) outStops[i][7] = outStops[outStops[i][4]][7] || 0;
+  }
 
   // Kalender
   const svcOut = new Array(shared.services.size);

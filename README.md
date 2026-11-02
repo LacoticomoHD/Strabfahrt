@@ -28,6 +28,13 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Hinweise: Warnung, wenn das Datum außerhalb des Fahrplans liegt, der Fahrplan bald endet oder die Daten älter als 3 Tage sind. Umleitungen und Schienenersatzverkehr sind mit ⚠ markiert.
 - Fahrtrichtung als Pfeil am Fahrzeugschild, optional Spuren (Schweif hinter den Fahrzeugen)
 - Filter "Fahrrad nicht verboten": Der KVV-Feed kennt bei Fahrrädern nur "unbekannt" oder "nicht erlaubt", nie "erlaubt". Der Filter blendet deshalb nur ausdrückliche Verbote aus.
+- Letzte Verbindung: In der Verbindungssuche zeigt "Letzte Verbindung" die spätestmögliche Abfahrt vor der nächtlichen Betriebspause (mindestens 90 Minuten ohne Abfahrt). Der Frühverkehr des Folgetags zählt nicht.
+- Barrierefrei reisen: Schalter in der Verbindungssuche, nutzt nur Fahrten mit ♿ und meidet Halte, die laut Feed nicht stufenfrei sind. **Die Haltestellen-Angabe ist im Feed dünn:** nur etwa 1 % der Halte sind als stufenfrei, rund 11 % als nicht stufenfrei markiert, der Rest hat keine Angabe und gilt als nutzbar. Die Haltestellenansicht zeigt, was der Feed zu den Steigen sagt.
+- Umleitungen heute: Liste der Linien mit Umleitungen oder Ersatzverkehr, abgeleitet aus den Zielangaben im Fahrplan. Keine Störungsmeldungen, die stehen auf kvv.de.
+- Haltestellengruppen: In den Favoriten mehrere Haltestellen unter einem Namen bündeln (z. B. "Zuhause"). Die Abfahrten aller Haltestellen erscheinen zusammen nach Zeit sortiert.
+- Tafel mit mehreren Haltestellen (bis 6) und QR-Code, der die Tafel auf einem zweiten Gerät öffnet. Link: `#tafel=<ID>~<ID>`.
+- Optionen-Menü: Filter und Schalter stehen hinter "Optionen" in der unteren Leiste (am Handy zunächst eingeklappt).
+- Akkusparmodus: weniger Bilder pro Sekunde und geringere Auflösung. Schaltet sich bei "Bewegung reduzieren" im Betriebssystem von selbst ein. Bei Pause wird ohnehin seltener gezeichnet.
 - Zeitleiste (Schieber für die Uhrzeit) und "Nacht": springt auf 01:30 der kommenden Nacht und zeigt, welche Linien dann fahren
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
@@ -118,6 +125,8 @@ Das Skript legt Tram und Bahn auf die OSM-Gleise und Busse auf die Wege ihrer Li
 | `public/` | Frontend (Leaflet, eigene Canvas-Ebene), kein Build-Schritt |
 | `test/` | Tests für Fahrplanlogik, Verbindungssuche und Gleis-Matching |
 | `.github/workflows/` | Nächtlicher Auto-Build der Web-Variante |
+
+Fußwege (Anfahrt zur Haltestelle, Umstiege zwischen nahen Haltestellen) werden aus der Luftlinie mit Umwegfaktor 1,3 bei 1,2 m/s geschätzt, nicht über echte Wege. Echtes Wege-Routing bräuchte das Fuß- und Straßennetz von OpenStreetMap (hunderte MB) und ist nicht gebaut.
 
 Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsystemen auf. Der Browser lädt Kartenkacheln von OpenStreetMap und, falls aktiviert, von OpenRailwayMap.
 

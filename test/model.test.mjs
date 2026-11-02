@@ -159,3 +159,52 @@ test('Reisezeit-Profil: bester Abfahrtszeitpunkt hat die kuerzeste Gesamtzeit', 
   assert.deepEqual(p.map((x) => x[0]), [7 * 3600, 7 * 3600 + 1800, 8 * 3600]);
   assert.deepEqual(p.map((x) => x[1]), [85, 55, 25]);
 });
+
+// ---------- Barrierefrei, letzte Verbindung, Umleitungen ----------
+
+const accFixture = JSON.parse(JSON.stringify(planFixture));
+accFixture.stops[1].push(1); // Mitte stufenfrei (Index 7 = wheelchair_boarding)
+accFixture.stops.forEach((s) => { while (s.length < 8) s.push(0); });
+accFixture.trips[0][5] = 1; // a1 barrierefrei
+accFixture.trips[2][5] = 1; // b1 barrierefrei
+
+test('Barrierefrei reisen: nur ausdruecklich barrierefreie Fahrten', () => {
+  const m = new Model(accFixture);
+  const js = m.plan(0, 2, '20261102', 7 * 3600 + 55 * 60, { accessible: true });
+  assert.equal(js.length, 1);
+  assert.equal(js[0].transfers, 1);
+  assert.equal(js[0].arr, 8 * 3600 + 25 * 60);
+  // ohne Filter gibt es zusaetzlich die Direktfahrt
+  assert.ok(m.plan(0, 2, '20261102', 7 * 3600 + 55 * 60).some((j) => j.transfers === 0));
+});
+
+test('Barrierefrei reisen: nicht stufenfreier Umsteigehalt sperrt die Verbindung', () => {
+  const blocked = JSON.parse(JSON.stringify(accFixture));
+  blocked.stops[1][7] = 2;
+  assert.deepEqual(new Model(blocked).plan(0, 2, '20261102', 7 * 3600 + 55 * 60, { accessible: true }), []);
+});
+
+test('Letzte Verbindung: spaeteste Abfahrt, leer wenn danach nichts mehr faehrt', () => {
+  const last = planModel.lastJourney(0, 2, '20261102', 7 * 3600);
+  assert.ok(last.length);
+  assert.equal(last[0].dep, 8 * 3600);
+  assert.deepEqual(planModel.lastJourney(0, 2, '20261102', 9 * 3600), []);
+});
+
+test('Umleitungen: Linien mit Umleitungs-Zielangabe werden gezaehlt', () => {
+  const m = new Model({
+    meta: { bbox: [0, 0, 1, 1], built: 'd' },
+    routes: [['3', 0, '', '', '1']],
+    stops: [['a', 'A', 0.1, 0.1, -1, '', 0, 0], ['b', 'B', 0.2, 0.2, -1, '', 0, 0]],
+    patterns: [[0, '3 Heide (Umleitung)', [0, 1]], [0, '3 Heide', [0, 1]]],
+    profiles: [[0, 0, 600, 600]],
+    services: [{ d: '1111111', s: '20260101', e: '20261231', add: [], rem: [] }],
+    trips: [[0, 0, 0, 8 * 3600, 'x1', 0], [0, 1, 0, 9 * 3600, 'x2', 0], [0, 1, 0, 10 * 3600, 'x3', 0]],
+  });
+  const d = m.disruptions('20261102');
+  assert.equal(d.length, 1);
+  assert.equal(d[0].line, '3');
+  assert.equal(d[0].detour, 1);
+  assert.equal(d[0].total, 3);
+  assert.deepEqual(d[0].headsigns, ['3 Heide (Umleitung)']);
+});

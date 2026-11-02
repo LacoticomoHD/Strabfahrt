@@ -16,6 +16,7 @@ const need = (p) => { if (!fs.existsSync(p)) throw new Error(`${p} fehlt`); retu
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(path.join(OUT, 'vendor', 'leaflet'), { recursive: true });
+fs.mkdirSync(path.join(OUT, 'vendor', 'qrcode'), { recursive: true });
 
 const copy = (from, to) => fs.copyFileSync(need(from), path.join(OUT, to));
 copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
@@ -39,6 +40,7 @@ fs.writeFileSync(path.join(OUT, 'sw.js'), fs.readFileSync(path.join(ROOT, 'publi
 fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT, 'public', 'local-api.js'), 'utf8').replace("'./model.mjs'", "'./model.js'"));
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
 const tiles = process.argv.includes('--tiles');
+copy(path.join(ROOT, 'node_modules', 'qrcode-generator', 'dist', 'qrcode.js'), path.join('vendor', 'qrcode', 'qrcode.js'));
 fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}`);
 if (tiles) console.log('Variante mit Kacheln: Nutzungsrichtlinie von OpenStreetMap beachten (geringe Last)');
 

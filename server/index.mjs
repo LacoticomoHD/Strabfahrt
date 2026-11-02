@@ -23,6 +23,7 @@ console.timeEnd('Modell geladen');
 
 const STATIC_ROOTS = [
   { prefix: '/vendor/leaflet/', dir: path.join(ROOT, 'node_modules', 'leaflet', 'dist') },
+  { prefix: '/vendor/qrcode/', dir: path.join(ROOT, 'node_modules', 'qrcode-generator', 'dist') },
   { prefix: '/', dir: path.join(ROOT, 'public') },
 ];
 
@@ -161,16 +162,25 @@ function handleApi(url, req, res) {
     }
 
     case '/api/plan':
-    case '/api/profile': {
+    case '/api/profile':
+    case '/api/last': {
       const date = q.get('date') || '';
       const from = parseSpec(q, 'from');
       const to = parseSpec(q, 'to');
       const t = num(q.get('t'), -DAY_LIMIT, DAY_LIMIT);
-      if (from === null || to === null || !parseYmd(date) || (url.pathname === '/api/plan' && t === null)) {
+      const opts = { accessible: q.get('acc') === '1' };
+      if (from === null || to === null || !parseYmd(date) || (url.pathname !== '/api/profile' && t === null)) {
         return sendJson(res, 400, { error: 'from/to (Station oder Lat/Lon), date, t ungueltig' });
       }
-      if (url.pathname === '/api/profile') return sendJson(res, 200, model.profile(from, to, date));
-      return sendJson(res, 200, model.plan(from, to, date, t).slice(0, 5), {}, req);
+      if (url.pathname === '/api/profile') return sendJson(res, 200, model.profile(from, to, date, undefined, undefined, undefined, opts));
+      if (url.pathname === '/api/last') return sendJson(res, 200, model.lastJourney(from, to, date, t, opts), {}, req);
+      return sendJson(res, 200, model.plan(from, to, date, t, opts).slice(0, 5), {}, req);
+    }
+
+    case '/api/disruptions': {
+      const date = q.get('date') || '';
+      if (!parseYmd(date)) return sendJson(res, 400, { error: 'date ungueltig' });
+      return sendJson(res, 200, model.disruptions(date), { 'Cache-Control': 'public, max-age=300' });
     }
 
     case '/api/reach': {

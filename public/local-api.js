@@ -48,9 +48,13 @@ export async function handle(path, params = {}) {
     case '/api/line':
       return model.line(String(params.name || ''));
     case '/api/plan':
-      return model.plan(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t)).slice(0, 5);
+      return model.plan(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t), { accessible: params.acc === '1' || params.acc === 1 }).slice(0, 5);
     case '/api/profile':
-      return model.profile(spec(params, 'from'), spec(params, 'to'), String(params.date));
+      return model.profile(spec(params, 'from'), spec(params, 'to'), String(params.date), undefined, undefined, undefined, { accessible: params.acc === '1' || params.acc === 1 });
+    case '/api/last':
+      return model.lastJourney(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t), { accessible: params.acc === '1' || params.acc === 1 });
+    case '/api/disruptions':
+      return model.disruptions(String(params.date));
     case '/api/reach':
       return model.reach(Number(params.station), String(params.date), Number(params.t), Number(params.max) || 30);
     case '/api/frequency':

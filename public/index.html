@@ -60,32 +60,46 @@
       <button id="now" type="button">Jetzt</button>
       <button id="night" type="button" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">☾ Nacht</button>
       <span id="count" aria-live="off"></span>
-      <button id="collapse" type="button" aria-label="Optionen ein- oder ausklappen" aria-expanded="true">⋯</button>
+      <button id="collapse" type="button" aria-label="Optionen ein- oder ausklappen" aria-expanded="true">Optionen ▾</button>
     </div>
     <div class="row">
       <label class="sr" for="tl">Uhrzeit des Tages</label>
       <input id="tl" type="range" min="0" max="1439" step="1" value="720">
     </div>
-    <div class="row filters">
-      <label><input type="checkbox" data-type="tram" checked> Tram</label>
-      <label><input type="checkbox" data-type="rail" checked> Bahn</label>
-      <label title="ICE, IC, EC und andere Fernzüge"><input type="checkbox" data-type="fern" checked> Fernverkehr</label>
-      <label><input type="checkbox" data-type="bus" checked> Bus</label>
-      <label><input type="checkbox" data-type="other" checked> Sonstige</label>
-      <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
-      <label title="Der KVV-Feed nennt nur Verbote. Blendet Fahrten aus, bei denen Fahrräder ausdrücklich nicht erlaubt sind."><input type="checkbox" id="bike"> 🚲 Fahrrad nicht verboten</label>
-      <label title="Zeigt einen Schweif hinter den Fahrzeugen"><input type="checkbox" id="trails"> Spuren</label>
-      <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
-      <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
-      <span class="sep ovl"></span>
-      <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>
-      <label class="ovl"><input type="checkbox" id="ovl-signals"> Signale</label>
-      <label class="ovl"><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
+    <div id="options">
+      <div class="group">
+        <span class="gt">Verkehrsmittel</span>
+        <label><input type="checkbox" data-type="tram" checked> Tram</label>
+        <label><input type="checkbox" data-type="rail" checked> Bahn</label>
+        <label title="ICE, IC, EC und andere Fernzüge"><input type="checkbox" data-type="fern" checked> Fernverkehr</label>
+        <label><input type="checkbox" data-type="bus" checked> Bus</label>
+        <label><input type="checkbox" data-type="other" checked> Sonstige</label>
+      </div>
+      <div class="group">
+        <span class="gt">Filter</span>
+        <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
+        <label title="Der KVV-Feed nennt nur Verbote. Blendet Fahrten aus, bei denen Fahrräder ausdrücklich nicht erlaubt sind."><input type="checkbox" id="bike"> 🚲 Fahrrad nicht verboten</label>
+      </div>
+      <div class="group">
+        <span class="gt">Anzeige</span>
+        <label title="Zeigt einen Schweif hinter den Fahrzeugen"><input type="checkbox" id="trails"> Spuren</label>
+        <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
+        <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>
+        <label class="ovl"><input type="checkbox" id="ovl-signals"> Signale</label>
+        <label class="ovl"><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
+        <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
+      </div>
+      <div class="group">
+        <span class="gt">Weiteres</span>
+        <label title="Weniger Bilder pro Sekunde und geringere Auflösung, schont den Akku"><input type="checkbox" id="saver"> Akkusparmodus</label>
+        <button id="btn-detours" type="button" class="chip">⚠ Umleitungen heute</button>
+      </div>
+      <p id="note" class="wide">Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0), Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.</p>
     </div>
-    <p id="note">Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0), Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.</p>
   </footer>
 
   <script src="/vendor/leaflet/leaflet.js"></script>
+  <script src="/vendor/qrcode/qrcode.js"></script>
   <script src="/app.js" type="module"></script>
 </body>
 </html>

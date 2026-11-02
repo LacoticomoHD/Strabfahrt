@@ -246,7 +246,7 @@ export class Model {
           for (const h of grid.get(`${cy + dy},${cx + dx}`) || []) {
             if (h === g) continue;
             const d = Math.hypot((this.stops[h][3] - lon) * kx, (this.stops[h][2] - lat) * 110540);
-            if (d <= 250) out.push([h, Math.round(d / 1.2) + 30]);
+            if (d <= 250) out.push([h, Math.round((d * 1.3) / 1.2) + 30]); // Umwegfaktor 1,3 gegenueber Luftlinie
           }
         }
       }
@@ -263,7 +263,7 @@ export class Model {
     const out = [];
     for (const g of pi.groupPatterns.keys()) {
       const d = Math.hypot((this.stops[g][3] - lon) * kx, (this.stops[g][2] - lat) * 110540);
-      if (d <= maxMeters) out.push([g, Math.round(d / 1.2) + 20, d]);
+      if (d <= maxMeters) out.push([g, Math.round((d * 1.3) / 1.2) + 20, d]);
     }
     return out.sort((x, y) => x[2] - y[2]).slice(0, 10).map(([g, secs]) => [g, secs]);
   }
@@ -279,7 +279,7 @@ export class Model {
   // RAPTOR-Kern.
   //   sources: [[Station, Zeit, istFussweg]]; targets: [[Station, Fusssekunden]] oder null (ohne Zielpruning, fuer Erreichbarkeit)
   //   limit: spaeteste interessante Ankunft
-  _raptor(sources, targets, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity } = {}) {
+  _raptor(sources, targets, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity, accessible = false } = {}) {
     const pi = this._planIndex();
     const N = this.stops.length;
     const egress = new Map(targets || []);
@@ -294,6 +294,7 @@ export class Model {
           const start = t.start + shift;
           if (start > depSec + window) continue;
           if (start + this.profileEnd[t.profile] < depSec) continue;
+          if (accessible && (t.flags & 3) !== 1) continue; // nur ausdruecklich barrierefreie Fahrten
           let list = byPattern.get(t.pattern);
           if (!list) byPattern.set(t.pattern, (list = []));
           list.push({ ti, start });
@@ -367,12 +368,14 @@ export class Model {
       const rideEnds = [];
       for (const [pid, startPos] of queue) {
         const gs = pi.patGroups[pid];
+        const pstops = this.patterns[pid].stops;
         const list = byPattern.get(pid);
         let cur = null;
         let boardPos = -1;
         for (let pos = startPos; pos < gs.length; pos++) {
           const g = gs[pos];
-          if (cur) {
+          const blocked = accessible && this.stops[pstops[pos]][7] === 2; // Halt ausdruecklich nicht stufenfrei
+          if (cur && !blocked) {
             const arr = cur.start + this.profiles[this.trips[cur.ti].profile][2 * pos];
             if (arr < best[g] && arr < targetBest() && arr <= limit) {
               tau[g] = arr;
@@ -383,7 +386,7 @@ export class Model {
             }
           }
           const ready = prevTau[g] + prevBuf[g];
-          if (ready < Infinity && pos < gs.length - 1) {
+          if (ready < Infinity && pos < gs.length - 1 && !blocked) {
             let found = null;
             let foundDep = Infinity;
             for (const c of list) {
@@ -497,14 +500,57 @@ export class Model {
   }
 
   // Reisezeit ueber den Tag: fuer Abfahrtszeitpunkte im Raster Liste [Zeitpunkt, Minuten bis Ankunft | null]
-  profile(fromSpec, toSpec, ymd, fromSec = 5 * 3600, toSec = 23 * 3600 + 30 * 60, step = 30 * 60) {
+  profile(fromSpec, toSpec, ymd, fromSec = 5 * 3600, toSec = 23 * 3600 + 30 * 60, step = 30 * 60, opts = {}) {
     const out = [];
     for (let t = fromSec; t <= toSec; t += step) {
-      const js = this.plan(fromSpec, toSpec, ymd, t, { window: 4 * 3600, maxRounds: 3 });
+      const js = this.plan(fromSpec, toSpec, ymd, t, { window: 4 * 3600, maxRounds: 3, ...opts });
       const arr = js.length ? Math.min(...js.map((j) => j.arr)) : null;
       out.push([t, arr === null ? null : Math.round((arr - t) / 60)]);
     }
     return out;
+  }
+
+  // Letzte Verbindung vor der naechsten Betriebspause: rueckt von fromSec aus Abfahrt fuer Abfahrt vor, bis
+  // in den naechsten 90 Minuten nichts mehr faehrt (Nachtpause). Frueher Morgenverkehr des Folgetags zaehlt nicht.
+  lastJourney(fromSpec, toSpec, ymd, fromSec, opts = {}) {
+    const GAP = 90 * 60;
+    let t = fromSec;
+    let best = null;
+    let bestList = [];
+    for (let i = 0; i < 40; i++) {
+      const found = this.plan(fromSpec, toSpec, ymd, t, { window: GAP, maxRounds: 3, ...opts }).filter((j) => j.dep < t + GAP);
+      if (!found.length) break;
+      found.sort((a, b) => b.dep - a.dep);
+      if (best && found[0].dep <= best.dep) break;
+      best = found[0];
+      bestList = found;
+      t = best.dep + 60;
+    }
+    return best ? bestList.slice(0, 3) : [];
+  }
+
+  // Linien mit Umleitungen oder Ersatzverkehr an einem Tag (aus den Zielangaben der Fahrten abgeleitet)
+  disruptions(ymd) {
+    const re = /umleitung|\bsev\b|ersatzverkehr|schienenersatz/i;
+    const byLine = new Map();
+    for (const { trip, start } of this.activeTrips(ymd, 0, DAY)) {
+      const p = this.patterns[trip.pattern];
+      const r = this.routes[p.route];
+      const key = `${r[0]}|${r[1]}`;
+      let e = byLine.get(key);
+      if (!e) byLine.set(key, (e = { line: r[0], type: r[1], color: r[2], textColor: r[3], total: 0, detour: 0, heads: new Map(), first: Infinity, last: -1 }));
+      e.total++;
+      if (re.test(p.headsign)) {
+        e.detour++;
+        e.heads.set(p.headsign, (e.heads.get(p.headsign) || 0) + 1);
+        e.first = Math.min(e.first, start);
+        e.last = Math.max(e.last, start);
+      }
+    }
+    return [...byLine.values()].filter((e) => e.detour > 0).map((e) => ({
+      line: e.line, type: e.type, color: e.color, textColor: e.textColor, total: e.total, detour: e.detour, first: e.first, last: e.last,
+      headsigns: [...e.heads.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map((x) => x[0]),
+    })).sort((a, b) => b.detour - a.detour);
   }
 
   // Abfahrten pro Station im Zeitfenster [from, to): Liste [Stationsindex, Anzahl]
