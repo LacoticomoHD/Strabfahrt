@@ -89,6 +89,11 @@ function pill(line, style, onClick) {
 }
 
 const accessible = (flags) => ((flags || 0) & 3) === 1;
+// Der KVV-Feed nennt bei Fahrraedern nur "unbekannt" (0) oder "nicht erlaubt" (2), nie "erlaubt": Filter blendet nur Verbote aus
+const bikeOk = (flags) => (((flags || 0) >> 2) & 3) !== 2;
+const flagsOk = (flags) => (!state.onlyAccessible || accessible(flags)) && (!state.onlyBikes || bikeOk(flags));
+const isDetour = (headsign) => /umleitung|\bsev\b|ersatzverkehr|schienenersatz/i.test(headsign || '');
+const fmtDate = (ymd) => `${ymd.slice(6, 8)}.${ymd.slice(4, 6)}.${ymd.slice(0, 4)}`;
 
 // ---------- Lokaler Speicher (nur dieser Browser) ----------
 
@@ -127,6 +132,9 @@ const state = {
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
   demo: false, // erfundene Werte, nur zum Ansehen der Darstellung
   onlyAccessible: false,
+  onlyBikes: false,
+  trails: false,
+  myReverse: null, // null = nach Tageszeit, sonst 'there' oder 'back'
   follow: null, // Fahrt-ID, der die Karte folgt
   lineView: null, // { name, dirs, active }
   route: { from: null, to: null },
@@ -203,7 +211,7 @@ function writeHash() {
   const p = new URLSearchParams({ z: map.getZoom(), lat: c.lat.toFixed(5), lon: c.lng.toFixed(5) });
   if (ol.length) p.set('ol', ol.join(','));
   if (state.station !== null && state.stops[state.station]) p.set('st', state.stops[state.station][0]);
-  if (state.list === 'route' && state.route.from && state.route.to) p.set('rt', `${state.stops[state.route.from.index][0]}~${state.stops[state.route.to.index][0]}`);
+  if (state.list === 'route' && state.route.from && state.route.to) p.set('rt', `${specToLink(state.route.from)}~${specToLink(state.route.to)}`);
   try { history.replaceState(null, '', `#${p}`); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
 }
 
@@ -334,7 +342,14 @@ function delayColors(d) {
 
 // ---------- Position nach Fahrplan ----------
 
-function locate(trip, now) {
+function angleBetween(p, q) {
+  const dy = q[0] - p[0];
+  const dx = (q[1] - p[1]) * Math.cos((p[0] * Math.PI) / 180);
+  if (dx === 0 && dy === 0) return undefined;
+  return Math.atan2(-dy, dx); // Bildschirm: y nach unten, Norden oben
+}
+
+function locate(trip, now, noCursor = false) {
   if (now < trip.t0 || now > trip.end) return null;
   const pat = state.patterns.get(trip.pid);
   const prof = trip.prof;
@@ -343,12 +358,18 @@ function locate(trip, now) {
   let k = trip.k;
   while (k < n - 1 && rel >= prof[2 * (k + 1)]) k++;
   while (k > 0 && rel < prof[2 * k]) k--;
-  trip.k = k;
+  if (!noCursor) trip.k = k;
   const a = state.stops[pat.s[k]];
-  if (k >= n - 1 || rel <= prof[2 * k + 1]) return { lat: a[2], lon: a[3], k, f: 0, atStop: true };
+  if (k >= n - 1 || rel <= prof[2 * k + 1]) {
+    const atEnd = k >= n - 1;
+    const g = atEnd ? segGeom(pat.s[k - 1], pat.s[k]) : segGeom(pat.s[k], pat.s[k + 1]);
+    const heading = atEnd ? angleBetween(along(g, 0.9), along(g, 1)) : angleBetween(along(g, 0), along(g, 0.1));
+    return { lat: a[2], lon: a[3], k, f: 0, atStop: true, heading };
+  }
   const f = (rel - prof[2 * k + 1]) / (prof[2 * (k + 1)] - prof[2 * k + 1]);
-  const [lat, lon] = along(segGeom(pat.s[k], pat.s[k + 1]), f);
-  return { lat, lon, k, f, atStop: false };
+  const g = segGeom(pat.s[k], pat.s[k + 1]);
+  const [lat, lon] = along(g, f);
+  return { lat, lon, k, f, atStop: false, heading: angleBetween(along(g, Math.max(0, f - 0.03)), along(g, Math.min(1, f + 0.03))) };
 }
 
 // ---------- Zeichnen ----------
@@ -418,7 +439,7 @@ function drawFrame() {
     const route = state.meta.routes[pat.r];
     const style = routeStyle(route);
     if (!state.types.has(style.group) || state.hiddenLines.has(route[0])) continue;
-    if (state.onlyAccessible && !accessible(trip.flags)) continue;
+    if (!flagsOk(trip.flags)) continue;
     const delay = delayOf(trip);
     const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
@@ -439,6 +460,32 @@ function drawFrame() {
   if (state.selected) drawRoute(state.selected);
   if (state.here) drawHere();
 
+  // Spuren: kurzer Schweif hinter jedem Fahrzeug (Schrittweite waechst mit der Geschwindigkeit)
+  if (state.trails && zoom >= 13) {
+    const step = 12 * Math.max(1, state.speed);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (const v of out) {
+      const pts = [[v.x, v.y]];
+      for (let i = 1; i <= 5; i++) {
+        const past = locate(v.trip, state.sim - (v.delay || 0) - i * step, true);
+        if (!past) break;
+        const q = map.latLngToContainerPoint([past.lat, past.lon]);
+        pts.push([q.x, q.y]);
+      }
+      for (let i = pts.length - 1; i >= 1; i--) {
+        ctx.beginPath();
+        ctx.moveTo(pts[i][0], pts[i][1]);
+        ctx.lineTo(pts[i - 1][0], pts[i - 1][1]);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = v.style.bg;
+        ctx.globalAlpha = 0.65 * (1 - (i - 1) / 5);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   for (const v of out) {
@@ -455,6 +502,25 @@ function drawFrame() {
       ctx.stroke();
       ctx.fillStyle = v.style.fg;
       ctx.fillText(label, v.x, v.y + 0.5);
+      const ang = v.pos.heading;
+      if (ang !== undefined) {
+        // Pfeil am Rand des Schilds in Fahrtrichtung
+        const c = Math.cos(ang);
+        const sn = Math.sin(ang);
+        const dist = Math.abs(c) * (w / 2) + Math.abs(sn) * 8 + 5;
+        const ax = v.x + c * dist;
+        const ay = v.y + sn * dist;
+        ctx.beginPath();
+        ctx.moveTo(ax + c * 5, ay + sn * 5);
+        ctx.lineTo(ax - c * 3 - sn * 4.5, ay - sn * 3 + c * 4.5);
+        ctx.lineTo(ax - c * 3 + sn * 4.5, ay - sn * 3 - c * 4.5);
+        ctx.closePath();
+        ctx.fillStyle = v.style.bg;
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = '#ffffff';
+        ctx.stroke();
+      }
       if (v.delay !== undefined) {
         const text = fmtDelay(v.delay);
         const c = delayColors(v.delay);
@@ -533,6 +599,11 @@ function drawRoute(trip) {
   drawPath(pat.s, routeStyle(state.meta.routes[pat.r]).bg);
 }
 
+function legPoint(leg, side) {
+  if (side === 'from') return leg.fromPoint ? [state.route.from.lat, state.route.from.lon] : [state.stops[leg.from][2], state.stops[leg.from][3]];
+  return leg.toPoint ? [state.route.to.lat, state.route.to.lon] : [state.stops[leg.to][2], state.stops[leg.to][3]];
+}
+
 function drawOverlays() {
   if (state.lineView) {
     const d = state.lineView.dirs[state.lineView.active];
@@ -544,10 +615,8 @@ function drawOverlays() {
     if (leg.type === 'ride') {
       drawPath(leg.stops, `#${/^[0-9a-f]{6}$/i.test(leg.color) ? leg.color : '444444'}`, 6, 0.85);
     } else {
-      const a = state.stops[leg.from];
-      const b = state.stops[leg.to];
-      const p1 = map.latLngToContainerPoint([a[2], a[3]]);
-      const p2 = map.latLngToContainerPoint([b[2], b[3]]);
+      const p1 = map.latLngToContainerPoint(legPoint(leg, 'from'));
+      const p2 = map.latLngToContainerPoint(legPoint(leg, 'to'));
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
@@ -559,10 +628,11 @@ function drawOverlays() {
       ctx.setLineDash([]);
     }
   }
-  const rides = j.legs.filter((l) => l.type === 'ride');
-  const ends = [[state.stops[rides[0].from], '#2e7d32'], [state.stops[j.legs[j.legs.length - 1].to], '#d32f2f']];
-  for (const [st, color] of ends) {
-    const p = map.latLngToContainerPoint([st[2], st[3]]);
+  const first = j.legs[0];
+  const last = j.legs[j.legs.length - 1];
+  const ends = [[legPoint(first, 'from'), '#2e7d32'], [legPoint(last, 'to'), '#d32f2f']];
+  for (const [pt, color] of ends) {
+    const p = map.latLngToContainerPoint(pt);
     ctx.beginPath();
     ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
     ctx.fillStyle = color;
@@ -571,6 +641,29 @@ function drawOverlays() {
     ctx.strokeStyle = '#fff';
     ctx.stroke();
   }
+}
+
+// ---------- Hinweise zur Gueltigkeit ----------
+
+let lastNotice = null;
+function updateNotice() {
+  const m = state.meta;
+  if (!m) return;
+  const ymd = ymdOf(state.sim);
+  let text = '';
+  const days = (a, b) => Math.round((dayStart(a) - dayStart(b)) / 86400);
+  if (m.feedEnd && ymd > m.feedEnd) text = `Für den ${fmtDate(ymd)} liegt kein Fahrplan vor, er gilt nur bis ${fmtDate(m.feedEnd)}. Fahrzeuge und Verbindungen fehlen.`;
+  else if (m.feedStart && ymd < m.feedStart) text = `Für den ${fmtDate(ymd)} liegt kein Fahrplan vor, er gilt erst ab ${fmtDate(m.feedStart)}.`;
+  else if (m.feedEnd && days(m.feedEnd, ymd) <= 7) text = `Der Fahrplan gilt nur noch bis ${fmtDate(m.feedEnd)}. Danach fehlen Daten bis zum nächsten Feed.`;
+  else if (m.built) {
+    const age = Math.floor((Date.now() - Date.parse(m.built)) / 86400000);
+    if (age > 3) text = `Fahrplandaten vom ${fmtDate(m.built.slice(0, 10).replaceAll('-', ''))}, ${age} Tage alt. Neu bauen für aktuelle Daten.`;
+  }
+  if (text === lastNotice) return;
+  lastNotice = text;
+  const box = $('notice');
+  box.textContent = text ? `⚠ ${text}` : '';
+  box.hidden = !text;
 }
 
 // ---------- Uhr ----------
@@ -591,6 +684,7 @@ function tick(now) {
     if (state.selected) updateVehiclePanel();
     if (!tlDragging) tl.value = String(Math.min(1439, Math.floor((state.sim - dayStart(ymdOf(state.sim))) / 60)));
     if (state.takt.on) loadTakt();
+    updateNotice();
   }
   if (state.meta) {
     loadWindow();
@@ -608,6 +702,8 @@ $('play').addEventListener('click', () => {
 });
 $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if (state.selected) renderVehiclePanel(); });
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
+$('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
+$('trails').addEventListener('change', (e) => { state.trails = e.target.checked; });
 $('speed').addEventListener('change', (e) => { state.speed = Number(e.target.value); state.window = null; });
 $('now').addEventListener('click', () => { state.sim = wallNow(); state.speed = 1; $('speed').value = '1'; state.window = null; });
 $('when').addEventListener('change', (e) => {
@@ -695,10 +791,11 @@ function renderVehiclePanel() {
   body.append(sub);
 
   const facts = [];
+  if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
   const wc = (trip.flags || 0) & 3;
   facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
   const bk = ((trip.flags || 0) >> 2) & 3;
-  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : '');
+  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : 'Fahrrad: keine Angabe');
   const info = facts.filter(Boolean).join(' · ');
   if (info) body.append(el('div', { class: 'sub' }, info));
 
@@ -816,7 +913,7 @@ async function renderStation() {
     body.append(chips);
   }
 
-  const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && (!state.onlyAccessible || accessible(d.flags))).slice(0, 40);
+  const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && flagsOk(d.flags)).slice(0, 40);
   if (!shown.length) {
     body.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
   } else {
@@ -826,12 +923,51 @@ async function renderStation() {
       const mins = Math.round((base + d.t - state.sim) / 60);
       table.append(el('tr', {},
         el('td', { class: 't' }, hhmm(d.t)),
-        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
+        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', mins <= 0 ? 'jetzt' : `in ${mins} min`)));
     }
     body.append(table);
   }
   showPanel();
+}
+
+// ---------- Start und Ziel: Station oder Punkt (Adresse, Standort) ----------
+
+const mkStation = (i) => ({ index: i, name: state.stops[i][1], lat: state.stops[i][2], lon: state.stops[i][3] });
+const specParams = (prefix, r) => (r.point
+  ? { [`${prefix}Lat`]: r.lat.toFixed(5), [`${prefix}Lon`]: r.lon.toFixed(5) }
+  : { [prefix]: r.index });
+const specToLink = (r) => (r.point ? `p:${r.lat.toFixed(5)},${r.lon.toFixed(5)}` : state.stops[r.index][0]);
+function specFromLink(txt) {
+  if (!txt) return null;
+  if (txt.startsWith('p:')) {
+    const [la, lo] = txt.slice(2).split(',').map(Number);
+    return Number.isFinite(la) && Number.isFinite(lo) ? { point: true, name: 'Gewählter Punkt', lat: la, lon: lo } : null;
+  }
+  const i = state.stops.findIndex((x) => x[0] === txt);
+  return i >= 0 ? mkStation(i) : null;
+}
+const specToSaved = (r) => (r.point ? { lat: r.lat, lon: r.lon, name: r.name } : state.stops[r.index][0]);
+function specFromSaved(v) {
+  if (typeof v === 'string') return specFromLink(v);
+  return v && Number.isFinite(v.lat) && Number.isFinite(v.lon) ? { point: true, name: v.name || 'Adresse', lat: v.lat, lon: v.lon } : null;
+}
+
+// Adresssuche ueber Nominatim (OpenStreetMap). Nur auf Klick, hoechstens eine Anfrage pro Aktion.
+async function geocode(q) {
+  const [s0, w, n, e] = state.meta.bbox;
+  const url = new URL('https://nominatim.openstreetmap.org/search');
+  url.searchParams.set('q', q);
+  url.searchParams.set('format', 'jsonv2');
+  url.searchParams.set('limit', '5');
+  url.searchParams.set('countrycodes', 'de');
+  url.searchParams.set('accept-language', 'de');
+  url.searchParams.set('viewbox', `${w - 0.1},${n + 0.1},${e + 0.1},${s0 - 0.1}`);
+  url.searchParams.set('bounded', '1');
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Nominatim: HTTP ${res.status}`);
+  const rows = await res.json();
+  return rows.map((r) => ({ name: r.display_name.split(', ').slice(0, 4).join(', '), lat: Number(r.lat), lon: Number(r.lon) }));
 }
 
 // ---------- Favoriten, Naehe, Linien ----------
@@ -851,12 +987,9 @@ async function copyCurrentLink(btn) {
 function getMyRoute() {
   const saved = load('strab.myroute', null);
   if (!saved) return null;
-  const byId = new Map(state.stops.map((s, i) => [s[0], i]));
-  const f = byId.get(saved.from);
-  const t = byId.get(saved.to);
-  if (f === undefined || t === undefined) return null;
-  const mk = (i) => ({ index: i, name: state.stops[i][1], lat: state.stops[i][2], lon: state.stops[i][3] });
-  return { from: mk(f), to: mk(t) };
+  const f = specFromSaved(saved.from);
+  const t = specFromSaved(saved.to);
+  return f && t ? { from: f, to: t } : null;
 }
 
 function toggleFavorite(stationId, index) {
@@ -872,7 +1005,7 @@ function departuresFor(index, limit) {
 }
 
 function stationBlock(index, allDeps, extra) {
-  const deps = state.onlyAccessible ? allDeps.filter((d) => accessible(d.flags)) : allDeps;
+  const deps = allDeps.filter((d) => flagsOk(d.flags));
   const s = state.stops[index];
   const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s[1]);
   const open = () => openStation(index);
@@ -886,7 +1019,7 @@ function stationBlock(index, allDeps, extra) {
     for (const d of deps) {
       const mins = Math.round((base + d.t - state.sim) / 60);
       table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
-        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
+        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
     }
     block.append(table);
@@ -905,33 +1038,39 @@ function startList(mode) {
 }
 
 async function renderFavs() {
-  const idxById = new Map(state.stops.map((s, i) => [s[0], i]));
+  const idxById = new Map(state.stops.map((s2, i) => [s2[0], i]));
   const items = state.favorites.map((id) => idxById.get(id)).filter((i) => i !== undefined);
   const mine = getMyRoute();
   const ymd = ymdOf(state.sim);
+  const hour = Math.floor((state.sim - dayStart(ymd)) / 3600);
+  const dir = state.myReverse || (hour >= 12 ? 'back' : 'there');
+  const [A, B] = mine ? (dir === 'back' ? [mine.to, mine.from] : [mine.from, mine.to]) : [null, null];
   const [results, myJourneys] = await Promise.all([
     Promise.all(items.map((i) => departuresFor(i, 3))),
-    mine ? api('/api/plan', { from: mine.from.index, to: mine.to.index, date: ymd, t: Math.floor(state.sim - dayStart(ymd)) }).catch(() => []) : Promise.resolve([]),
+    mine ? api('/api/plan', { ...specParams('from', A), ...specParams('to', B), date: ymd, t: Math.floor(state.sim - dayStart(ymd)) }).catch(() => []) : Promise.resolve([]),
   ]);
   if (state.list !== 'favs') return;
   const body = $('panel-body');
   body.replaceChildren(el('h2', {}, '★ Favoriten'), el('div', { class: 'sub' }, 'Nächste Abfahrten nach Fahrplan (Soll)'));
   if (mine) {
-    const open = el('a', { class: 'stop', role: 'button', tabindex: '0' }, `Mein Weg: ${mine.from.name} → ${mine.to.name}`);
-    const go = () => { state.route = { from: mine.from, to: mine.to }; openRoute(true); };
+    const open = el('a', { class: 'stop', role: 'button', tabindex: '0' }, `${dir === 'back' ? 'Rückweg' : 'Hinweg'}: ${A.name} → ${B.name}`);
+    const go = () => { state.route = { from: A, to: B }; openRoute(true); };
     open.addEventListener('click', go);
     open.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
-    const blk = el('div', { class: 'block' }, el('div', { class: 'bh' }, open));
+    const flip = el('button', { class: 'chip', type: 'button' }, '⇄ umkehren');
+    flip.addEventListener('click', () => { state.myReverse = dir === 'back' ? 'there' : 'back'; renderFavs(); });
+    const blk = el('div', { class: 'block' }, el('div', { class: 'bh' }, open, ' ', flip));
+    if (!state.myReverse) blk.append(el('div', { class: 'sub' }, 'Richtung automatisch nach Tageszeit (vor 12 Uhr Hinweg, danach Rückweg)'));
     if (!myJourneys.length) blk.append(el('div', { class: 'empty' }, 'Keine Verbindung in den nächsten Stunden.'));
     for (const j of myJourneys.slice().sort((a, b) => a.dep - b.dep).slice(0, 3)) {
-      const row = el('div', { class: 'leg' }, el('b', {}, `${hhmm(j.dep)} → ${hhmm(j.arr)}`), ' ');
+      const row = el('div', { class: 'leg' }, el('b', {}, `${hhmm(j.start)} → ${hhmm(j.arr)}`), ' ');
       for (const leg of j.legs) if (leg.type === 'ride') row.append(pill(leg.line, routeStyle([leg.line, leg.routeType, leg.color, leg.textColor])), ' ');
       row.append(el('span', { class: 'sub' }, `${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`));
       blk.append(row);
     }
     body.append(blk);
   }
-  if (!items.length) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
+  if (!items.length && !mine) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
   items.forEach((i, n) => body.append(stationBlock(i, results[n])));
   showPanel();
 }
@@ -1240,7 +1379,7 @@ async function renderBoard() {
     rows.append(el('div', { class: 'brow' },
       el('span', { class: 'bt' }, hhmm(d.t)),
       pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
-      el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
+      el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
       el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
       el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
   }
@@ -1311,6 +1450,29 @@ function suggestField(label, initial, onPick) {
   ul.hidden = true;
   let seq = 0;
   let timer = null;
+  const pick = (r) => { input.value = r.name; ul.hidden = true; onPick(r); };
+
+  const addressRow = (q) => {
+    const li = el('li', { class: 'addr' }, `🔎 Adresse suchen: „${q}“`);
+    li.addEventListener('click', async () => {
+      ul.replaceChildren(el('li', { class: 'note' }, 'Suche Adresse …'));
+      try {
+        const res = await geocode(q);
+        ul.replaceChildren();
+        for (const r of res) {
+          const li2 = el('li', {}, `📍 ${r.name}`);
+          li2.addEventListener('click', () => pick({ point: true, ...r }));
+          ul.append(li2);
+        }
+        if (!res.length) ul.append(el('li', { class: 'note' }, 'Keine Adresse im Kartengebiet gefunden'));
+      } catch (e) {
+        console.error(e);
+        ul.replaceChildren(el('li', { class: 'note' }, 'Adresssuche hier nicht verfügbar'));
+      }
+    });
+    return li;
+  };
+
   input.addEventListener('input', () => {
     clearTimeout(timer);
     onPick(null);
@@ -1324,11 +1486,18 @@ function suggestField(label, initial, onPick) {
       ul.replaceChildren();
       for (const r of res) {
         const li = el('li', {}, r.name);
-        li.addEventListener('click', () => { input.value = r.name; ul.hidden = true; onPick(r); });
+        li.addEventListener('click', () => pick(mkStation(r.index)));
         ul.append(li);
       }
-      ul.hidden = !res.length;
+      ul.append(addressRow(q));
+      ul.hidden = false;
     }, 160);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      const a = ul.querySelector('li.addr');
+      if (a && ul.children.length === 1) a.click();
+    }
   });
   wrap.append(input, ul);
   wrap.setValue = (r) => { input.value = r ? r.name : ''; ul.hidden = true; };
@@ -1348,19 +1517,18 @@ function openRoute(autorun = false) {
 function renderRoutePanel(autorun = false) {
   const body = $('panel-body');
   body.replaceChildren(el('h2', {}, '⇄ Verbindung'));
-  const fromField = suggestField('Start', state.route.from, (r) => { state.route.from = r; });
-  const toField = suggestField('Ziel', state.route.to, (r) => { state.route.to = r; });
+  const fromField = suggestField('Start (Haltestelle oder Adresse)', state.route.from, (r) => { state.route.from = r; });
+  const toField = suggestField('Ziel (Haltestelle oder Adresse)', state.route.to, (r) => { state.route.to = r; });
   const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.sim) });
   const status = el('div', { class: 'sub' }, 'Nach Fahrplan (Soll), ohne Echtzeit.');
   const results = el('div', { class: 'results' });
+  const chart = el('div', { class: 'chart' });
 
   const here = el('button', { class: 'chip', type: 'button' }, 'Mein Standort als Start');
   here.addEventListener('click', async () => {
     try {
       state.here = await locateMe();
-      const near = state.stations.map((s2) => ({ s2, d: distanceM(state.here.lat, state.here.lon, s2.lat, s2.lon) })).sort((a, b) => a.d - b.d)[0];
-      if (!near || near.d > 2000) throw new Error('Keine Haltestelle im Umkreis von 2 km');
-      state.route.from = { index: near.s2.index, name: near.s2.name, lat: near.s2.lat, lon: near.s2.lon };
+      state.route.from = { point: true, name: 'Mein Standort', lat: state.here.lat, lon: state.here.lon };
       fromField.setValue(state.route.from);
     } catch (e) { status.textContent = e.message; }
   });
@@ -1380,7 +1548,7 @@ function renderRoutePanel(autorun = false) {
     state.journey = null;
     const ymd = ymdOf(state.sim);
     try {
-      state.journeys = await api('/api/plan', { from: from.index, to: to.index, date: ymd, t: hh * 3600 + mm * 60 });
+      state.journeys = await api('/api/plan', { ...specParams('from', from), ...specParams('to', to), date: ymd, t: hh * 3600 + mm * 60 });
     } catch (e) {
       console.error(e);
       status.textContent = 'Suche fehlgeschlagen.';
@@ -1393,22 +1561,49 @@ function renderRoutePanel(autorun = false) {
   const go = el('button', { class: 'chip go', type: 'button' }, 'Suchen');
   go.addEventListener('click', search);
 
-  const shiftTime = (deltaMin) => {
-    const [hh, mm] = timeInput.value.split(':').map(Number);
-    const t = Math.min(23 * 60 + 59, Math.max(0, (hh || 0) * 60 + (mm || 0) + deltaMin));
+  const setTime = (minutes) => {
+    const t = Math.min(23 * 60 + 59, Math.max(0, minutes));
     timeInput.value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
-    search();
   };
   const earlier = el('button', { class: 'chip', type: 'button' }, '← Früher');
-  earlier.addEventListener('click', () => shiftTime(-30));
+  earlier.addEventListener('click', () => {
+    const [hh, mm] = timeInput.value.split(':').map(Number);
+    setTime((hh || 0) * 60 + (mm || 0) - 30);
+    search();
+  });
   const later = el('button', { class: 'chip', type: 'button' }, 'Später →');
   later.addEventListener('click', () => {
-    if (state.journeys.length) {
-      const first = Math.min(...state.journeys.map((j) => j.dep));
-      const t = Math.min(23 * 60 + 59, Math.floor(first / 60) + 1);
-      timeInput.value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
-      search();
-    } else shiftTime(30);
+    if (state.journeys.length) setTime(Math.floor(Math.min(...state.journeys.map((j) => j.dep)) / 60) + 1);
+    else { const [hh, mm] = timeInput.value.split(':').map(Number); setTime((hh || 0) * 60 + (mm || 0) + 30); }
+    search();
+  });
+
+  const profile = el('button', { class: 'chip', type: 'button' }, 'Reisezeit über den Tag');
+  profile.addEventListener('click', async () => {
+    const { from, to } = state.route;
+    if (!from || !to) { status.textContent = 'Bitte Start und Ziel aus der Liste wählen.'; return; }
+    chart.replaceChildren(el('div', { class: 'sub' }, 'Berechne …'));
+    let rows = [];
+    try {
+      rows = await api('/api/profile', { ...specParams('from', from), ...specParams('to', to), date: ymdOf(state.sim) });
+    } catch (e) {
+      console.error(e);
+      chart.replaceChildren(el('div', { class: 'sub' }, 'Berechnung fehlgeschlagen.'));
+      return;
+    }
+    const vals = rows.map((r) => r[1]).filter((v) => v !== null);
+    if (!vals.length) { chart.replaceChildren(el('div', { class: 'sub' }, 'An diesem Tag keine Verbindungen.')); return; }
+    const max = Math.max(...vals);
+    const min = Math.min(...vals);
+    chart.replaceChildren(el('div', { class: 'sub' }, `Gesamtzeit bis zur Ankunft, wenn du zur Uhrzeit losgehst (mit Warten). Kürzeste: ${min} min (grün). Antippen sucht ab dieser Zeit.`));
+    for (const [t, m] of rows) {
+      const bar = el('span', { class: 'cb' });
+      bar.style.width = m === null ? '0' : `${Math.max(4, (m / max) * 100)}%`;
+      bar.style.background = m === min ? '#2e7d32' : 'var(--accent)';
+      const row = el('button', { class: 'crow', type: 'button' }, el('span', { class: 'ct' }, hhmm(t)), el('span', { class: 'cw' }, bar), el('span', { class: 'cm' }, m === null ? '–' : `${m} min`));
+      row.addEventListener('click', () => { setTime(Math.floor(t / 60)); search(); });
+      chart.append(row);
+    }
   });
 
   const mine = getMyRoute();
@@ -1416,7 +1611,7 @@ function renderRoutePanel(autorun = false) {
   const save = el('button', { class: 'chip', type: 'button' }, 'Als Mein Weg speichern');
   save.addEventListener('click', () => {
     if (!state.route.from || !state.route.to) { status.textContent = 'Erst Start und Ziel wählen.'; return; }
-    save_('strab.myroute', { from: state.stops[state.route.from.index][0], to: state.stops[state.route.to.index][0] });
+    save_('strab.myroute', { from: specToSaved(state.route.from), to: specToSaved(state.route.to) });
     save.textContent = 'Gespeichert';
   });
   extras.append(save);
@@ -1430,34 +1625,75 @@ function renderRoutePanel(autorun = false) {
   extras.append(link);
 
   body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput),
-    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later), status, results, extras);
+    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later, profile), status, results, chart, extras);
   if (state.journeys.length) renderJourneys(results);
   showPanel();
   if (autorun) search();
 }
 
+function downloadIcs(j, note) {
+  const base = dayStart(ymdOf(state.sim));
+  const stamp = (secs) => {
+    const d = new Date((base + secs) * 1000);
+    return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}00`;
+  };
+  const esc = (t) => String(t).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  const lines = j.legs.map((l) => (l.type === 'walk'
+    ? `Fußweg ${Math.max(1, Math.round(l.secs / 60))} min`
+    : `${l.line} ${hhmm(l.dep)} ${state.stops[l.from][1]} → ${hhmm(l.arr)} ${state.stops[l.to][1]} (Richtung ${cleanHeadsign(l.line, l.headsign)})`));
+  const now = new Date();
+  const nowStamp = `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}T${pad(now.getUTCHours())}${pad(now.getUTCMinutes())}${pad(now.getUTCSeconds())}Z`;
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//STRABFAHRT//DE', 'CALSCALE:GREGORIAN', 'BEGIN:VEVENT',
+    `UID:${Date.now()}-${Math.round(j.arr)}@strabfahrt`, `DTSTAMP:${nowStamp}`,
+    `DTSTART:${stamp(j.start)}`, `DTEND:${stamp(j.arr)}`,
+    `SUMMARY:${esc(`Fahrt: ${state.route.from.name} → ${state.route.to.name}`)}`,
+    `DESCRIPTION:${esc(`${lines.join('\n')}\n(Fahrplan Soll, ohne Echtzeit)`)}`,
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n');
+  try {
+    const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+    const a = el('a', { href: url, download: 'verbindung.ics' });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+    note.textContent = 'Kalenderdatei erstellt (Uhrzeiten in deiner Ortszeit)';
+  } catch (e) {
+    console.error(e);
+    note.textContent = 'Download ist hier nicht möglich';
+  }
+}
+
 function renderJourneys(container) {
   container.replaceChildren();
-  state.journeys.forEach((j, n) => {
+  state.journeys.forEach((j) => {
     const card = el('div', { class: 'jcard', role: 'button', tabindex: '0', 'aria-pressed': String(state.journey === j) });
-    const mins = Math.round((j.arr - j.dep) / 60);
-    card.append(el('div', { class: 'jh' }, `${hhmm(j.dep)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
+    const mins = Math.round((j.arr - j.start) / 60);
+    card.append(el('div', { class: 'jh' }, `${hhmm(j.start)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
     for (const leg of j.legs) {
       if (leg.type === 'walk') {
-        card.append(el('div', { class: 'leg walk' }, `Fußweg ${Math.max(1, Math.round(leg.secs / 60))} min nach ${state.stops[leg.to][1]}`));
+        const m = Math.max(1, Math.round(leg.secs / 60));
+        const text = leg.fromPoint ? `Fußweg ${m} min zur Haltestelle ${state.stops[leg.to][1]}` : leg.toPoint ? `Fußweg ${m} min zum Ziel` : `Fußweg ${m} min nach ${state.stops[leg.to][1]}`;
+        card.append(el('div', { class: 'leg walk' }, text));
       } else {
         const style = routeStyle([leg.line, leg.routeType, leg.color, leg.textColor]);
         card.append(el('div', { class: 'leg' },
           pill(leg.line, style, () => openLine(leg.line)), ' ',
           el('span', {}, `${hhmm(leg.dep)} ${state.stops[leg.from][1]}`),
-          el('div', { class: 'sub' }, `Richtung ${cleanHeadsign(leg.line, leg.headsign)}${accessible(leg.flags) ? ' · ♿' : ''}`),
+          el('div', { class: 'sub' }, `Richtung ${cleanHeadsign(leg.line, leg.headsign)}${isDetour(leg.headsign) ? ' · ⚠ Umleitung/Ersatzverkehr' : ''}${accessible(leg.flags) ? ' · ♿' : ''}`),
           el('span', {}, `${hhmm(leg.arr)} ${state.stops[leg.to][1]}`)));
       }
     }
+    const note = el('div', { class: 'sub' });
+    const ics = el('button', { class: 'chip', type: 'button' }, 'In Kalender');
+    ics.addEventListener('click', (ev) => { ev.stopPropagation(); downloadIcs(j, note); });
+    ics.addEventListener('keydown', (ev) => ev.stopPropagation());
+    card.append(el('div', { class: 'chips' }, ics), note);
     const pick = () => {
       state.journey = j;
-      const idxs = j.legs.flatMap((l) => (l.type === 'ride' ? l.stops : [l.from, l.to]));
-      map.fitBounds(boundsOfStops(idxs), { padding: [60, 60], maxZoom: 16 });
+      const pts = j.legs.flatMap((l) => (l.type === 'ride' ? l.stops.map((i) => [state.stops[i][2], state.stops[i][3]]) : [legPoint(l, 'from'), legPoint(l, 'to')]));
+      map.fitBounds(L.latLngBounds(pts), { padding: [60, 60], maxZoom: 16 });
       renderJourneys(container);
     };
     card.addEventListener('click', pick);
@@ -1600,9 +1836,10 @@ async function init() {
     openBoard(idOf(h.tafel));
   } else if (h && h.rt) {
     const [a, b] = h.rt.split('~');
-    const mk = (i) => ({ index: i, name: stops[i][1], lat: stops[i][2], lon: stops[i][3] });
-    if (idOf(a) >= 0 && idOf(b) >= 0) {
-      state.route = { from: mk(idOf(a)), to: mk(idOf(b)) };
+    const fa = specFromLink(a);
+    const tb = specFromLink(b);
+    if (fa && tb) {
+      state.route = { from: fa, to: tb };
       openRoute(true);
     }
   } else if (h && h.st && idOf(h.st) >= 0) {

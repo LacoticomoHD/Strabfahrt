@@ -47,7 +47,7 @@ const SECURITY_HEADERS = {
     "img-src 'self' data: https://*.tile.openstreetmap.org https://*.tiles.openrailwaymap.org",
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
-    "connect-src 'self'",
+    "connect-src 'self' https://nominatim.openstreetmap.org",
   ].join('; '),
 };
 
@@ -99,13 +99,24 @@ function parseTimeWindow(q) {
 }
 const DAY_LIMIT = 3 * 86400;
 
+// Start/Ziel aus der URL: Station (from=12) oder Punkt (fromLat=49.0&fromLon=8.4), sonst null
+function parseSpec(q, prefix) {
+  if (q.get(prefix) !== null && q.get(prefix) !== '') {
+    const i = num(q.get(prefix), 0, model.stops.length - 1);
+    return i !== null && Number.isInteger(i) ? i : null;
+  }
+  const lat = num(q.get(`${prefix}Lat`), 40, 60);
+  const lon = num(q.get(`${prefix}Lon`), 0, 20);
+  return lat !== null && lon !== null ? { lat, lon } : null;
+}
+
 const TYPE_GROUPS = { tram: [0, 1], rail: [2], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
 function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
-      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes });
+      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
       return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);
@@ -149,15 +160,17 @@ function handleApi(url, req, res) {
       return sendJson(res, 200, model.line(name));
     }
 
-    case '/api/plan': {
-      const from = num(q.get('from'), 0, model.stops.length - 1);
-      const to = num(q.get('to'), 0, model.stops.length - 1);
+    case '/api/plan':
+    case '/api/profile': {
       const date = q.get('date') || '';
+      const from = parseSpec(q, 'from');
+      const to = parseSpec(q, 'to');
       const t = num(q.get('t'), -DAY_LIMIT, DAY_LIMIT);
-      if (from === null || to === null || !Number.isInteger(from) || !Number.isInteger(to) || !parseYmd(date) || t === null) {
-        return sendJson(res, 400, { error: 'from, to, date, t ungueltig' });
+      if (from === null || to === null || !parseYmd(date) || (url.pathname === '/api/plan' && t === null)) {
+        return sendJson(res, 400, { error: 'from/to (Station oder Lat/Lon), date, t ungueltig' });
       }
-      return sendJson(res, 200, model.plan(from, to, date, t).slice(0, 5));
+      if (url.pathname === '/api/profile') return sendJson(res, 200, model.profile(from, to, date));
+      return sendJson(res, 200, model.plan(from, to, date, t).slice(0, 5), {}, req);
     }
 
     case '/api/reach': {

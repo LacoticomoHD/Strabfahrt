@@ -256,10 +256,33 @@ export class Model {
     return this._pi;
   }
 
-  // RAPTOR-Kern. dst < 0: ohne Zielpruning (fuer Erreichbarkeit). limit: spaeteste interessante Ankunft.
-  _raptor(src, dst, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity } = {}) {
+  // Nahe Stationen zu einem Punkt (Luftlinie): Liste [Station, Fusssekunden], hoechstens 10
+  _nearStations(lat, lon, maxMeters = 1000) {
+    const pi = this._planIndex();
+    const kx = Math.cos((lat * Math.PI) / 180) * 111320;
+    const out = [];
+    for (const g of pi.groupPatterns.keys()) {
+      const d = Math.hypot((this.stops[g][3] - lon) * kx, (this.stops[g][2] - lat) * 110540);
+      if (d <= maxMeters) out.push([g, Math.round(d / 1.2) + 20, d]);
+    }
+    return out.sort((x, y) => x[2] - y[2]).slice(0, 10).map(([g, secs]) => [g, secs]);
+  }
+
+  // Start oder Ziel als Station (Zahl) oder Punkt ({lat, lon}) -> Liste [Station, Fusssekunden]
+  _spec(spec) {
+    const pi = this._planIndex();
+    if (typeof spec === 'number') return { list: [[pi.group[spec], 0]], point: false };
+    if (spec && Number.isFinite(spec.lat) && Number.isFinite(spec.lon)) return { list: this._nearStations(spec.lat, spec.lon), point: true };
+    return { list: [], point: false };
+  }
+
+  // RAPTOR-Kern.
+  //   sources: [[Station, Zeit, istFussweg]]; targets: [[Station, Fusssekunden]] oder null (ohne Zielpruning, fuer Erreichbarkeit)
+  //   limit: spaeteste interessante Ankunft
+  _raptor(sources, targets, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity } = {}) {
     const pi = this._planIndex();
     const N = this.stops.length;
+    const egress = new Map(targets || []);
 
     // Fahrten im Zeitfenster, gruppiert nach Muster
     const byPattern = new Map();
@@ -280,7 +303,11 @@ export class Model {
     for (const list of byPattern.values()) list.sort((a, b) => a.start - b.start);
 
     const best = new Float64Array(N).fill(Infinity);
-    const dstBest = () => (dst >= 0 ? best[dst] : Infinity);
+    const targetBest = () => {
+      let m = Infinity;
+      for (const [g, e] of egress) { const v = best[g] + e; if (v < m) m = v; }
+      return m;
+    };
     let prevTau = new Float64Array(N).fill(Infinity);
     let prevBuf = new Float64Array(N);
     const parents = [];
@@ -289,7 +316,7 @@ export class Model {
       const added = [];
       for (const g of fromSet) {
         const here = par.get(g);
-        if (here && here.type === 'walk') continue; // keine Fussweg-Ketten
+        if (here && (here.type === 'walk' || here.type === 'start')) continue; // keine Fussweg-Ketten
         for (const [h, secs] of pi.walk.get(g) || []) {
           const t = tau[g] + secs;
           if (t < best[h] && t <= limit) {
@@ -304,18 +331,27 @@ export class Model {
       return added;
     };
 
-    // Runde 0: Start, plus Fusswege
+    // Runde 0: Startstationen (bei Punkten mit Anfahrtsweg), dazu Fusswege
     const tau0 = Float64Array.from(prevTau);
     const buf0 = Float64Array.from(prevBuf);
     const par0 = new Map();
-    tau0[src] = depSec;
-    best[src] = depSec;
-    let marked = new Set([src, ...relaxWalk(tau0, buf0, par0, [src])]);
+    const seeds = [];
+    for (const [g, t, walked] of sources) {
+      if (t < tau0[g] && t <= limit) {
+        tau0[g] = t;
+        best[g] = t;
+        if (walked) par0.set(g, { type: 'start', secs: t - depSec });
+        else par0.delete(g);
+        seeds.push(g);
+      }
+    }
+    let marked = new Set([...seeds, ...relaxWalk(tau0, buf0, par0, seeds)]);
     parents.push(par0);
     prevTau = tau0;
     prevBuf = buf0;
 
-    const roundsReachingDst = [];
+    let prevTarget = targetBest();
+    const rounds = [];
     for (let k = 1; k <= maxRounds && marked.size; k++) {
       const tau = Float64Array.from(prevTau);
       const buf = Float64Array.from(prevBuf);
@@ -338,7 +374,7 @@ export class Model {
           const g = gs[pos];
           if (cur) {
             const arr = cur.start + this.profiles[this.trips[cur.ti].profile][2 * pos];
-            if (arr < best[g] && arr < dstBest() && arr <= limit) {
+            if (arr < best[g] && arr < targetBest() && arr <= limit) {
               tau[g] = arr;
               buf[g] = minTransfer;
               best[g] = arr;
@@ -366,27 +402,41 @@ export class Model {
       parents.push(par);
       prevTau = tau;
       prevBuf = buf;
-      if (dst >= 0 && par.has(dst)) roundsReachingDst.push(k);
+      if (egress.size) {
+        let roundBest = Infinity;
+        let roundG = -1;
+        for (const [g, e] of egress) {
+          const v = tau[g] + e;
+          if (v < roundBest) { roundBest = v; roundG = g; }
+        }
+        if (roundBest < prevTarget) { rounds.push({ k, g: roundG, egress: egress.get(roundG) }); prevTarget = roundBest; }
+      }
     }
-    return { pi, parents, best, roundsReachingDst };
+    return { pi, parents, best, rounds };
   }
 
-  // Frueheste Ankunft mit 0 bis maxRounds Umstiegen. Zeiten in Sekunden seit 00:00 von ymd.
-  plan(fromIdx, toIdx, ymd, depSec, opts = {}) {
-    const pi = this._planIndex();
-    const src = pi.group[fromIdx];
-    const dst = pi.group[toIdx];
-    if (src === dst) return [];
-    const { parents, roundsReachingDst } = this._raptor(src, dst, ymd, depSec, opts);
+  // Frueheste Ankunft mit 0 bis maxRounds Umstiegen. Start und Ziel: Station (Zahl) oder Punkt ({lat, lon}).
+  // Zeiten in Sekunden seit 00:00 von ymd.
+  plan(fromSpec, toSpec, ymd, depSec, opts = {}) {
+    const from = this._spec(fromSpec);
+    const to = this._spec(toSpec);
+    if (!from.list.length || !to.list.length) return [];
+    if (!from.point && !to.point && from.list[0][0] === to.list[0][0]) return [];
+    const sources = from.list.map(([g, secs]) => [g, depSec + secs, from.point]);
+    const { pi, parents, rounds } = this._raptor(sources, to.list, ymd, depSec, opts);
 
-    const build = (k) => {
+    const build = (k, gEnd, egressSecs) => {
       const legs = [];
       let kk = k;
-      let g = dst;
+      let g = gEnd;
       for (let guard = 0; guard < 40; guard++) {
         let p = parents[kk].get(g);
         while (!p && kk > 0) { kk--; p = parents[kk].get(g); }
         if (!p) break;
+        if (p.type === 'start') {
+          legs.push({ type: 'walk', fromPoint: true, to: g, secs: p.secs });
+          break;
+        }
         if (p.type === 'walk') {
           legs.push({ type: 'walk', from: p.from, to: g, secs: p.secs });
           g = p.from;
@@ -407,17 +457,29 @@ export class Model {
         if (kk < 0) break;
       }
       legs.reverse();
-      return legs;
+      if (egressSecs > 0) legs.push({ type: 'walk', toPoint: true, from: gEnd, secs: egressSecs });
+      // Aufeinanderfolgende Fusswege zu einem zusammenfassen
+      const merged = [];
+      for (const l of legs) {
+        const prev = merged[merged.length - 1];
+        if (prev && prev.type === 'walk' && l.type === 'walk') {
+          merged[merged.length - 1] = { type: 'walk', from: prev.from, to: l.to, fromPoint: prev.fromPoint, toPoint: l.toPoint, secs: prev.secs + l.secs };
+        } else merged.push(l);
+      }
+      return merged;
     };
 
-    return roundsReachingDst.map((k) => {
-      const legs = build(k);
+    return rounds.map(({ k, g, egress }) => {
+      const legs = build(k, g, egress);
       const rides = legs.filter((l) => l.type === 'ride');
       if (!rides.length) return null;
+      const firstRide = legs.indexOf(rides[0]);
+      const lastRide = legs.indexOf(rides[rides.length - 1]);
       let arr = rides[rides.length - 1].arr;
-      const last = legs[legs.length - 1];
-      if (last.type === 'walk') arr += last.secs;
-      return { dep: rides[0].dep, arr, transfers: rides.length - 1, legs };
+      for (const l of legs.slice(lastRide + 1)) arr += l.secs;
+      let start = rides[0].dep;
+      for (const l of legs.slice(0, firstRide)) start -= l.secs;
+      return { dep: rides[0].dep, start, arr, transfers: rides.length - 1, legs };
     }).filter(Boolean);
   }
 
@@ -426,10 +488,21 @@ export class Model {
     const pi = this._planIndex();
     const src = pi.group[fromIdx];
     const limit = depSec + maxMinutes * 60;
-    const { best } = this._raptor(src, -1, ymd, depSec, { window: maxMinutes * 60, limit });
+    const { best } = this._raptor([[src, depSec, false]], null, ymd, depSec, { window: maxMinutes * 60, limit });
     const out = [];
     for (let g = 0; g < best.length; g++) {
       if (g !== src && best[g] <= limit) out.push([g, Math.max(1, Math.round((best[g] - depSec) / 60))]);
+    }
+    return out;
+  }
+
+  // Reisezeit ueber den Tag: fuer Abfahrtszeitpunkte im Raster Liste [Zeitpunkt, Minuten bis Ankunft | null]
+  profile(fromSpec, toSpec, ymd, fromSec = 5 * 3600, toSec = 23 * 3600 + 30 * 60, step = 30 * 60) {
+    const out = [];
+    for (let t = fromSec; t <= toSec; t += step) {
+      const js = this.plan(fromSpec, toSpec, ymd, t, { window: 4 * 3600, maxRounds: 3 });
+      const arr = js.length ? Math.min(...js.map((j) => j.arr)) : null;
+      out.push([t, arr === null ? null : Math.round((arr - t) / 60)]);
     }
     return out;
   }

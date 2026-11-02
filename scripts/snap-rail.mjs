@@ -95,6 +95,12 @@ try {
     if (!graphs.has(ref)) graphs.set(ref, byRef.has(ref) ? buildGraph(byRef.get(ref)) : null);
     return graphs.get(ref);
   };
+  // Rueckgriff: alle Bus-Wege zusammen, fuer Linien ohne eigene Relation (Nummer weicht in OSM ab)
+  let allGraph = null;
+  const unionGraph = () => {
+    if (!allGraph) allGraph = buildGraph([...byRef.values()].flat());
+    return allGraph;
+  };
   const done = new Set();
   for (const [route, , stops] of model.patterns) {
     const type = model.routes[route][1];
@@ -103,12 +109,20 @@ try {
     for (let i = 1; i < stops.length; i++) {
       const key = `${stops[i - 1]},${stops[i]}`;
       if (segs[key] || done.has(key)) continue;
-      if (!graph) { stats.busMissed++; done.add(key); continue; }
       const a = model.stops[stops[i - 1]];
       const b = model.stops[stops[i]];
-      const pts = matchSegment(graph, [a[2], a[3]], [b[2], b[3]], { snapMeters: 80 });
       done.add(key);
-      if (pts) { segs[key] = flat(pts); stats.busMatched++; } else stats.busMissed++;
+      let pts = graph ? matchSegment(graph, [a[2], a[3]], [b[2], b[3]], { snapMeters: 80 }) : null;
+      let viaUnion = false;
+      if (!pts && byRef.size) {
+        pts = matchSegment(unionGraph(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 80, detour: 2.5, slack: 300 });
+        viaUnion = !!pts;
+      }
+      if (pts) {
+        segs[key] = flat(pts);
+        stats.busMatched++;
+        if (viaUnion) stats.busViaUnion = (stats.busViaUnion || 0) + 1;
+      } else stats.busMissed++;
     }
   }
 } catch (e) {
@@ -118,4 +132,4 @@ try {
 const out = { meta: { modelBuilt: model.meta.built, ...stats }, segs };
 const file = path.join(DATA, 'shapes.json');
 fs.writeFileSync(file, JSON.stringify(out));
-console.log(`Fertig: Schiene ${stats.matched} auf Gleisen (${stats.missed} Luftlinie), Busse ${stats.busMatched} auf Strassen (${stats.busMissed} Luftlinie), ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);
+console.log(`Fertig: Schiene ${stats.matched} auf Gleisen (${stats.missed} Luftlinie), Busse ${stats.busMatched} auf Strassen, davon ${stats.busViaUnion || 0} ueber das gesamte Busnetz (${stats.busMissed} Luftlinie), ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);

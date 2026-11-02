@@ -21,6 +21,13 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Takt-Karte: Schalter "Takt" färbt Haltestellen nach Abfahrten pro Stunde (12+, 6 bis 11, 3 bis 5, 1 bis 2)
 - Erreichbarkeit: In der Haltestellenansicht "Wohin komme ich in 15/30/45/60 min" färbt erreichbare Haltestellen nach Fahrzeit, mit Umstiegen und Fußwegen
 - Vollbild-Tafel: "Als Tafel öffnen" zeigt eine Haltestelle groß wie eine Anzeigetafel (Link `#tafel=<Haltestellen-ID>`), hält den Bildschirm wach, wenn der Browser das erlaubt
+- Adressen als Start und Ziel: Im Feld "Adresse suchen" antippen. Der Weg zur und von der Haltestelle wird als Fußweg eingerechnet (bis 1 km, 1,2 m/s). Die Adresssuche nutzt Nominatim von OpenStreetMap, nur auf Klick und mit einer Anfrage pro Suche, siehe die [Nutzungsrichtlinie](https://operations.osmfoundation.org/policies/nominatim/). In Umgebungen, die fremde Anfragen sperren (z. B. Claude-Artifacts), ist sie nicht verfügbar.
+- Reisezeit über den Tag: Diagramm für eine Strecke, wann sich das Losgehen lohnt (Gesamtzeit mit Warten, Antippen sucht ab dieser Uhrzeit)
+- Mein Weg wechselt automatisch zwischen Hin- und Rückweg (vor 12 Uhr Hinweg), mit Knopf zum Umkehren
+- Kalender: "In Kalender" speichert eine Verbindung als `.ics`-Datei (Uhrzeiten ohne Zeitzone, gelten in der Ortszeit des Kalenders)
+- Hinweise: Warnung, wenn das Datum außerhalb des Fahrplans liegt, der Fahrplan bald endet oder die Daten älter als 3 Tage sind. Umleitungen und Schienenersatzverkehr sind mit ⚠ markiert.
+- Fahrtrichtung als Pfeil am Fahrzeugschild, optional Spuren (Schweif hinter den Fahrzeugen)
+- Filter "Fahrrad nicht verboten": Der KVV-Feed kennt bei Fahrrädern nur "unbekannt" oder "nicht erlaubt", nie "erlaubt". Der Filter blendet deshalb nur ausdrückliche Verbote aus.
 - Zeitleiste (Schieber für die Uhrzeit) und "Nacht": springt auf 01:30 der kommenden Nacht und zeigt, welche Linien dann fahren
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
@@ -82,7 +89,7 @@ npm run snap:rail -- --refresh # lädt die OSM-Daten neu, statt data/osm-*.json 
 npm start
 ```
 
-Das Skript legt Tram und Bahn auf die OSM-Gleise und Busse auf die Wege ihrer Linienrelationen (je Liniennummer). Abschnitte ohne passenden Weg bleiben Luftlinie. Die Bus-Zuordnung ist bisher nur mit Testdaten geprüft, die echte Wirkung zeigt der erste Lauf mit Overpass. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS. Das Gleis-Matching gilt auch für die statische Variante: `build:static` nimmt `data/shapes.json` mit, wenn sie zum Modell passt.
+Das Skript legt Tram und Bahn auf die OSM-Gleise und Busse auf die Wege ihrer Linienrelationen (je Liniennummer). Abschnitte ohne passenden Weg bleiben Luftlinie. Bei Bussen versucht das Skript zuerst die Wege der Linienrelation mit derselben Nummer und danach das gesamte Busnetz als Rückgriff. Wie viele Abschnitte gelingen, steht am Ende der Ausgabe. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS. Das Gleis-Matching gilt auch für die statische Variante: `build:static` nimmt `data/shapes.json` mit, wenn sie zum Modell passt.
 
 ## Aufbau
 

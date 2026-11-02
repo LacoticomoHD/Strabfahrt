@@ -135,3 +135,27 @@ test('Takt: Abfahrten je Station im Fenster, Endhalt zaehlt nicht', () => {
   assert.equal(f[1], 2); // b0 und b1 ab Mitte
   assert.equal(f[2], undefined); // Ziel ist nur Endhalt
 });
+
+test('Adresse als Start und Ziel: Fussweg am Anfang und Ende, Ankunft inklusive Weg', () => {
+  const start = { lat: 0.1005, lon: 0.1 }; // rund 55 m von "Start"
+  const ziel = { lat: 0.3005, lon: 0.3 }; // rund 55 m von "Ziel"
+  const js = planModel.plan(start, ziel, '20261102', 7 * 3600 + 55 * 60);
+  const viaMitte = js.find((j) => j.transfers === 1);
+  assert.ok(viaMitte, 'Verbindung mit Umstieg erwartet');
+  assert.equal(viaMitte.legs[0].type, 'walk');
+  assert.equal(viaMitte.legs[0].fromPoint, true);
+  const last = viaMitte.legs[viaMitte.legs.length - 1];
+  assert.equal(last.toPoint, true);
+  assert.equal(viaMitte.arr, 8 * 3600 + 25 * 60 + last.secs);
+  assert.ok(viaMitte.start < viaMitte.dep, 'Losgehen vor der Abfahrt');
+});
+
+test('Punkt ohne Haltestelle in der Naehe: keine Verbindung', () => {
+  assert.deepEqual(planModel.plan({ lat: 0.9, lon: 0.9 }, 2, '20261102', 8 * 3600), []);
+});
+
+test('Reisezeit-Profil: bester Abfahrtszeitpunkt hat die kuerzeste Gesamtzeit', () => {
+  const p = planModel.profile(0, 2, '20261102', 7 * 3600, 8 * 3600, 1800);
+  assert.deepEqual(p.map((x) => x[0]), [7 * 3600, 7 * 3600 + 1800, 8 * 3600]);
+  assert.deepEqual(p.map((x) => x[1]), [85, 55, 25]);
+});

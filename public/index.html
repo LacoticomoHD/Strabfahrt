@@ -42,6 +42,7 @@
   </aside>
 
   <footer id="bar">
+    <p id="notice" role="status" hidden></p>
     <div class="row">
       <button id="play" type="button" aria-label="Pause">❚❚</button>
       <label class="sr" for="speed">Geschwindigkeit</label>
@@ -71,6 +72,8 @@
       <label><input type="checkbox" data-type="bus" checked> Bus</label>
       <label><input type="checkbox" data-type="other" checked> Sonstige</label>
       <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
+      <label title="Der KVV-Feed nennt nur Verbote. Blendet Fahrten aus, bei denen Fahrräder ausdrücklich nicht erlaubt sind."><input type="checkbox" id="bike"> 🚲 Fahrrad nicht verboten</label>
+      <label title="Zeigt einen Schweif hinter den Fahrzeugen"><input type="checkbox" id="trails"> Spuren</label>
       <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
       <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
       <span class="sep ovl"></span>

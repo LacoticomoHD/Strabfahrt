@@ -16,11 +16,17 @@ function getModel() {
 
 const TYPE_GROUPS = { tram: [0, 1], rail: [2], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
+// Start/Ziel: Station (from) oder Punkt (fromLat, fromLon)
+function spec(params, prefix) {
+  if (params[prefix] !== undefined && params[prefix] !== null && params[prefix] !== '') return Number(params[prefix]);
+  return { lat: Number(params[`${prefix}Lat`]), lon: Number(params[`${prefix}Lon`]) };
+}
+
 export async function handle(path, params = {}) {
   const model = await getModel();
   switch (path) {
     case '/api/meta':
-      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes };
+      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', built: model.meta.built, routes: model.routes };
     case '/api/stops':
       return model.stops;
     case '/api/network':
@@ -42,7 +48,9 @@ export async function handle(path, params = {}) {
     case '/api/line':
       return model.line(String(params.name || ''));
     case '/api/plan':
-      return model.plan(Number(params.from), Number(params.to), String(params.date), Number(params.t)).slice(0, 5);
+      return model.plan(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t)).slice(0, 5);
+    case '/api/profile':
+      return model.profile(spec(params, 'from'), spec(params, 'to'), String(params.date));
     case '/api/reach':
       return model.reach(Number(params.station), String(params.date), Number(params.t), Number(params.max) || 30);
     case '/api/frequency':

@@ -162,3 +162,16 @@ body.board-open #bar, body.board-open #top, body.board-open #panel, body.board-o
   .brow .bp { display: none; }
   #legend { top: 112px; }
 }
+
+#notice { margin: 0 0 6px; padding: 5px 8px; border-radius: 6px; background: #fff3cd; color: #5b4300; font-size: 12.5px; max-width: 560px; }
+:root[data-theme="dark"] #notice { background: #4a3d12; color: #ffe9a8; }
+
+/* Adressen, Diagramm */
+.sfl li.addr { color: var(--accent); }
+.sfl li.note { color: var(--muted); cursor: default; }
+.chart { margin: 8px 0; max-height: 240px; overflow: auto; }
+.crow { display: grid; grid-template-columns: 3.2em 1fr 4em; gap: 6px; align-items: center; width: 100%; border: 0; background: none; color: var(--fg); font: inherit; font-size: 12px; padding: 1px 0; cursor: pointer; text-align: left; }
+.crow:hover { background: var(--hover); }
+.cw { display: block; height: 10px; background: var(--soft); border-radius: 3px; overflow: hidden; }
+.cb { display: block; height: 100%; border-radius: 3px; }
+.cm { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }

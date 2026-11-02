@@ -290,13 +290,20 @@ async function main() {
   }
 
   let feedVersion = '';
+  let feedStart = '';
+  let feedEnd = '';
   try {
-    const fi = fs.readFileSync(f('feed_info.txt'), 'utf8').split(/\r?\n/);
-    feedVersion = parseLine(fi[1])[5] || '';
+    const fi = fs.readFileSync(f('feed_info.txt'), 'utf8').replace(/^\uFEFF/, '').split(/\r?\n/);
+    const head = parseLine(fi[0]);
+    const row = parseLine(fi[1]);
+    const col = (name) => row[head.indexOf(name)] || '';
+    feedVersion = col('feed_version');
+    feedStart = col('feed_start_date');
+    feedEnd = col('feed_end_date');
   } catch { /* optional */ }
 
   const model = {
-    meta: { bbox: BBOX, feedVersion, built: new Date().toISOString(), source: FEED_URL },
+    meta: { bbox: BBOX, feedVersion, feedStart, feedEnd, built: new Date().toISOString(), source: FEED_URL },
     routes, stops: outStops, patterns: patternList, profiles: profileList, services: svcOut, trips: tripOut,
   };
   fs.mkdirSync(DATA_DIR, { recursive: true });
