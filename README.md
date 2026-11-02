@@ -34,7 +34,17 @@ Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorag
 - **Streckenführung nur mit Zusatzschritt.** Der KVV-Feed enthält keine Linienverläufe. Ohne `npm run snap:rail` bewegen sich Fahrzeuge in Luftlinie zwischen zwei Haltestellen. Auch mit dem Skript bleiben Busse und Abschnitte ohne passenden Gleisweg in Luftlinie.
 - Zeiten sind Berliner Ortszeit. An den beiden Tagen der Zeitumstellung kann der Zeitraffer um eine Stunde abweichen.
 
-## Start
+## Schnellstart in Visual Studio Code
+
+1. [Node.js](https://nodejs.org) 20 oder neuer installieren (einmalig).
+2. In VS Code: `Strg+Umschalt+P`, "Git: Clone", Adresse `https://github.com/LacoticomoHD/Strabfahrt`, Ordner öffnen.
+3. **F5** drücken (oder `Strg+Umschalt+B`, oder im Terminal `npm run dev`).
+
+Beim ersten Start installiert das Skript die Pakete und lädt den KVV-Fahrplan (etwa eine Minute). Danach öffnet sich der Browser mit der App unter `http://127.0.0.1:3000`. Beenden mit `Strg+C` im Terminal.
+
+Weitere Aufgaben unter `Strg+Umschalt+P`, "Tasks: Run Task": Daten neu bauen, Gleise und Straßen matchen (`snap:rail`), Tests, statische Variante bauen. Für die Karte mit Gleisverlauf zuerst einmal "Gleise und Straßen matchen" ausführen und dann neu starten. Bei Port-Konflikt: `PORT=3001 npm run dev` (PowerShell: `$env:PORT=3001; npm run dev`).
+
+## Start ohne VS Code
 
 Voraussetzung: Node.js 20 oder neuer, unter Linux/macOS `unzip`.
 
