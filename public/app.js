@@ -1996,7 +1996,7 @@ function rtGet(pathName) {
 
 function setNote() {
   if (STATIC && !TILES) return;
-  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.`;
+  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
 }
 
 function updateLive() {
@@ -2179,13 +2179,13 @@ async function init() {
   });
 
   state.attribution = (meta.feeds && meta.feeds.length ? meta.feeds.map((f) => f.attribution) : ['KVV (CC0)']).join('; ');
-  if (!(STATIC && !TILES)) $('note').textContent = `Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.`;
+  if (!(STATIC && !TILES)) $('note').textContent = `Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
   if (STATIC && !TILES) {
     document.body.classList.add('static');
     const groups = [[], [], []];
     for (const [a, b, g] of await api('/api/network')) groups[g].push([a, b]);
     state.networkGroups = groups;
-    $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ' + state.attribution + '. Ohne Gewähr.';
+    $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ' + state.attribution + '. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.';
   }
   // Echtzeit: vom eigenen Server oder, in der statischen Variante, von einem Live-Server (STRAB_RT_URL)
   let rtBase = STATIC ? (window.STRAB_RT_URL || '') : '';
