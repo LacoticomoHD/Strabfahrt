@@ -42,6 +42,14 @@ npm test
 
 Den Feed sollte man regelmäßig neu bauen, der KVV aktualisiert ihn nahezu täglich.
 
+### Statische Variante ohne Server (optional)
+
+```bash
+npm run build:static   # schreibt dist-static/ (reine Dateien, rechnet im Browser)
+```
+
+Der Ordner lässt sich auf jedem Datei-Webspace oder GitHub Pages ablegen. Die Variante lädt keine Kartenkacheln und zeigt stattdessen ein schematisches Liniennetz. Wer Kacheln will, nutzt die Server-Variante.
+
 ### Fahrzeuge auf den Gleisen (optional)
 
 ```bash
@@ -56,6 +64,7 @@ Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg 
 | Pfad | Inhalt |
 | --- | --- |
 | `scripts/build-data.mjs` | Liest GTFS, schneidet auf das Gebiet zu, schreibt `data/model.json` |
+| `scripts/build-static.mjs` | Baut `dist-static/` für den Betrieb ohne Server |
 | `scripts/snap-rail.mjs` | Legt Tram und Bahn auf OSM-Gleise, schreibt `data/shapes.json` |
 | `server/model.mjs` | Fahrplanlogik: Kalender, aktive Fahrten, Abfahrten, Suche |
 | `server/index.mjs` | HTTP-Server und JSON-API (`/api/meta`, `/stops`, `/vehicles`, `/departures`, `/search`, `/shapes`) |

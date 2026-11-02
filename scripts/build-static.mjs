@@ -18,8 +18,10 @@ fs.mkdirSync(path.join(OUT, 'vendor', 'leaflet'), { recursive: true });
 
 const copy = (from, to) => fs.copyFileSync(need(from), path.join(OUT, to));
 copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
-copy(path.join(ROOT, 'server', 'model.mjs'), 'model.mjs');
-for (const f of ['app.js', 'local-api.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
+// .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
+copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
+for (const f of ['app.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
+fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT, 'public', 'local-api.js'), 'utf8').replace("'./model.mjs'", "'./model.js'"));
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
 fs.writeFileSync(path.join(OUT, 'static-flag.js'), 'window.STRAB_STATIC = true;\n');
 
