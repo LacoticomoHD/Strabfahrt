@@ -171,7 +171,7 @@ Der Ordner `api/` enthält kleine Funktionen für den kostenlosen Hobby-Plan von
 Einmalig einrichten:
 1. Auf vercel.com mit "Continue with GitHub" anmelden.
 2. "Add New Project", das Repo `Strabfahrt` importieren, Einstellungen lassen, "Deploy".
-3. Die Adresse (z. B. `https://strabfahrt.vercel.app`) im Repo als Variable eintragen: Settings, Secrets and variables, Actions, Reiter Variables, Name `STRAB_RT_URL`.
+3. Die Adresse `https://strabfahrt.vercel.app` ist im Workflow als Standard eingetragen. Eine andere Adresse geht über die Repository-Variable `STRAB_RT_URL` (Settings, Secrets and variables, Actions, Reiter Variables).
 4. Unter Actions den Workflow "Seite bauen und veröffentlichen" einmal starten. Danach zeigen Webseite und App Live-Daten.
 
 Grenzen des Gratis-Plans: 4 CPU-Stunden im Monat. Ein Abruf kostet rund eine halbe Sekunde, das reicht für mehrere hundert Stunden Nutzung. Wird die Grenze erreicht, pausiert Vercel bis zum nächsten Monat, es entstehen keine Kosten. Die Pünktlichkeits-Statistik gibt es dort nicht (kein dauerhafter Speicher).

@@ -59,8 +59,8 @@ jobs:
       - name: Statische Variante mit Karte bauen
         run: npm run build:static -- --tiles
         env:
-          # Optional: Adresse eines eigenen Live-Servers (Repository-Variable STRAB_RT_URL), sonst ohne Echtzeit
-          STRAB_RT_URL: ${{ vars.STRAB_RT_URL }}
+          # Live-Server (Vercel). Mit der Repository-Variable STRAB_RT_URL überschreibbar
+          STRAB_RT_URL: ${{ vars.STRAB_RT_URL || 'https://strabfahrt.vercel.app' }}
 
       - name: Fertige Seite prüfen
         run: |
