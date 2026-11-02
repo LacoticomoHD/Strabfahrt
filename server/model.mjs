@@ -256,12 +256,9 @@ export class Model {
     return this._pi;
   }
 
-  // Frueheste Ankunft mit 0 bis maxRounds Umstiegen. Zeiten in Sekunden seit 00:00 von ymd.
-  plan(fromIdx, toIdx, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120 } = {}) {
+  // RAPTOR-Kern. dst < 0: ohne Zielpruning (fuer Erreichbarkeit). limit: spaeteste interessante Ankunft.
+  _raptor(src, dst, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity } = {}) {
     const pi = this._planIndex();
-    const src = pi.group[fromIdx];
-    const dst = pi.group[toIdx];
-    if (src === dst) return [];
     const N = this.stops.length;
 
     // Fahrten im Zeitfenster, gruppiert nach Muster
@@ -283,6 +280,7 @@ export class Model {
     for (const list of byPattern.values()) list.sort((a, b) => a.start - b.start);
 
     const best = new Float64Array(N).fill(Infinity);
+    const dstBest = () => (dst >= 0 ? best[dst] : Infinity);
     let prevTau = new Float64Array(N).fill(Infinity);
     let prevBuf = new Float64Array(N);
     const parents = [];
@@ -294,7 +292,7 @@ export class Model {
         if (here && here.type === 'walk') continue; // keine Fussweg-Ketten
         for (const [h, secs] of pi.walk.get(g) || []) {
           const t = tau[g] + secs;
-          if (t < best[h]) {
+          if (t < best[h] && t <= limit) {
             tau[h] = t;
             buf[h] = 0;
             best[h] = t;
@@ -307,18 +305,15 @@ export class Model {
     };
 
     // Runde 0: Start, plus Fusswege
-    {
-      const tau = Float64Array.from(prevTau);
-      const buf = Float64Array.from(prevBuf);
-      const par = new Map();
-      tau[src] = depSec;
-      best[src] = depSec;
-      const added = relaxWalk(tau, buf, par, [src]);
-      parents.push(par);
-      prevTau = tau;
-      prevBuf = buf;
-      var marked = new Set([src, ...added]);
-    }
+    const tau0 = Float64Array.from(prevTau);
+    const buf0 = Float64Array.from(prevBuf);
+    const par0 = new Map();
+    tau0[src] = depSec;
+    best[src] = depSec;
+    let marked = new Set([src, ...relaxWalk(tau0, buf0, par0, [src])]);
+    parents.push(par0);
+    prevTau = tau0;
+    prevBuf = buf0;
 
     const roundsReachingDst = [];
     for (let k = 1; k <= maxRounds && marked.size; k++) {
@@ -343,7 +338,7 @@ export class Model {
           const g = gs[pos];
           if (cur) {
             const arr = cur.start + this.profiles[this.trips[cur.ti].profile][2 * pos];
-            if (arr < best[g] && arr < best[dst]) {
+            if (arr < best[g] && arr < dstBest() && arr <= limit) {
               tau[g] = arr;
               buf[g] = minTransfer;
               best[g] = arr;
@@ -371,8 +366,18 @@ export class Model {
       parents.push(par);
       prevTau = tau;
       prevBuf = buf;
-      if (par.has(dst)) roundsReachingDst.push(k);
+      if (dst >= 0 && par.has(dst)) roundsReachingDst.push(k);
     }
+    return { pi, parents, best, roundsReachingDst };
+  }
+
+  // Frueheste Ankunft mit 0 bis maxRounds Umstiegen. Zeiten in Sekunden seit 00:00 von ymd.
+  plan(fromIdx, toIdx, ymd, depSec, opts = {}) {
+    const pi = this._planIndex();
+    const src = pi.group[fromIdx];
+    const dst = pi.group[toIdx];
+    if (src === dst) return [];
+    const { parents, roundsReachingDst } = this._raptor(src, dst, ymd, depSec, opts);
 
     const build = (k) => {
       const legs = [];
@@ -414,6 +419,42 @@ export class Model {
       if (last.type === 'walk') arr += last.secs;
       return { dep: rides[0].dep, arr, transfers: rides.length - 1, legs };
     }).filter(Boolean);
+  }
+
+  // Alle Stationen, die ab fromIdx in maxMinutes erreichbar sind: Liste [Stationsindex, Minuten]
+  reach(fromIdx, ymd, depSec, maxMinutes = 30) {
+    const pi = this._planIndex();
+    const src = pi.group[fromIdx];
+    const limit = depSec + maxMinutes * 60;
+    const { best } = this._raptor(src, -1, ymd, depSec, { window: maxMinutes * 60, limit });
+    const out = [];
+    for (let g = 0; g < best.length; g++) {
+      if (g !== src && best[g] <= limit) out.push([g, Math.max(1, Math.round((best[g] - depSec) / 60))]);
+    }
+    return out;
+  }
+
+  // Abfahrten pro Station im Zeitfenster [from, to): Liste [Stationsindex, Anzahl]
+  frequency(ymd, from, to) {
+    const key = `${ymd}|${from}|${to}`;
+    this._freq = this._freq || new Map();
+    if (this._freq.has(key)) return this._freq.get(key);
+    const counts = new Map();
+    for (const { trip, start } of this.activeTrips(ymd, from, to)) {
+      const p = this.patterns[trip.pattern];
+      const prof = this.profiles[trip.profile];
+      for (let i = 0; i < p.stops.length - 1; i++) {
+        const dep = start + prof[2 * i + 1];
+        if (dep < from || dep >= to) continue;
+        const si = p.stops[i];
+        const g = this.stops[si][4] >= 0 ? this.stops[si][4] : si;
+        counts.set(g, (counts.get(g) || 0) + 1);
+      }
+    }
+    const out = [...counts];
+    this._freq.set(key, out);
+    if (this._freq.size > 12) this._freq.delete(this._freq.keys().next().value);
+    return out;
   }
 
   // Alle befahrenen Haltepaare mit Verkehrsmittel-Gruppe (fuer die Hintergrundkarte ohne Kacheln)

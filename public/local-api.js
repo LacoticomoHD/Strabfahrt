@@ -43,6 +43,10 @@ export async function handle(path, params = {}) {
       return model.line(String(params.name || ''));
     case '/api/plan':
       return model.plan(Number(params.from), Number(params.to), String(params.date), Number(params.t)).slice(0, 5);
+    case '/api/reach':
+      return model.reach(Number(params.station), String(params.date), Number(params.t), Number(params.max) || 30);
+    case '/api/frequency':
+      return model.frequency(String(params.date), Number(params.t0), Number(params.t1));
     case '/api/search':
       return model.search(String(params.q || ''));
     case '/api/departures': {

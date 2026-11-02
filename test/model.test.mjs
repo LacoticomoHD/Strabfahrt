@@ -119,3 +119,19 @@ test('Linienansicht: Muster je Fahrtrichtung', () => {
   assert.equal(l[0].headsign, 'Ziel');
   assert.deepEqual(l[0].stops, [1, 2]);
 });
+
+test('Erreichbarkeit: nur Stationen innerhalb der Zeit, Umstieg eingerechnet', () => {
+  const in30 = Object.fromEntries(planModel.reach(0, '20261102', 7 * 3600 + 55 * 60, 30));
+  assert.equal(in30[1], 15, 'Mitte nach 15 Minuten (8:10)');
+  assert.equal(in30[2], 30, 'Ziel nach 30 Minuten (8:25 mit Umstieg)');
+  const in20 = Object.fromEntries(planModel.reach(0, '20261102', 7 * 3600 + 55 * 60, 20));
+  assert.equal(in20[1], 15);
+  assert.equal(in20[2], undefined);
+});
+
+test('Takt: Abfahrten je Station im Fenster, Endhalt zaehlt nicht', () => {
+  const f = Object.fromEntries(planModel.frequency('20261102', 8 * 3600, 9 * 3600));
+  assert.equal(f[0], 2); // a1 und d1 ab Start
+  assert.equal(f[1], 2); // b0 und b1 ab Mitte
+  assert.equal(f[2], undefined); // Ziel ist nur Endhalt
+});

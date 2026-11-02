@@ -169,3 +169,18 @@ export function matchSegment(graph, a, b, { snapMeters = 150, detour = 3, slack 
   if (!path) return null;
   return simplify([a, ...path.map((id) => graph.coords[id]), b], 2);
 }
+
+// Overpass-Antwort mit Linienrelationen (out geom) -> Wege je Liniennummer (ref).
+// Jede Relation liefert die Stuecke, die diese Linie tatsaechlich befaehrt.
+export function waysByRef(elements) {
+  const out = new Map();
+  for (const el of elements || []) {
+    if (el.type !== 'relation' || !el.tags || !el.tags.ref || !Array.isArray(el.members)) continue;
+    const list = out.get(el.tags.ref) || [];
+    for (const m of el.members) {
+      if (m.type === 'way' && Array.isArray(m.geometry) && m.geometry.length > 1) list.push(m.geometry.map((g) => [g.lat, g.lon]));
+    }
+    if (list.length) out.set(el.tags.ref, list);
+  }
+  return out;
+}

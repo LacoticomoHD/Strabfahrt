@@ -53,3 +53,21 @@ test('simplify entfernt Punkte auf einer Geraden', () => {
   const line = [[lat, 8.4], [lat, 8.4005], [lat, 8.401], [lat, 8.4015]];
   assert.equal(simplify(line, 2).length, 2);
 });
+
+import { waysByRef } from '../scripts/lib/rail.mjs';
+
+test('waysByRef sammelt Wege je Liniennummer und ignoriert Unbrauchbares', () => {
+  const el = [
+    { type: 'relation', tags: { ref: '30' }, members: [
+      { type: 'way', geometry: [{ lat: 49, lon: 8.4 }, { lat: 49, lon: 8.41 }] },
+      { type: 'node', lat: 49, lon: 8.4 },
+      { type: 'way', geometry: [{ lat: 49, lon: 8.41 }] }, // zu kurz
+    ] },
+    { type: 'relation', tags: { ref: '30' }, members: [{ type: 'way', geometry: [{ lat: 49.1, lon: 8.5 }, { lat: 49.1, lon: 8.51 }] }] },
+    { type: 'relation', tags: {}, members: [] },
+    { type: 'way', geometry: [] },
+  ];
+  const m = waysByRef(el);
+  assert.equal(m.size, 1);
+  assert.equal(m.get('30').length, 2);
+});

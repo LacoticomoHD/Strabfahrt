@@ -32,6 +32,10 @@
     </nav>
   </header>
 
+  <div id="legend" hidden></div>
+
+  <div id="board" hidden></div>
+
   <aside id="panel" hidden aria-live="polite">
     <button id="panel-close" type="button" aria-label="Schließen">×</button>
     <div id="panel-body"></div>
@@ -53,8 +57,13 @@
       <label class="sr" for="when">Datum und Uhrzeit</label>
       <input id="when" type="datetime-local">
       <button id="now" type="button">Jetzt</button>
+      <button id="night" type="button" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">☾ Nacht</button>
       <span id="count" aria-live="off"></span>
       <button id="collapse" type="button" aria-label="Optionen ein- oder ausklappen" aria-expanded="true">⋯</button>
+    </div>
+    <div class="row">
+      <label class="sr" for="tl">Uhrzeit des Tages</label>
+      <input id="tl" type="range" min="0" max="1439" step="1" value="720">
     </div>
     <div class="row filters">
       <label><input type="checkbox" data-type="tram" checked> Tram</label>
@@ -62,6 +71,7 @@
       <label><input type="checkbox" data-type="bus" checked> Bus</label>
       <label><input type="checkbox" data-type="other" checked> Sonstige</label>
       <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
+      <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
       <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
       <span class="sep ovl"></span>
       <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>

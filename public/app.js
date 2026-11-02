@@ -96,6 +96,9 @@ function load(key, fallback) {
   try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); } catch { return fallback; }
 }
 function save(key, value) {
+  return save_(key, value);
+}
+function save_(key, value) {
   try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Speicher gesperrt: Funktion laeuft ohne Merken weiter */ }
 }
 
@@ -129,6 +132,9 @@ const state = {
   route: { from: null, to: null },
   journeys: [],
   journey: null, // gewaehlte Verbindung
+  takt: { on: false, key: null, loading: false, data: new Map() }, // Abfahrten pro Stunde je Station
+  reach: null, // { center, max, items: [[station, minuten]] }
+  board: null, // Stationsindex der Vollbild-Tafel
 };
 
 // ---------- Karte ----------
@@ -178,8 +184,9 @@ function parseHash() {
   const z = Number(p.get('z'));
   const lat = Number(p.get('lat'));
   const lon = Number(p.get('lon'));
-  if (Number.isFinite(z) && Number.isFinite(lat) && Number.isFinite(lon) && p.has('z')) return { z, lat, lon, st: p.get('st'), ol: (p.get('ol') || '').split(',').filter(Boolean) };
-  return null;
+  const view = p.has('z') && Number.isFinite(z) && Number.isFinite(lat) && Number.isFinite(lon);
+  const out = { z: view ? z : null, lat, lon, st: p.get('st'), tafel: p.get('tafel'), rt: p.get('rt'), ol: (p.get('ol') || '').split(',').filter(Boolean) };
+  return view || out.st || out.tafel || out.rt ? out : null;
 }
 let hashTimer = null;
 function scheduleHash() {
@@ -187,11 +194,16 @@ function scheduleHash() {
   hashTimer = setTimeout(writeHash, 400);
 }
 function writeHash() {
+  if (state.board !== null && state.stops[state.board]) {
+    try { history.replaceState(null, '', `#${new URLSearchParams({ tafel: state.stops[state.board][0] })}`); } catch { /* eingebetteter Rahmen */ }
+    return;
+  }
   const c = map.getCenter();
   const ol = Object.keys(overlays).filter((k) => map.hasLayer(overlays[k]));
   const p = new URLSearchParams({ z: map.getZoom(), lat: c.lat.toFixed(5), lon: c.lng.toFixed(5) });
   if (ol.length) p.set('ol', ol.join(','));
   if (state.station !== null && state.stops[state.station]) p.set('st', state.stops[state.station][0]);
+  if (state.list === 'route' && state.route.from && state.route.to) p.set('rt', `${state.stops[state.route.from.index][0]}~${state.stops[state.route.to.index][0]}`);
   try { history.replaceState(null, '', `#${p}`); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
 }
 
@@ -373,8 +385,11 @@ function drawFrame() {
     }
   }
 
+  if (state.takt.on) drawTakt(zoom);
+  else if (state.reach) drawReach(zoom);
+
   // Haltestellen
-  if (zoom >= 14) {
+  if (zoom >= 14 && !state.takt.on) {
     ctx.fillStyle = stopFill;
     ctx.strokeStyle = stopLine;
     ctx.lineWidth = 1.5;
@@ -574,6 +589,8 @@ function tick(now) {
       $('when').value = new Date(state.sim * 1000).toISOString().slice(0, 16);
     }
     if (state.selected) updateVehiclePanel();
+    if (!tlDragging) tl.value = String(Math.min(1439, Math.floor((state.sim - dayStart(ymdOf(state.sim))) / 60)));
+    if (state.takt.on) loadTakt();
   }
   if (state.meta) {
     loadWindow();
@@ -773,17 +790,17 @@ async function renderStation() {
   star.addEventListener('click', () => toggleFavorite(stationId, index));
   body.append(el('h2', {}, star, ' ', s[1]));
   const share = el('button', { class: 'chip', type: 'button' }, 'Link kopieren');
-  share.addEventListener('click', async () => {
-    writeHash();
-    const url = location.href;
-    try {
-      await navigator.clipboard.writeText(url);
-      share.textContent = 'Kopiert';
-    } catch {
-      share.replaceWith(el('input', { class: 'urlbox', value: url, readonly: 'readonly', 'aria-label': 'Link zur Haltestelle' }));
-    }
-  });
-  body.append(el('div', { class: 'chips' }, share));
+  share.addEventListener('click', () => copyCurrentLink(share));
+  const board = el('button', { class: 'chip', type: 'button' }, 'Als Tafel öffnen');
+  board.addEventListener('click', () => openBoard(index));
+  body.append(el('div', { class: 'chips' }, share, board));
+  const reachRow = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Wohin komme ich in:'));
+  for (const m of [15, 30, 45, 60]) {
+    const b = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.reach && state.reach.center === index && state.reach.max === m) }, `${m} min`);
+    b.addEventListener('click', () => showReach(index, m));
+    reachRow.append(b);
+  }
+  body.append(reachRow);
   body.append(el('div', { class: 'sub' }, `Abfahrten nach Fahrplan ab ${hhmm(state.sim)} (Soll, keine Echtzeit)`));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
@@ -818,6 +835,29 @@ async function renderStation() {
 }
 
 // ---------- Favoriten, Naehe, Linien ----------
+
+async function copyCurrentLink(btn) {
+  writeHash();
+  const url = location.href;
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.textContent = 'Kopiert';
+  } catch {
+    btn.replaceWith(el('input', { class: 'urlbox', value: url, readonly: 'readonly', 'aria-label': 'Link' }));
+  }
+}
+
+// Mein Weg: eine gespeicherte Strecke (Haltestellen-IDs, stabil ueber Fahrplanwechsel)
+function getMyRoute() {
+  const saved = load('strab.myroute', null);
+  if (!saved) return null;
+  const byId = new Map(state.stops.map((s, i) => [s[0], i]));
+  const f = byId.get(saved.from);
+  const t = byId.get(saved.to);
+  if (f === undefined || t === undefined) return null;
+  const mk = (i) => ({ index: i, name: state.stops[i][1], lat: state.stops[i][2], lon: state.stops[i][3] });
+  return { from: mk(f), to: mk(t) };
+}
 
 function toggleFavorite(stationId, index) {
   const i = state.favorites.indexOf(stationId);
@@ -867,10 +907,30 @@ function startList(mode) {
 async function renderFavs() {
   const idxById = new Map(state.stops.map((s, i) => [s[0], i]));
   const items = state.favorites.map((id) => idxById.get(id)).filter((i) => i !== undefined);
-  const results = await Promise.all(items.map((i) => departuresFor(i, 3)));
+  const mine = getMyRoute();
+  const ymd = ymdOf(state.sim);
+  const [results, myJourneys] = await Promise.all([
+    Promise.all(items.map((i) => departuresFor(i, 3))),
+    mine ? api('/api/plan', { from: mine.from.index, to: mine.to.index, date: ymd, t: Math.floor(state.sim - dayStart(ymd)) }).catch(() => []) : Promise.resolve([]),
+  ]);
   if (state.list !== 'favs') return;
   const body = $('panel-body');
   body.replaceChildren(el('h2', {}, '★ Favoriten'), el('div', { class: 'sub' }, 'Nächste Abfahrten nach Fahrplan (Soll)'));
+  if (mine) {
+    const open = el('a', { class: 'stop', role: 'button', tabindex: '0' }, `Mein Weg: ${mine.from.name} → ${mine.to.name}`);
+    const go = () => { state.route = { from: mine.from, to: mine.to }; openRoute(true); };
+    open.addEventListener('click', go);
+    open.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') go(); });
+    const blk = el('div', { class: 'block' }, el('div', { class: 'bh' }, open));
+    if (!myJourneys.length) blk.append(el('div', { class: 'empty' }, 'Keine Verbindung in den nächsten Stunden.'));
+    for (const j of myJourneys.slice().sort((a, b) => a.dep - b.dep).slice(0, 3)) {
+      const row = el('div', { class: 'leg' }, el('b', {}, `${hhmm(j.dep)} → ${hhmm(j.arr)}`), ' ');
+      for (const leg of j.legs) if (leg.type === 'ride') row.append(pill(leg.line, routeStyle([leg.line, leg.routeType, leg.color, leg.textColor])), ' ');
+      row.append(el('span', { class: 'sub' }, `${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`));
+      blk.append(row);
+    }
+    body.append(blk);
+  }
   if (!items.length) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
   items.forEach((i, n) => body.append(stationBlock(i, results[n])));
   showPanel();
@@ -955,7 +1015,237 @@ function renderLines() {
 
 $('btn-favs').addEventListener('click', () => (state.list === 'favs' ? closePanel() : startList('favs')));
 $('btn-nearby').addEventListener('click', () => { state.here = null; startList('nearby'); });
-$('btn-lines').addEventListener('click', () => (state.list === 'lines' ? closePanel() : (state.list = 'lines', state.selected = null, state.station = null, clearInterval(stationTimer), renderLines())));
+function openLinesPanel() {
+  state.selected = null;
+  state.station = null;
+  state.follow = null;
+  clearInterval(stationTimer);
+  state.list = 'lines';
+  renderLines();
+}
+$('btn-lines').addEventListener('click', () => (state.list === 'lines' ? closePanel() : openLinesPanel()));
+
+// Nachtverkehr: springt auf 01:30 der kommenden Nacht und zeigt, welche Linien dann fahren
+$('night').addEventListener('click', () => {
+  const ymd = ymdOf(state.sim);
+  const sod = state.sim - dayStart(ymd);
+  const day = sod < 5 * 3600 ? ymd : ymdOf(state.sim + 86400);
+  state.sim = dayStart(day) + 90 * 60;
+  state.window = null;
+  openLinesPanel();
+});
+
+// Zeitleiste: Schieber fuer die Uhrzeit des angezeigten Tages
+let tlDragging = false;
+const tl = $('tl');
+tl.addEventListener('pointerdown', () => { tlDragging = true; });
+for (const ev of ['pointerup', 'pointercancel', 'blur', 'change']) tl.addEventListener(ev, () => { tlDragging = false; });
+tl.addEventListener('input', (e) => {
+  state.sim = dayStart(ymdOf(state.sim)) + Number(e.target.value) * 60;
+  state.window = null;
+});
+
+// ---------- Takt-Karte und Erreichbarkeit ----------
+
+async function loadTakt() {
+  const ymd = ymdOf(state.sim);
+  const hour = Math.floor((state.sim - dayStart(ymd)) / 3600);
+  const key = `${ymd}|${hour}`;
+  if (state.takt.key === key || state.takt.loading) return;
+  state.takt.loading = true;
+  try {
+    state.takt.data = new Map(await api('/api/frequency', { date: ymd, t0: hour * 3600, t1: hour * 3600 + 3600 }));
+    state.takt.key = key;
+  } catch (e) {
+    console.error(e);
+  } finally {
+    state.takt.loading = false;
+  }
+  updateLegend();
+}
+
+$('takt').addEventListener('change', (e) => {
+  state.takt.on = e.target.checked;
+  if (state.takt.on) { state.reach = null; state.takt.key = null; loadTakt(); }
+  updateLegend();
+});
+
+async function showReach(index, max) {
+  const ymd = ymdOf(state.sim);
+  let items = [];
+  try {
+    items = await api('/api/reach', { station: index, date: ymd, t: Math.floor(state.sim - dayStart(ymd)), max });
+  } catch (e) {
+    console.error(e);
+    return;
+  }
+  state.takt.on = false;
+  $('takt').checked = false;
+  state.reach = { center: index, max, items };
+  updateLegend();
+  const pts = [[state.stops[index][2], state.stops[index][3]], ...items.map(([g]) => [state.stops[g][2], state.stops[g][3]])];
+  map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 14 });
+  if (state.station === index) renderStation();
+}
+
+function updateLegend() {
+  const box = $('legend');
+  box.replaceChildren();
+  const dot = (color) => { const d = el('i', { class: 'dot' }); d.style.background = color; return d; };
+  if (state.takt.on) {
+    const hour = state.takt.key ? Number(state.takt.key.split('|')[1]) : Math.floor((state.sim - dayStart(ymdOf(state.sim))) / 3600);
+    box.append(el('b', {}, `Abfahrten pro Stunde, ${pad(hour)}–${pad((hour + 1) % 24)} Uhr`), ' ',
+      dot(TAKT_COLORS[0]), '12+ ', dot(TAKT_COLORS[1]), '6–11 ', dot(TAKT_COLORS[2]), '3–5 ', dot(TAKT_COLORS[3]), '1–2 ', dot(TAKT_COLORS[4]), 'keine');
+    box.hidden = false;
+  } else if (state.reach) {
+    const r = state.reach;
+    const off = el('button', { type: 'button', class: 'chip' }, 'Aus');
+    off.addEventListener('click', () => { state.reach = null; updateLegend(); if (state.station !== null) renderStation(); });
+    box.append(el('b', {}, `Erreichbar in ${r.max} min ab ${state.stops[r.center][1]}`), ' ', dot(reachColor(0.1)), 'nah ', dot(reachColor(0.55)), 'mittel ', dot(reachColor(1)), 'am Limit ', off);
+    box.hidden = false;
+  } else {
+    box.hidden = true;
+  }
+}
+
+const TAKT_COLORS = ['#0b7a3b', '#4caf50', '#fbc02d', '#fb8c00', '#9e9e9e'];
+const TAKT_RADIUS = [8, 6.5, 5.5, 4.5, 3];
+const taktTier = (c) => (c >= 12 ? 0 : c >= 6 ? 1 : c >= 3 ? 2 : c >= 1 ? 3 : 4);
+const reachColor = (f) => `hsl(${Math.round(130 - 120 * Math.min(1, Math.max(0, f)))} 75% 45%)`;
+
+function inView(lat, lon, b) {
+  return lat >= b.getSouth() && lat <= b.getNorth() && lon >= b.getWest() && lon <= b.getEast();
+}
+
+function drawTakt(zoom) {
+  const b = map.getBounds();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  for (const s of state.stations) {
+    if (!inView(s.lat, s.lon, b)) continue;
+    const c = state.takt.data.get(s.index) || 0;
+    const tier = taktTier(c);
+    if (tier === 4 && zoom < 13) continue;
+    const p = map.latLngToContainerPoint([s.lat, s.lon]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, TAKT_RADIUS[tier] + (zoom >= 14 ? 2 : 0), 0, Math.PI * 2);
+    ctx.fillStyle = TAKT_COLORS[tier];
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    if (zoom >= 15 && c > 0) {
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(c), p.x, p.y + 0.5);
+    }
+  }
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawReach(zoom) {
+  const r = state.reach;
+  const b = map.getBounds();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 10px system-ui, sans-serif';
+  for (const [g, min] of r.items) {
+    const st = state.stops[g];
+    if (!inView(st[2], st[3], b)) continue;
+    const p = map.latLngToContainerPoint([st[2], st[3]]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, zoom >= 14 ? 9 : 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = reachColor(min / r.max);
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    if (zoom >= 14) {
+      ctx.fillStyle = '#fff';
+      ctx.fillText(String(min), p.x, p.y + 0.5);
+    }
+  }
+  const c = state.stops[r.center];
+  const p = map.latLngToContainerPoint([c[2], c[3]]);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a73e8';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+  ctx.textAlign = 'start';
+  ctx.textBaseline = 'alphabetic';
+}
+
+// ---------- Vollbild-Tafel ----------
+
+let boardTimer = null;
+let wakeLock = null;
+
+async function openBoard(index) {
+  closePanel();
+  state.board = index;
+  $('board').hidden = false;
+  document.body.classList.add('board-open');
+  writeHash();
+  clearInterval(boardTimer);
+  await renderBoard();
+  boardTimer = setInterval(boardTick, 1000);
+  try { wakeLock = await navigator.wakeLock.request('screen'); } catch { /* nicht verfuegbar oder verweigert */ }
+}
+
+function closeBoard() {
+  clearInterval(boardTimer);
+  state.board = null;
+  $('board').hidden = true;
+  document.body.classList.remove('board-open');
+  try { if (wakeLock) wakeLock.release(); } catch { /* egal */ }
+  wakeLock = null;
+  writeHash();
+}
+
+let boardCountdown = 0;
+function boardTick() {
+  const clock = document.getElementById('bclock');
+  if (clock) clock.textContent = hhmmss(wallNow());
+  if (++boardCountdown >= 10) { boardCountdown = 0; renderBoard(); }
+}
+
+async function renderBoard() {
+  const index = state.board;
+  if (index === null) return;
+  const now = wallNow();
+  const ymd = ymdOf(now);
+  let list = [];
+  try {
+    list = await api('/api/departures', { station: index, date: ymd, from: Math.floor(now - dayStart(ymd)), limit: 14 });
+  } catch (e) {
+    console.error(e);
+  }
+  if (state.board !== index) return;
+  const base = dayStart(ymd);
+  const view = $('board');
+  view.replaceChildren();
+  const close = el('button', { type: 'button', class: 'chip' }, 'Zur Karte');
+  close.addEventListener('click', closeBoard);
+  const full = el('button', { type: 'button', class: 'chip' }, 'Vollbild');
+  full.addEventListener('click', () => { try { document.documentElement.requestFullscreen(); } catch { /* nicht erlaubt */ } });
+  view.append(el('div', { class: 'bhead' }, el('div', { class: 'bname' }, state.stops[index][1]), el('div', { class: 'bclock', id: 'bclock' }, hhmmss(now)), el('div', { class: 'bbtns' }, full, close)));
+  const rows = el('div', { class: 'brows' });
+  if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
+  for (const d of list) {
+    const mins = Math.round((base + d.t - now) / 60);
+    rows.append(el('div', { class: 'brow' },
+      el('span', { class: 'bt' }, hhmm(d.t)),
+      pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
+      el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
+      el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
+      el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
+  }
+  view.append(rows, el('div', { class: 'bnote sub' }, 'Nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0).'));
+}
 
 // ---------- Linienansicht ----------
 
@@ -1045,22 +1335,24 @@ function suggestField(label, initial, onPick) {
   return wrap;
 }
 
-function openRoute() {
+function openRoute(autorun = false) {
   state.selected = null;
   state.station = null;
   state.follow = null;
   state.lineView = null;
   clearInterval(stationTimer);
   state.list = 'route';
-  renderRoutePanel();
+  renderRoutePanel(autorun);
 }
 
-function renderRoutePanel() {
+function renderRoutePanel(autorun = false) {
   const body = $('panel-body');
   body.replaceChildren(el('h2', {}, '⇄ Verbindung'));
   const fromField = suggestField('Start', state.route.from, (r) => { state.route.from = r; });
   const toField = suggestField('Ziel', state.route.to, (r) => { state.route.to = r; });
   const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.sim) });
+  const status = el('div', { class: 'sub' }, 'Nach Fahrplan (Soll), ohne Echtzeit.');
+  const results = el('div', { class: 'results' });
 
   const here = el('button', { class: 'chip', type: 'button' }, 'Mein Standort als Start');
   here.addEventListener('click', async () => {
@@ -1077,11 +1369,8 @@ function renderRoutePanel() {
     [state.route.from, state.route.to] = [state.route.to, state.route.from];
     renderRoutePanel();
   });
-  const go = el('button', { class: 'chip go', type: 'button' }, 'Suchen');
-  const status = el('div', { class: 'sub' }, 'Nach Fahrplan (Soll), ohne Echtzeit.');
-  const results = el('div', { class: 'results' });
 
-  go.addEventListener('click', async () => {
+  const search = async () => {
     const { from, to } = state.route;
     if (!from || !to) { status.textContent = 'Bitte Start und Ziel aus der Liste wählen.'; return; }
     const [hh, mm] = timeInput.value.split(':').map(Number);
@@ -1099,11 +1388,52 @@ function renderRoutePanel() {
     }
     status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''} nach Fahrplan (Soll)` : 'Keine Verbindung in den nächsten 5 Stunden gefunden.';
     renderJourneys(results);
+    scheduleHash();
+  };
+  const go = el('button', { class: 'chip go', type: 'button' }, 'Suchen');
+  go.addEventListener('click', search);
+
+  const shiftTime = (deltaMin) => {
+    const [hh, mm] = timeInput.value.split(':').map(Number);
+    const t = Math.min(23 * 60 + 59, Math.max(0, (hh || 0) * 60 + (mm || 0) + deltaMin));
+    timeInput.value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
+    search();
+  };
+  const earlier = el('button', { class: 'chip', type: 'button' }, '← Früher');
+  earlier.addEventListener('click', () => shiftTime(-30));
+  const later = el('button', { class: 'chip', type: 'button' }, 'Später →');
+  later.addEventListener('click', () => {
+    if (state.journeys.length) {
+      const first = Math.min(...state.journeys.map((j) => j.dep));
+      const t = Math.min(23 * 60 + 59, Math.floor(first / 60) + 1);
+      timeInput.value = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
+      search();
+    } else shiftTime(30);
   });
 
-  body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput), el('div', { class: 'chips' }, here, swap, go), status, results);
+  const mine = getMyRoute();
+  const extras = el('div', { class: 'chips' });
+  const save = el('button', { class: 'chip', type: 'button' }, 'Als Mein Weg speichern');
+  save.addEventListener('click', () => {
+    if (!state.route.from || !state.route.to) { status.textContent = 'Erst Start und Ziel wählen.'; return; }
+    save_('strab.myroute', { from: state.stops[state.route.from.index][0], to: state.stops[state.route.to.index][0] });
+    save.textContent = 'Gespeichert';
+  });
+  extras.append(save);
+  if (mine) {
+    const load_ = el('button', { class: 'chip', type: 'button' }, 'Mein Weg laden');
+    load_.addEventListener('click', () => { state.route = { from: mine.from, to: mine.to }; renderRoutePanel(true); });
+    extras.append(load_);
+  }
+  const link = el('button', { class: 'chip', type: 'button' }, 'Link kopieren');
+  link.addEventListener('click', () => copyCurrentLink(link));
+  extras.append(link);
+
+  body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput),
+    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later), status, results, extras);
   if (state.journeys.length) renderJourneys(results);
   showPanel();
+  if (autorun) search();
 }
 
 function renderJourneys(container) {
@@ -1258,16 +1588,25 @@ async function init() {
   }
   const h = readHash();
   const [s, w, n, e] = meta.bbox;
-  if (h) map.setView([h.lat, h.lon], h.z);
+  if (h && h.z !== null) map.setView([h.lat, h.lon], h.z);
   else map.fitBounds([[s, w], [n, e]]);
   if (h) for (const k of h.ol) if (overlays[k]) { overlays[k].addTo(map); $(`ovl-${k}`).checked = true; }
   map.setMaxBounds([[s - 0.3, w - 0.4], [n + 0.3, e + 0.4]]);
 
   resizeCanvas();
   writeHash();
-  if (h && h.st) {
-    const idx = stops.findIndex((x) => x[0] === h.st);
-    if (idx >= 0) openStation(idx);
+  const idOf = (id) => stops.findIndex((x) => x[0] === id);
+  if (h && h.tafel && idOf(h.tafel) >= 0) {
+    openBoard(idOf(h.tafel));
+  } else if (h && h.rt) {
+    const [a, b] = h.rt.split('~');
+    const mk = (i) => ({ index: i, name: stops[i][1], lat: stops[i][2], lon: stops[i][3] });
+    if (idOf(a) >= 0 && idOf(b) >= 0) {
+      state.route = { from: mk(idOf(a)), to: mk(idOf(b)) };
+      openRoute(true);
+    }
+  } else if (h && h.st && idOf(h.st) >= 0) {
+    openStation(idOf(h.st));
   }
 }
 

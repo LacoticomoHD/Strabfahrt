@@ -16,6 +16,12 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Barrierefrei: Filter "nur barrierefrei" für Karte und Abfahrten, ♿ in den Abfahrten
 - Haltestelle teilen: "Link kopieren" erzeugt einen Link, der direkt die Haltestelle öffnet
 - Installierbar als App (PWA) mit Zwischenspeicher für den Offline-Start
+- Mein Weg: eine Strecke speichern (z. B. Zuhause nach Arbeit), die Favoriten-Ansicht zeigt die nächsten Verbindungen. In der Verbindungssuche blätterst du mit "Früher" und "Später".
+- Route teilen: "Link kopieren" in der Verbindungssuche öffnet beim Empfänger dieselbe Suche
+- Takt-Karte: Schalter "Takt" färbt Haltestellen nach Abfahrten pro Stunde (12+, 6 bis 11, 3 bis 5, 1 bis 2)
+- Erreichbarkeit: In der Haltestellenansicht "Wohin komme ich in 15/30/45/60 min" färbt erreichbare Haltestellen nach Fahrzeit, mit Umstiegen und Fußwegen
+- Vollbild-Tafel: "Als Tafel öffnen" zeigt eine Haltestelle groß wie eine Anzeigetafel (Link `#tafel=<Haltestellen-ID>`), hält den Bildschirm wach, wenn der Browser das erlaubt
+- Zeitleiste (Schieber für die Uhrzeit) und "Nacht": springt auf 01:30 der kommenden Nacht und zeigt, welche Linien dann fahren
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
 - Verspätungsanzeige: Hinter jedem Fahrzeug erscheint ab Zoom 14 ein Zeichen mit Sekunden oder Minuten. Rot heißt zu spät, hellblau zu früh, grün pünktlich (unter 30 Sekunden Abweichung). **Echte Werte gibt es erst mit Echtzeitdaten.** Bis dahin zeigt der Schalter "Demo-Verspätung" erfundene Werte, nur zur Ansicht.
@@ -61,11 +67,12 @@ Der Ordner lässt sich auf jedem Datei-Webspace oder GitHub Pages ablegen. Ohne 
 ### Fahrzeuge auf den Gleisen (optional)
 
 ```bash
-npm run snap:rail    # lädt Gleise von OpenStreetMap (Overpass-API) und schreibt data/shapes.json
+npm run snap:rail              # lädt OSM-Daten (Overpass-API) und schreibt data/shapes.json
+npm run snap:rail -- --refresh # lädt die OSM-Daten neu, statt data/osm-*.json zu verwenden
 npm start
 ```
 
-Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg bleiben Luftlinie, Busse ebenfalls. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS. Das Gleis-Matching gilt auch für die statische Variante: `build:static` nimmt `data/shapes.json` mit, wenn sie zum Modell passt.
+Das Skript legt Tram und Bahn auf die OSM-Gleise und Busse auf die Wege ihrer Linienrelationen (je Liniennummer). Abschnitte ohne passenden Weg bleiben Luftlinie. Die Bus-Zuordnung ist bisher nur mit Testdaten geprüft, die echte Wirkung zeigt der erste Lauf mit Overpass. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS. Das Gleis-Matching gilt auch für die statische Variante: `build:static` nimmt `data/shapes.json` mit, wenn sie zum Modell passt.
 
 ## Aufbau
 
@@ -98,11 +105,10 @@ Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsy
 
 ## Echtzeit anschließen
 
-Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: JSON-Objekt von Fahrt-ID (wie in `trips.txt`) auf Verspätung in Sekunden, positiv für zu spät, negativ für zu früh. Die Fahrzeugposition wird dann um diese Verspätung verschoben. Eine Echtzeitquelle ist noch nicht angebunden. Offiziell wäre das die TRIAS-Schnittstelle des KVV nach Abschluss der Nutzungsvereinbarung.
+Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: JSON-Objekt von Fahrt-ID (wie in `trips.txt`) auf Verspätung in Sekunden, positiv für zu spät, negativ für zu früh. Die Fahrzeugposition wird dann um diese Verspätung verschoben. Eine Echtzeitquelle ist noch nicht angebunden. Die Pünktlichkeits-Statistik (Verspätungen mitschreiben und auswerten) setzt Echtzeit voraus und ist deshalb noch nicht gebaut. Offiziell wäre das die TRIAS-Schnittstelle des KVV nach Abschluss der Nutzungsvereinbarung.
 
 ## Mögliche nächste Schritte
 
 - Echtzeit über die offizielle TRIAS-Schnittstelle des KVV für die Abfahrtsanzeige, sobald Zugangsdaten nach der KVV-Nutzungsvereinbarung vorliegen
-- Map-Matching für Busse auf das Straßennetz
 - Verbindungssuche: Fußwege zu weiter entfernten Haltestellen, spätere und frühere Abfahrten blättern
 - Eigene Kachelquelle

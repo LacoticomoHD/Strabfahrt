@@ -39,20 +39,17 @@ jobs:
         id: week
         run: echo "w=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
 
-      - name: Gleisdaten aus dem Wochen-Cache holen
+      - name: OpenStreetMap-Daten aus dem Wochen-Cache holen
         uses: actions/cache@v4
         with:
-          path: data/osm-rail.json
-          key: osm-rail-${{ steps.week.outputs.w }}
+          path: |
+            data/osm-rail.json
+            data/osm-bus.json
+          key: osm-${{ steps.week.outputs.w }}
 
-      - name: Fahrzeuge auf OpenStreetMap-Gleise legen
-        continue-on-error: true # ohne Gleisdaten fahren Bahnen in Luftlinie weiter
-        run: |
-          if [ -f data/osm-rail.json ]; then
-            npm run snap:rail -- --osm data/osm-rail.json
-          else
-            npm run snap:rail
-          fi
+      - name: Fahrzeuge auf OpenStreetMap-Gleise und -Straßen legen
+        continue-on-error: true # ohne OSM-Daten fahren die Fahrzeuge in Luftlinie weiter
+        run: npm run snap:rail
 
       - name: Statische Variante mit Karte bauen
         run: npm run build:static -- --tiles

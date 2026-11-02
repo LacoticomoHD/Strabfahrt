@@ -160,6 +160,23 @@ function handleApi(url, req, res) {
       return sendJson(res, 200, model.plan(from, to, date, t).slice(0, 5));
     }
 
+    case '/api/reach': {
+      const station = num(q.get('station'), 0, model.stops.length - 1);
+      const date = q.get('date') || '';
+      const t = num(q.get('t'), -DAY_LIMIT, DAY_LIMIT);
+      const max = num(q.get('max'), 5, 90);
+      if (station === null || !Number.isInteger(station) || !parseYmd(date) || t === null || max === null) {
+        return sendJson(res, 400, { error: 'station, date, t, max ungueltig' });
+      }
+      return sendJson(res, 200, model.reach(station, date, t, max), {}, req);
+    }
+
+    case '/api/frequency': {
+      const w = parseTimeWindow(q);
+      if (!w) return sendJson(res, 400, { error: 'date, t0, t1 ungueltig (Fenster max. 6 h)' });
+      return sendJson(res, 200, model.frequency(w.date, w.t0, w.t1), { 'Cache-Control': 'public, max-age=300' }, req);
+    }
+
     case '/api/search':
       return sendJson(res, 200, model.search(q.get('q') || ''));
 
