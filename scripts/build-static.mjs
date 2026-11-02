@@ -2,6 +2,7 @@
 // Alles laeuft im Browser: Fahrplanlogik, Suche, Abfahrten. Geeignet fuer GitHub Pages oder jeden Datei-Webspace.
 //
 //   node scripts/build-static.mjs            ohne Kartenkacheln (schematisches Liniennetz)
+//   node scripts/build-static.mjs --tiles    mit OpenStreetMap-Kacheln (fuer eigenen Webspace, GitHub Pages)
 //
 // Voraussetzung: data/model.json und node_modules/leaflet (npm install).
 
@@ -23,7 +24,9 @@ copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
 for (const f of ['app.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
 fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT, 'public', 'local-api.js'), 'utf8').replace("'./model.mjs'", "'./model.js'"));
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
-fs.writeFileSync(path.join(OUT, 'static-flag.js'), 'window.STRAB_STATIC = true;\n');
+const tiles = process.argv.includes('--tiles');
+fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}`);
+if (tiles) console.log('Variante mit Kacheln: Nutzungsrichtlinie von OpenStreetMap beachten (geringe Last)');
 
 let html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
 html = html
@@ -32,7 +35,7 @@ html = html
   .replace('href="/style.css"', 'href="style.css"')
   .replace('<script src="vendor/leaflet/leaflet.js"></script>', '<script src="static-flag.js"></script>\n  <script src="vendor/leaflet/leaflet.js"></script>')
   .replace('<script src="/app.js" type="module"></script>', '<script src="app.js" type="module"></script>')
-  .replace('<title>STRABFAHRT – Fahrzeuge im Raum Karlsruhe</title>', '<title>STRABFAHRT (Vorschau)</title>');
+  .replace('<title>STRABFAHRT – Fahrzeuge im Raum Karlsruhe</title>', tiles ? '<title>STRABFAHRT</title>' : '<title>STRABFAHRT (Vorschau)</title>');
 if (html.includes('"/')) throw new Error('index.html enthaelt noch absolute Pfade');
 fs.writeFileSync(path.join(OUT, 'index.html'), html);
 

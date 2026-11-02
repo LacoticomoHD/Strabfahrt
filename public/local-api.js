@@ -20,7 +20,7 @@ export async function handle(path, params = {}) {
   const model = await getModel();
   switch (path) {
     case '/api/meta':
-      return { bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes };
+      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes };
     case '/api/stops':
       return model.stops;
     case '/api/network':

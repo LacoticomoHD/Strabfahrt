@@ -104,7 +104,7 @@ function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
-      return sendJson(res, 200, { bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes });
+      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
       return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);

@@ -12,6 +12,8 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Linienfilter: einzelne Linien ein- oder ausblenden
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
+- Verspätungsanzeige: Hinter jedem Fahrzeug erscheint ab Zoom 14 ein Zeichen mit Sekunden oder Minuten. Rot heißt zu spät, hellblau zu früh, grün pünktlich (unter 30 Sekunden Abweichung). **Echte Werte gibt es erst mit Echtzeitdaten.** Bis dahin zeigt der Schalter "Demo-Verspätung" erfundene Werte, nur zur Ansicht.
+
 Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorage), nichts geht an den Server.
 
 ## Wichtig: Was die App nicht kann
@@ -48,7 +50,7 @@ Den Feed sollte man regelmäßig neu bauen, der KVV aktualisiert ihn nahezu täg
 npm run build:static   # schreibt dist-static/ (reine Dateien, rechnet im Browser)
 ```
 
-Der Ordner lässt sich auf jedem Datei-Webspace oder GitHub Pages ablegen. Die Variante lädt keine Kartenkacheln und zeigt stattdessen ein schematisches Liniennetz. Wer Kacheln will, nutzt die Server-Variante.
+Der Ordner lässt sich auf jedem Datei-Webspace oder GitHub Pages ablegen. Ohne weitere Option lädt die Variante keine Kartenkacheln und zeigt stattdessen ein schematisches Liniennetz (nötig, wo Fremdbilder gesperrt sind, z. B. in Claude-Artifacts). Mit `npm run build:static -- --tiles` bekommt sie die OpenStreetMap-Karte wie die Server-Variante, dann aber ohne Gleisgeometrie und ohne Standort über HTTP.
 
 ### Fahrzeuge auf den Gleisen (optional)
 
@@ -82,6 +84,10 @@ Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsy
 - Die Idee der Fahrplan-Animation und der Haltestellenansicht stammt von bestehenden Projekten. Es wurde kein Code aus ihnen übernommen, alles hier ist eigene Umsetzung.
 - Code: MIT, siehe `LICENSE`.
 - Ohne Gewähr für Richtigkeit und Vollständigkeit der Daten.
+
+## Echtzeit anschließen
+
+Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: JSON-Objekt von Fahrt-ID (wie in `trips.txt`) auf Verspätung in Sekunden, positiv für zu spät, negativ für zu früh. Die Fahrzeugposition wird dann um diese Verspätung verschoben. Eine Echtzeitquelle ist noch nicht angebunden. Offiziell wäre das die TRIAS-Schnittstelle des KVV nach Abschluss der Nutzungsvereinbarung.
 
 ## Mögliche nächste Schritte
 

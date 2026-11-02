@@ -4,6 +4,8 @@
 const L = window.L;
 // Statische Variante (Artifact/GitHub Pages): Fahrplanlogik laeuft im Browser, keine Kartenkacheln
 const STATIC = window.STRAB_STATIC === true;
+// Kacheln: immer in der Server-Variante, in der statischen nur mit --tiles (Webspace, nicht Artifact)
+const TILES = !STATIC || window.STRAB_TILES === true;
 
 // ---------- Hilfen ----------
 
@@ -110,13 +112,15 @@ const state = {
   hiddenLines: new Set(load('strab.hiddenLines', [])),
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
+  delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
+  demo: false, // erfundene Werte, nur zum Ansehen der Darstellung
 };
 
 // ---------- Karte ----------
 
-const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: !STATIC, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
+const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: TILES, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-if (!STATIC) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+if (TILES) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
 }).addTo(map);
 
@@ -269,6 +273,32 @@ function along(g, f) {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
+// ---------- Verspaetung ----------
+
+function demoDelay(id) {
+  let h = 2166136261;
+  for (let i = 0; i < id.length; i++) { h ^= id.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 600) - 150; // -150 bis +449 Sekunden
+}
+
+function delayOf(trip) {
+  if (state.demo) return demoDelay(trip.id);
+  return state.delays.get(trip.id);
+}
+
+function fmtDelay(d) {
+  const a = Math.abs(d);
+  if (a < 30) return '0';
+  const sign = d > 0 ? '+' : '-';
+  return a < 60 ? `${sign}${Math.round(a)} s` : `${sign}${Math.round(a / 60)} min`;
+}
+
+function delayColors(d) {
+  if (d >= 30) return { bg: '#d32f2f', fg: '#ffffff' }; // zu spaet: rot
+  if (d <= -30) return { bg: '#8fd3ff', fg: '#06324d' }; // zu frueh: hellblau
+  return { bg: '#2e7d32', fg: '#ffffff' }; // puenktlich: gruen
+}
+
 // ---------- Position nach Fahrplan ----------
 
 function locate(trip, now) {
@@ -299,7 +329,7 @@ function drawFrame() {
   const stopLine = dark ? '#9db4d8' : '#33415c';
 
   // Schematisches Liniennetz als Hintergrund (nur ohne Kartenkacheln)
-  if (STATIC && state.networkGroups) {
+  if (!TILES && state.networkGroups) {
     const b = map.getBounds().pad(0.1);
     const colors = dark ? ['#8aa0c4', '#a7b3c9', '#56627a'] : ['#7d8aa3', '#4a5568', '#b8c0cd'];
     const widths = [2, 2.4, 1];
@@ -351,11 +381,12 @@ function drawFrame() {
     const route = state.meta.routes[pat.r];
     const style = routeStyle(route);
     if (!state.types.has(style.group) || state.hiddenLines.has(route[0])) continue;
-    const pos = locate(trip, state.sim);
+    const delay = delayOf(trip);
+    const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
     const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
     if (p.x < -40 || p.y < -40 || p.x > size.x + 40 || p.y > size.y + 40) continue;
-    out.push({ trip, pat, route, style, pos, x: p.x, y: p.y });
+    out.push({ trip, pat, route, style, pos, delay, x: p.x, y: p.y });
   }
   state.vehicles = out;
 
@@ -378,6 +409,21 @@ function drawFrame() {
       ctx.stroke();
       ctx.fillStyle = v.style.fg;
       ctx.fillText(label, v.x, v.y + 0.5);
+      if (v.delay !== undefined) {
+        const text = fmtDelay(v.delay);
+        const c = delayColors(v.delay);
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        const bw = ctx.measureText(text).width + 8;
+        const bx = v.x + w / 2 + 3 + bw / 2;
+        ctx.fillStyle = c.bg;
+        roundRect(bx - bw / 2, v.y - 7, bw, 14, 4);
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = dark ? '#1b2230' : '#ffffff';
+        ctx.stroke();
+        ctx.fillStyle = c.fg;
+        ctx.fillText(text, bx, v.y + 0.5);
+      }
     } else {
       ctx.beginPath();
       ctx.arc(v.x, v.y, zoom >= 12 ? 5 : 3.5, 0, Math.PI * 2);
@@ -467,6 +513,7 @@ $('play').addEventListener('click', () => {
   $('play').textContent = state.playing ? '❚❚' : '▶';
   $('play').setAttribute('aria-label', state.playing ? 'Pause' : 'Abspielen');
 });
+$('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if (state.selected) renderVehiclePanel(); });
 $('speed').addEventListener('change', (e) => { state.speed = Number(e.target.value); state.window = null; });
 $('now').addEventListener('click', () => { state.sim = wallNow(); state.speed = 1; $('speed').value = '1'; state.window = null; });
 $('when').addEventListener('change', (e) => {
@@ -535,11 +582,12 @@ function renderVehiclePanel() {
   const pat = state.patterns.get(trip.pid);
   const route = state.meta.routes[pat.r];
   const style = routeStyle(route);
-  const pos = locate(trip, state.sim);
+  const pos = locate(trip, state.sim - (delayOf(trip) || 0));
   const body = $('panel-body');
   body.replaceChildren();
   body.append(el('h2', {}, pill(route[0], style), ' ', cleanHeadsign(route[0], pat.h) || 'Ziel unbekannt'));
-  let sub = 'Fahrplanposition (Soll)';
+  const delay = delayOf(trip);
+  let sub = delay === undefined ? 'Fahrplanposition (Soll)' : `${fmtDelay(delay)} gegenüber Fahrplan${state.demo ? ' (Demo, erfundene Werte)' : ''}`;
   if (!pos) sub = state.sim < trip.t0 ? `Fährt ab ${hhmm(trip.t0)}` : 'Fahrt beendet';
   body.append(el('div', { class: 'sub' }, sub));
   const table = el('table');
@@ -852,12 +900,19 @@ async function init() {
     state.stations.push({ index: i, lat: s[2], lon: s[3], name: s[1] });
   });
 
-  if (STATIC) {
+  if (STATIC && !TILES) {
     document.body.classList.add('static');
     const groups = [[], [], []];
     for (const [a, b, g] of await api('/api/network')) groups[g].push([a, b]);
     state.networkGroups = groups;
     $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0). Ohne Gewähr.';
+  }
+  if (meta.realtime) {
+    const poll = async () => {
+      try { state.delays = new Map(Object.entries(await api('/api/delays')).map(([k, v]) => [k, Number(v)])); } catch (e) { console.error(e); }
+    };
+    poll();
+    setInterval(poll, 20000);
   }
   const h = readHash();
   const [s, w, n, e] = meta.bbox;
