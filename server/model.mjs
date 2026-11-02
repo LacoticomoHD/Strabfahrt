@@ -32,7 +32,7 @@ export class Model {
     this.patterns = m.patterns.map(([route, headsign, stops]) => ({ route, headsign, stops }));
     this.profiles = m.profiles;
     this.services = m.services;
-    this.trips = m.trips.map(([service, pattern, profile, start, id]) => ({ service, pattern, profile, start, id }));
+    this.trips = m.trips.map(([service, pattern, profile, start, id, flags]) => ({ service, pattern, profile, start, id, flags: flags || 0 }));
 
     // Dauer je Zeitprofil (letzte Ankunft)
     this.profileEnd = this.profiles.map((p) => p[p.length - 2]);
@@ -147,7 +147,7 @@ export class Model {
       }
       if (!patterns[trip.pattern]) patterns[trip.pattern] = { r: p.route, h: p.headsign, s: p.stops };
       if (!profiles[trip.profile]) profiles[trip.profile] = this.profiles[trip.profile];
-      trips.push([trip.pattern, trip.id, start, trip.profile]);
+      trips.push([trip.pattern, trip.id, start, trip.profile, trip.flags]);
     }
     return { patterns, profiles, trips };
   }
@@ -187,13 +187,233 @@ export class Model {
             const dep = t.start + shift + this.profiles[t.profile][pos * 2 + 1];
             if (dep < from || dep > to) continue;
             const r = this.routes[p.route];
-            out.push({ t: dep, line: r[0], type: r[1], color: r[2], textColor: r[3], headsign: p.headsign, platform: this.stops[sIdx][5], stop: sIdx, trip: t.id });
+            out.push({ t: dep, line: r[0], type: r[1], color: r[2], textColor: r[3], headsign: p.headsign, platform: this.stops[sIdx][5], stop: sIdx, trip: t.id, flags: t.flags });
           }
         }
       }
     }
     out.sort((a, b) => a.t - b.t);
     return out.slice(0, limit);
+  }
+
+  // ---------- Linien ----------
+
+  // Haeufigstes Muster je Fahrtrichtung einer Linie (Name wie im Fahrplan, z. B. "S1" oder "3")
+  line(name) {
+    // Richtung = Endhaltestelle (Station), je Richtung das haeufigste Muster
+    const byEnd = new Map();
+    this.patterns.forEach((p, pid) => {
+      if (this.routes[p.route][0] !== name) return;
+      const last = p.stops[p.stops.length - 1];
+      const key = this.stops[last][4] >= 0 ? this.stops[last][4] : last;
+      const trips = this.patternTrips[pid].length;
+      const cur = byEnd.get(key);
+      if (!cur || trips > cur.trips) byEnd.set(key, { route: p.route, headsign: p.headsign, stops: p.stops, trips });
+    });
+    return [...byEnd.values()].sort((a, b) => b.trips - a.trips).slice(0, 4);
+  }
+
+  // ---------- Verbindungssuche (RAPTOR) ----------
+
+  _planIndex() {
+    if (this._pi) return this._pi;
+    const group = this.stops.map((s, i) => (s[4] >= 0 ? s[4] : i));
+    const patGroups = this.patterns.map((p) => p.stops.map((i) => group[i]));
+    const groupPatterns = new Map();
+    patGroups.forEach((gs, pid) => gs.forEach((g, pos) => {
+      if (!groupPatterns.has(g)) groupPatterns.set(g, []);
+      groupPatterns.get(g).push([pid, pos]);
+    }));
+    // Fusswege zwischen Stationen bis 250 m
+    const CELL = 0.004;
+    const grid = new Map();
+    const cellOf = (lat, lon) => `${Math.floor(lat / CELL)},${Math.floor(lon / CELL)}`;
+    for (const g of groupPatterns.keys()) {
+      const k = cellOf(this.stops[g][2], this.stops[g][3]);
+      if (!grid.has(k)) grid.set(k, []);
+      grid.get(k).push(g);
+    }
+    const walk = new Map();
+    for (const g of groupPatterns.keys()) {
+      const lat = this.stops[g][2];
+      const lon = this.stops[g][3];
+      const kx = Math.cos((lat * Math.PI) / 180) * 111320;
+      const cy = Math.floor(lat / CELL);
+      const cx = Math.floor(lon / CELL);
+      const out = [];
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          for (const h of grid.get(`${cy + dy},${cx + dx}`) || []) {
+            if (h === g) continue;
+            const d = Math.hypot((this.stops[h][3] - lon) * kx, (this.stops[h][2] - lat) * 110540);
+            if (d <= 250) out.push([h, Math.round(d / 1.2) + 30]);
+          }
+        }
+      }
+      if (out.length) walk.set(g, out);
+    }
+    this._pi = { group, patGroups, groupPatterns, walk };
+    return this._pi;
+  }
+
+  // Frueheste Ankunft mit 0 bis maxRounds Umstiegen. Zeiten in Sekunden seit 00:00 von ymd.
+  plan(fromIdx, toIdx, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120 } = {}) {
+    const pi = this._planIndex();
+    const src = pi.group[fromIdx];
+    const dst = pi.group[toIdx];
+    if (src === dst) return [];
+    const N = this.stops.length;
+
+    // Fahrten im Zeitfenster, gruppiert nach Muster
+    const byPattern = new Map();
+    for (const dayOffset of [-1, 0, 1]) {
+      const shift = dayOffset * DAY;
+      for (const sIdx of this.activeServices(addDays(ymd, dayOffset))) {
+        for (const ti of this.tripsByService[sIdx]) {
+          const t = this.trips[ti];
+          const start = t.start + shift;
+          if (start > depSec + window) continue;
+          if (start + this.profileEnd[t.profile] < depSec) continue;
+          let list = byPattern.get(t.pattern);
+          if (!list) byPattern.set(t.pattern, (list = []));
+          list.push({ ti, start });
+        }
+      }
+    }
+    for (const list of byPattern.values()) list.sort((a, b) => a.start - b.start);
+
+    const best = new Float64Array(N).fill(Infinity);
+    let prevTau = new Float64Array(N).fill(Infinity);
+    let prevBuf = new Float64Array(N);
+    const parents = [];
+
+    const relaxWalk = (tau, buf, par, fromSet) => {
+      const added = [];
+      for (const g of fromSet) {
+        const here = par.get(g);
+        if (here && here.type === 'walk') continue; // keine Fussweg-Ketten
+        for (const [h, secs] of pi.walk.get(g) || []) {
+          const t = tau[g] + secs;
+          if (t < best[h]) {
+            tau[h] = t;
+            buf[h] = 0;
+            best[h] = t;
+            par.set(h, { type: 'walk', from: g, secs });
+            added.push(h);
+          }
+        }
+      }
+      return added;
+    };
+
+    // Runde 0: Start, plus Fusswege
+    {
+      const tau = Float64Array.from(prevTau);
+      const buf = Float64Array.from(prevBuf);
+      const par = new Map();
+      tau[src] = depSec;
+      best[src] = depSec;
+      const added = relaxWalk(tau, buf, par, [src]);
+      parents.push(par);
+      prevTau = tau;
+      prevBuf = buf;
+      var marked = new Set([src, ...added]);
+    }
+
+    const roundsReachingDst = [];
+    for (let k = 1; k <= maxRounds && marked.size; k++) {
+      const tau = Float64Array.from(prevTau);
+      const buf = Float64Array.from(prevBuf);
+      const par = new Map();
+      const queue = new Map();
+      for (const g of marked) {
+        for (const [pid, pos] of pi.groupPatterns.get(g) || []) {
+          if (!byPattern.has(pid)) continue;
+          const cur = queue.get(pid);
+          if (cur === undefined || pos < cur) queue.set(pid, pos);
+        }
+      }
+      const rideEnds = [];
+      for (const [pid, startPos] of queue) {
+        const gs = pi.patGroups[pid];
+        const list = byPattern.get(pid);
+        let cur = null;
+        let boardPos = -1;
+        for (let pos = startPos; pos < gs.length; pos++) {
+          const g = gs[pos];
+          if (cur) {
+            const arr = cur.start + this.profiles[this.trips[cur.ti].profile][2 * pos];
+            if (arr < best[g] && arr < best[dst]) {
+              tau[g] = arr;
+              buf[g] = minTransfer;
+              best[g] = arr;
+              par.set(g, { type: 'ride', pid, ti: cur.ti, start: cur.start, boardPos, alightPos: pos });
+              rideEnds.push(g);
+            }
+          }
+          const ready = prevTau[g] + prevBuf[g];
+          if (ready < Infinity && pos < gs.length - 1) {
+            let found = null;
+            let foundDep = Infinity;
+            for (const c of list) {
+              const dep = c.start + this.profiles[this.trips[c.ti].profile][2 * pos + 1];
+              if (dep >= ready && dep < foundDep) { found = c; foundDep = dep; }
+            }
+            if (found) {
+              const curDep = cur ? cur.start + this.profiles[this.trips[cur.ti].profile][2 * pos + 1] : Infinity;
+              if (foundDep < curDep) { cur = found; boardPos = pos; }
+            }
+          }
+        }
+      }
+      const added = relaxWalk(tau, buf, par, rideEnds);
+      marked = new Set([...rideEnds, ...added]);
+      parents.push(par);
+      prevTau = tau;
+      prevBuf = buf;
+      if (par.has(dst)) roundsReachingDst.push(k);
+    }
+
+    const build = (k) => {
+      const legs = [];
+      let kk = k;
+      let g = dst;
+      for (let guard = 0; guard < 40; guard++) {
+        let p = parents[kk].get(g);
+        while (!p && kk > 0) { kk--; p = parents[kk].get(g); }
+        if (!p) break;
+        if (p.type === 'walk') {
+          legs.push({ type: 'walk', from: p.from, to: g, secs: p.secs });
+          g = p.from;
+          continue;
+        }
+        const t = this.trips[p.ti];
+        const pat = this.patterns[p.pid];
+        const prof = this.profiles[t.profile];
+        const route = this.routes[pat.route];
+        legs.push({
+          type: 'ride', line: route[0], routeType: route[1], color: route[2], textColor: route[3], headsign: pat.headsign,
+          trip: t.id, flags: t.flags, from: pi.patGroups[p.pid][p.boardPos], to: g,
+          dep: p.start + prof[2 * p.boardPos + 1], arr: p.start + prof[2 * p.alightPos],
+          stops: pat.stops.slice(p.boardPos, p.alightPos + 1),
+        });
+        g = pi.patGroups[p.pid][p.boardPos];
+        kk--;
+        if (kk < 0) break;
+      }
+      legs.reverse();
+      return legs;
+    };
+
+    return roundsReachingDst.map((k) => {
+      const legs = build(k);
+      const rides = legs.filter((l) => l.type === 'ride');
+      if (!rides.length) return null;
+      let arr = rides[rides.length - 1].arr;
+      const last = legs[legs.length - 1];
+      if (last.type === 'walk') arr += last.secs;
+      return { dep: rides[0].dep, arr, transfers: rides.length - 1, legs };
+    }).filter(Boolean);
   }
 
   // Alle befahrenen Haltepaare mit Verkehrsmittel-Gruppe (fuer die Hintergrundkarte ohne Kacheln)

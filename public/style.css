@@ -87,6 +87,7 @@ label { white-space: nowrap; }
 #tools { display: flex; gap: 6px; pointer-events: auto; }
 #tools button { font: inherit; padding: 7px 10px; border: 0; border-radius: 8px; background: var(--bg); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; }
 #tools button span { margin-left: 5px; }
+#tools button[hidden] { display: none; }
 #tools button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
 #search { background: var(--bg); color: var(--fg); }
 #results li { color: var(--fg); }
@@ -118,3 +119,21 @@ label { white-space: nowrap; }
 body.static .ovl { display: none; }
 #map { background: #eef1f4; }
 :root[data-theme="dark"] #map { background: #1d232c; }
+
+/* Linien, Route, Teilen */
+.pillbtn { cursor: pointer; }
+.pillbtn:hover { filter: brightness(1.1); }
+.urlbox { width: 100%; font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--fg); }
+.sf { position: relative; margin-bottom: 8px; }
+.sf input, .timebox { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--soft); color: var(--fg); }
+.timebox { width: auto; padding: 4px 8px; }
+.sfl { position: absolute; z-index: 5; left: 0; right: 0; list-style: none; margin: 2px 0 0; padding: 4px 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); max-height: 220px; overflow: auto; }
+.sfl li { padding: 7px 10px; cursor: pointer; }
+.sfl li:hover { background: var(--hover); }
+.rowbtns { margin: 4px 0; color: var(--muted); }
+.chip.go { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
+.jcard { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; cursor: pointer; }
+.jcard[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.jh { font-weight: 700; margin-bottom: 4px; }
+.leg { margin: 6px 0; padding-left: 4px; }
+.leg.walk { color: var(--muted); }

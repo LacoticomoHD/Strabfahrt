@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>STRABFAHRT – Fahrzeuge im Raum Karlsruhe</title>
   <meta name="description" content="Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit Abfahrtsanzeige je Haltestelle.">
+  <meta name="theme-color" content="#0b5cad">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="/style.css">
 </head>
@@ -21,8 +25,10 @@
     <nav id="tools" aria-label="Werkzeuge">
       <button id="btn-favs" type="button" aria-label="Favoriten">★<span>Favoriten</span></button>
       <button id="btn-nearby" type="button" aria-label="In der Nähe">◎<span>Nähe</span></button>
+      <button id="btn-route" type="button" aria-label="Verbindung suchen">⇄<span>Route</span></button>
       <button id="btn-lines" type="button" aria-label="Linien filtern">☰<span>Linien</span></button>
       <button id="btn-theme" type="button" aria-label="Dunkelmodus" aria-pressed="false">☾</button>
+      <button id="btn-install" type="button" aria-label="App installieren" hidden>⤓<span>Installieren</span></button>
     </nav>
   </header>
 
@@ -55,6 +61,7 @@
       <label><input type="checkbox" data-type="rail" checked> Bahn</label>
       <label><input type="checkbox" data-type="bus" checked> Bus</label>
       <label><input type="checkbox" data-type="other" checked> Sonstige</label>
+      <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
       <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
       <span class="sep ovl"></span>
       <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>

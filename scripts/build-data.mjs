@@ -135,7 +135,9 @@ async function main() {
   // Fahrten
   const trips = new Map();
   await readCsv(f('trips.txt'), (g) => {
-    trips.set(g('trip_id'), { route: g('route_id'), service: g('service_id'), headsign: g('trip_headsign') });
+    const wc = Number(g('wheelchair_accessible')) || 0; // 0 unbekannt, 1 ja, 2 nein
+    const bk = Number(g('bikes_allowed')) || 0;
+    trips.set(g('trip_id'), { route: g('route_id'), service: g('service_id'), headsign: g('trip_headsign'), flags: (wc & 3) | ((bk & 3) << 2) });
   });
   console.log('Fahrten im Feed:', trips.size);
 
@@ -225,7 +227,7 @@ async function main() {
       sIdx = services.size;
       services.set(trip.service, sIdx);
     }
-    tripOut.push([sIdx, pIdx, tIdx, start, id]);
+    tripOut.push([sIdx, pIdx, tIdx, start, id, trip.flags]);
     kept++;
   }
 

@@ -26,9 +26,22 @@ async function loadOsm(bbox) {
   const [s, w, n, e] = bbox;
   const query = `[out:json][timeout:120];way["railway"~"^(rail|tram|light_rail)$"]["service"!~"yard|siding|spur|crossover"](${s},${w},${n},${e});out geom;`;
   console.log('Lade Gleise von', OVERPASS);
-  const res = await fetch(OVERPASS, { method: 'POST', body: new URLSearchParams({ data: query }) });
-  if (!res.ok) throw new Error(`Overpass: HTTP ${res.status}`);
-  const json = await res.json();
+  let json = null;
+  for (let attempt = 1; attempt <= 3 && !json; attempt++) {
+    try {
+      const res = await fetch(OVERPASS, {
+        method: 'POST',
+        headers: { 'User-Agent': 'STRABFAHRT/0.1 (Fahrplankarte Karlsruhe)' },
+        body: new URLSearchParams({ data: query }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      json = await res.json();
+    } catch (e) {
+      console.warn(`Overpass, Versuch ${attempt}: ${e.message}`);
+      if (attempt === 3) throw e;
+      await new Promise((r) => setTimeout(r, attempt * 20000));
+    }
+  }
   fs.writeFileSync(path.join(DATA, 'osm-rail.json'), JSON.stringify(json));
   return json;
 }

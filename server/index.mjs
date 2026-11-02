@@ -35,6 +35,7 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.json': 'application/json; charset=utf-8',
   '.ico': 'image/x-icon',
+  '.webmanifest': 'application/manifest+json',
 };
 
 const SECURITY_HEADERS = {
@@ -140,6 +141,23 @@ function handleApi(url, req, res) {
         ...SECURITY_HEADERS,
       });
       return res.end(wantsGzip ? shapesGzip : shapesRaw);
+    }
+
+    case '/api/line': {
+      const name = q.get('name') || '';
+      if (!name || name.length > 20) return sendJson(res, 400, { error: 'name ungueltig' });
+      return sendJson(res, 200, model.line(name));
+    }
+
+    case '/api/plan': {
+      const from = num(q.get('from'), 0, model.stops.length - 1);
+      const to = num(q.get('to'), 0, model.stops.length - 1);
+      const date = q.get('date') || '';
+      const t = num(q.get('t'), -DAY_LIMIT, DAY_LIMIT);
+      if (from === null || to === null || !Number.isInteger(from) || !Number.isInteger(to) || !parseYmd(date) || t === null) {
+        return sendJson(res, 400, { error: 'from, to, date, t ungueltig' });
+      }
+      return sendJson(res, 200, model.plan(from, to, date, t).slice(0, 5));
     }
 
     case '/api/search':

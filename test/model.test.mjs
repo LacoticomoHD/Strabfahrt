@@ -69,3 +69,53 @@ test('Netz: jedes Haltepaar genau einmal, Richtung egal', () => {
   assert.equal(net.length, 2);
   assert.ok(net.every((e) => e[2] === 0)); // Tram
 });
+
+// ---------- Verbindungssuche ----------
+
+const planFixture = {
+  meta: { bbox: [0, 0, 1, 1], feedVersion: 't', built: 'p', source: 'x' },
+  routes: [['A', 0, 'ff0000', 'ffffff', '1'], ['B', 0, '0000ff', 'ffffff', '1'], ['D', 3, '00ff00', '000000', '1']],
+  stops: [
+    ['s1', 'Start', 0.10, 0.10, -1, '', 0],
+    ['s2', 'Mitte', 0.20, 0.20, -1, '', 0],
+    ['s3', 'Ziel', 0.30, 0.30, -1, '', 0],
+  ],
+  patterns: [[0, 'Mitte', [0, 1]], [1, 'Ziel', [1, 2]], [2, 'Ziel direkt', [0, 2]]],
+  profiles: [[0, 0, 600, 600], [0, 0, 3600, 3600]],
+  services: [{ d: '1111111', s: '20260101', e: '20261231', add: [], rem: [] }],
+  trips: [
+    [0, 0, 0, 8 * 3600, 'a1', 0], // Start 8:00 -> Mitte 8:10
+    [0, 1, 0, 8 * 3600 + 11 * 60, 'b0', 0], // Mitte 8:11, zu knapp (Puffer 2 min)
+    [0, 1, 0, 8 * 3600 + 15 * 60, 'b1', 0], // Mitte 8:15 -> Ziel 8:25
+    [0, 2, 1, 8 * 3600, 'd1', 0], // direkt 8:00 -> 9:00
+  ],
+};
+const planModel = new Model(planFixture);
+
+test('Verbindungssuche: Umstieg mit Puffer, zu knappe Fahrt wird uebersprungen', () => {
+  const r = planModel.plan(0, 2, '20261102', 7 * 3600 + 55 * 60);
+  const withTransfer = r.find((j) => j.transfers === 1);
+  assert.ok(withTransfer, 'Verbindung mit einem Umstieg erwartet');
+  assert.equal(withTransfer.arr, 8 * 3600 + 25 * 60);
+  const second = withTransfer.legs.filter((l) => l.type === 'ride')[1];
+  assert.equal(second.trip, 'b1');
+});
+
+test('Verbindungssuche: Direktfahrt ist ebenfalls dabei, mit spaeterer Ankunft', () => {
+  const r = planModel.plan(0, 2, '20261102', 7 * 3600 + 55 * 60);
+  const direct = r.find((j) => j.transfers === 0);
+  assert.ok(direct);
+  assert.equal(direct.arr, 9 * 3600);
+});
+
+test('Verbindungssuche: nichts, wenn Start gleich Ziel oder keine Fahrt mehr kommt', () => {
+  assert.deepEqual(planModel.plan(0, 0, '20261102', 8 * 3600), []);
+  assert.deepEqual(planModel.plan(0, 2, '20261102', 12 * 3600), []);
+});
+
+test('Linienansicht: Muster je Fahrtrichtung', () => {
+  const l = planModel.line('B');
+  assert.equal(l.length, 1);
+  assert.equal(l[0].headsign, 'Ziel');
+  assert.deepEqual(l[0].stops, [1, 2]);
+});

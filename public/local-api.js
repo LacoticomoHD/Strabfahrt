@@ -25,8 +25,11 @@ export async function handle(path, params = {}) {
       return model.stops;
     case '/api/network':
       return model.network();
-    case '/api/shapes':
-      throw new Error('keine Gleisgeometrien in der statischen Version');
+    case '/api/shapes': {
+      const r = await fetch('./shapes.json');
+      if (!r.ok) throw new Error('keine Gleisgeometrien vorhanden');
+      return r.json();
+    }
     case '/api/vehicles': {
       const bbox = params.bbox ? String(params.bbox).split(',').map(Number) : null;
       let types = null;
@@ -36,6 +39,10 @@ export async function handle(path, params = {}) {
       }
       return model.vehicles(String(params.date), Number(params.t0), Number(params.t1), bbox, types);
     }
+    case '/api/line':
+      return model.line(String(params.name || ''));
+    case '/api/plan':
+      return model.plan(Number(params.from), Number(params.to), String(params.date), Number(params.t)).slice(0, 5);
     case '/api/search':
       return model.search(String(params.q || ''));
     case '/api/departures': {

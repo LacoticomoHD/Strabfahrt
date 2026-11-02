@@ -22,6 +22,20 @@ copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
 // .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
 copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
 for (const f of ['app.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
+for (const f of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon.svg']) copy(path.join(ROOT, 'public', f), f);
+// Gleisgeometrie nur mitnehmen, wenn sie zu genau diesem Modell passt
+const shapesFile = path.join(ROOT, 'data', 'shapes.json');
+if (fs.existsSync(shapesFile)) {
+  const shapes = JSON.parse(fs.readFileSync(shapesFile, 'utf8'));
+  const model = JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'model.json'), 'utf8'));
+  if (shapes.meta && shapes.meta.modelBuilt === model.meta.built) {
+    copy(shapesFile, 'shapes.json');
+    console.log(`Gleisgeometrie eingebunden (${shapes.meta.matched} Abschnitte)`);
+  } else {
+    console.warn('data/shapes.json passt nicht zu data/model.json und wird nicht eingebunden');
+  }
+}
+fs.writeFileSync(path.join(OUT, 'sw.js'), fs.readFileSync(path.join(ROOT, 'public', 'sw.js'), 'utf8').replace("const VERSION = 'dev';", `const VERSION = '${Date.now()}';`));
 fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT, 'public', 'local-api.js'), 'utf8').replace("'./model.mjs'", "'./model.js'"));
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
 const tiles = process.argv.includes('--tiles');

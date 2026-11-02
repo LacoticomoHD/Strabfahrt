@@ -74,12 +74,21 @@ function cleanHeadsign(line, hs) {
   return hs.startsWith(line + ' ') ? hs.slice(line.length + 1) : hs;
 }
 
-function pill(line, style) {
-  const p = el('span', { class: 'pill' }, line);
+function pill(line, style, onClick) {
+  const p = el('span', { class: onClick ? 'pill pillbtn' : 'pill' }, line);
   p.style.background = style.bg;
   p.style.color = style.fg;
+  if (onClick) {
+    p.setAttribute('role', 'button');
+    p.setAttribute('tabindex', '0');
+    p.setAttribute('aria-label', `Linie ${line} ansehen`);
+    p.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    p.addEventListener('keydown', (e) => { if (e.key === 'Enter') onClick(); });
+  }
   return p;
 }
+
+const accessible = (flags) => ((flags || 0) & 3) === 1;
 
 // ---------- Lokaler Speicher (nur dieser Browser) ----------
 
@@ -114,6 +123,12 @@ const state = {
   here: null, // { lat, lon } Standort
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
   demo: false, // erfundene Werte, nur zum Ansehen der Darstellung
+  onlyAccessible: false,
+  follow: null, // Fahrt-ID, der die Karte folgt
+  lineView: null, // { name, dirs, active }
+  route: { from: null, to: null },
+  journeys: [],
+  journey: null, // gewaehlte Verbindung
 };
 
 // ---------- Karte ----------
@@ -163,14 +178,20 @@ function parseHash() {
   const z = Number(p.get('z'));
   const lat = Number(p.get('lat'));
   const lon = Number(p.get('lon'));
-  if (Number.isFinite(z) && Number.isFinite(lat) && Number.isFinite(lon) && p.has('z')) return { z, lat, lon, ol: (p.get('ol') || '').split(',').filter(Boolean) };
+  if (Number.isFinite(z) && Number.isFinite(lat) && Number.isFinite(lon) && p.has('z')) return { z, lat, lon, st: p.get('st'), ol: (p.get('ol') || '').split(',').filter(Boolean) };
   return null;
+}
+let hashTimer = null;
+function scheduleHash() {
+  clearTimeout(hashTimer);
+  hashTimer = setTimeout(writeHash, 400);
 }
 function writeHash() {
   const c = map.getCenter();
   const ol = Object.keys(overlays).filter((k) => map.hasLayer(overlays[k]));
   const p = new URLSearchParams({ z: map.getZoom(), lat: c.lat.toFixed(5), lon: c.lng.toFixed(5) });
   if (ol.length) p.set('ol', ol.join(','));
+  if (state.station !== null && state.stops[state.station]) p.set('st', state.stops[state.station][0]);
   try { history.replaceState(null, '', `#${p}`); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
 }
 
@@ -211,16 +232,16 @@ async function loadWindow(force = false) {
     const data = await api('/api/vehicles', { date: ymd, t0, t1, bbox: bbox.map((x) => x.toFixed(5)).join(','), types: typesKey });
     for (const [k, v] of Object.entries(data.patterns)) state.patterns.set(Number(k), v);
     for (const [k, v] of Object.entries(data.profiles)) state.profiles.set(Number(k), v);
-    state.trips = data.trips.map(([pid, id, start, prof]) => {
+    state.trips = data.trips.map(([pid, id, start, prof, flags]) => {
       const profile = state.profiles.get(prof);
       const t = base + start;
-      return { pid, id, t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
+      return { pid, id, flags: flags || 0, t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
     });
     state.window = { from: base + t0, to: base + t1, bbox, types: typesKey };
     if (state.list === 'lines') renderLines();
     if (state.selected) {
       const again = state.trips.find((t) => t.id === state.selected.id);
-      if (again) state.selected = again;
+      if (again) { state.selected = again; renderVehiclePanel(); }
     }
   } catch (e) {
     console.error(e);
@@ -376,20 +397,30 @@ function drawFrame() {
 
   // Fahrzeuge
   const out = [];
+  let followPos = null;
   for (const trip of state.trips) {
     const pat = state.patterns.get(trip.pid);
     const route = state.meta.routes[pat.r];
     const style = routeStyle(route);
     if (!state.types.has(style.group) || state.hiddenLines.has(route[0])) continue;
+    if (state.onlyAccessible && !accessible(trip.flags)) continue;
     const delay = delayOf(trip);
     const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
+    if (state.follow === trip.id) followPos = pos;
     const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
     if (p.x < -40 || p.y < -40 || p.x > size.x + 40 || p.y > size.y + 40) continue;
     out.push({ trip, pat, route, style, pos, delay, x: p.x, y: p.y });
   }
   state.vehicles = out;
+  if (followPos) {
+    const c = map.latLngToContainerPoint([followPos.lat, followPos.lon]);
+    const dx = c.x - size.x / 2;
+    const dy = c.y - size.y / 2;
+    if (Math.hypot(dx, dy) > 1.5) map.panBy([dx, dy], { animate: false });
+  }
 
+  drawOverlays();
   if (state.selected) drawRoute(state.selected);
   if (state.here) drawHere();
 
@@ -462,24 +493,69 @@ function roundRect(x, y, w, h, r) {
   ctx.closePath();
 }
 
-function drawRoute(trip) {
-  const pat = state.patterns.get(trip.pid);
-  if (!pat) return;
-  const style = routeStyle(state.meta.routes[pat.r]);
+function drawPath(stopIdxs, color, width = 4, alpha = 0.65) {
   ctx.beginPath();
   let first = true;
-  for (let i = 1; i < pat.s.length; i++) {
-    for (const pt of segGeom(pat.s[i - 1], pat.s[i]).pts) {
+  for (let i = 1; i < stopIdxs.length; i++) {
+    for (const pt of segGeom(stopIdxs[i - 1], stopIdxs[i]).pts) {
       const p = map.latLngToContainerPoint(pt);
       if (first) { ctx.moveTo(p.x, p.y); first = false; } else ctx.lineTo(p.x, p.y);
     }
   }
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = style.bg;
-  ctx.globalAlpha = 0.65;
+  ctx.lineWidth = width;
+  ctx.strokeStyle = color;
+  ctx.globalAlpha = alpha;
   ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.setLineDash([]);
   ctx.stroke();
   ctx.globalAlpha = 1;
+}
+
+function drawRoute(trip) {
+  const pat = state.patterns.get(trip.pid);
+  if (!pat) return;
+  drawPath(pat.s, routeStyle(state.meta.routes[pat.r]).bg);
+}
+
+function drawOverlays() {
+  if (state.lineView) {
+    const d = state.lineView.dirs[state.lineView.active];
+    if (d) drawPath(d.stops, routeStyle(state.meta.routes[d.route]).bg, 5, 0.8);
+  }
+  const j = state.journey;
+  if (!j) return;
+  for (const leg of j.legs) {
+    if (leg.type === 'ride') {
+      drawPath(leg.stops, `#${/^[0-9a-f]{6}$/i.test(leg.color) ? leg.color : '444444'}`, 6, 0.85);
+    } else {
+      const a = state.stops[leg.from];
+      const b = state.stops[leg.to];
+      const p1 = map.latLngToContainerPoint([a[2], a[3]]);
+      const p2 = map.latLngToContainerPoint([b[2], b[3]]);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.setLineDash([2, 7]);
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = document.documentElement.dataset.theme === 'dark' ? '#e6ebf5' : '#1d2330';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  const rides = j.legs.filter((l) => l.type === 'ride');
+  const ends = [[state.stops[rides[0].from], '#2e7d32'], [state.stops[j.legs[j.legs.length - 1].to], '#d32f2f']];
+  for (const [st, color] of ends) {
+    const p = map.latLngToContainerPoint([st[2], st[3]]);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+  }
 }
 
 // ---------- Uhr ----------
@@ -497,7 +573,7 @@ function tick(now) {
     if (!document.activeElement || document.activeElement.id !== 'when') {
       $('when').value = new Date(state.sim * 1000).toISOString().slice(0, 16);
     }
-    if (state.selected) renderVehiclePanel();
+    if (state.selected) updateVehiclePanel();
   }
   if (state.meta) {
     loadWindow();
@@ -514,6 +590,7 @@ $('play').addEventListener('click', () => {
   $('play').setAttribute('aria-label', state.playing ? 'Pause' : 'Abspielen');
 });
 $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if (state.selected) renderVehiclePanel(); });
+$('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('speed').addEventListener('change', (e) => { state.speed = Number(e.target.value); state.window = null; });
 $('now').addEventListener('click', () => { state.sim = wallNow(); state.speed = 1; $('speed').value = '1'; state.window = null; });
 $('when').addEventListener('change', (e) => {
@@ -527,7 +604,8 @@ document.querySelectorAll('input[data-type]').forEach((box) => {
   });
 });
 
-map.on('moveend', writeHash);
+map.on('moveend', scheduleHash);
+map.on('dragstart', () => { if (state.follow) { state.follow = null; if (state.selected) renderVehiclePanel(); } });
 
 map.on('click', (e) => {
   const pt = map.latLngToContainerPoint(e.latlng);
@@ -548,6 +626,7 @@ map.on('click', (e) => {
     }
     if (bs) { openStation(bs.index); return; }
   }
+  if (state.list === 'route' || state.list === 'line') return; // Panel bleibt offen
   closePanel();
 });
 
@@ -562,7 +641,11 @@ function closePanel() {
   state.selected = null;
   state.station = null;
   state.list = null;
+  state.follow = null;
+  state.lineView = null;
+  state.journey = null;
   clearInterval(stationTimer);
+  scheduleHash();
   $('panel').hidden = true;
   document.body.classList.remove('panel-open');
 }
@@ -572,9 +655,15 @@ function selectVehicle(trip) {
   clearInterval(stationTimer);
   state.station = null;
   state.list = null;
+  state.lineView = null;
+  state.journey = null;
+  if (state.follow !== trip.id) state.follow = null;
   state.selected = trip;
   renderVehiclePanel();
+  scheduleHash();
 }
+
+let vehicleView = null;
 
 function renderVehiclePanel() {
   const trip = state.selected;
@@ -582,28 +671,61 @@ function renderVehiclePanel() {
   const pat = state.patterns.get(trip.pid);
   const route = state.meta.routes[pat.r];
   const style = routeStyle(route);
-  const pos = locate(trip, state.sim - (delayOf(trip) || 0));
   const body = $('panel-body');
   body.replaceChildren();
-  body.append(el('h2', {}, pill(route[0], style), ' ', cleanHeadsign(route[0], pat.h) || 'Ziel unbekannt'));
-  const delay = delayOf(trip);
-  let sub = delay === undefined ? 'Fahrplanposition (Soll)' : `${fmtDelay(delay)} gegenüber Fahrplan${state.demo ? ' (Demo, erfundene Werte)' : ''}`;
-  if (!pos) sub = state.sim < trip.t0 ? `Fährt ab ${hhmm(trip.t0)}` : 'Fahrt beendet';
-  body.append(el('div', { class: 'sub' }, sub));
+  body.append(el('h2', {}, pill(route[0], style, () => openLine(route[0])), ' ', cleanHeadsign(route[0], pat.h) || 'Ziel unbekannt'));
+  const sub = el('div', { class: 'sub' });
+  body.append(sub);
+
+  const facts = [];
+  const wc = (trip.flags || 0) & 3;
+  facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
+  const bk = ((trip.flags || 0) >> 2) & 3;
+  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : '');
+  const info = facts.filter(Boolean).join(' · ');
+  if (info) body.append(el('div', { class: 'sub' }, info));
+
+  const follow = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.follow === trip.id) }, state.follow === trip.id ? 'Folgen beenden' : 'Fahrzeug folgen');
+  follow.addEventListener('click', () => {
+    state.follow = state.follow === trip.id ? null : trip.id;
+    if (state.follow && map.getZoom() < 15) map.setZoom(15, { animate: false });
+    renderVehiclePanel();
+  });
+  body.append(el('div', { class: 'chips' }, follow));
+
   const table = el('table');
+  const rows = [];
   pat.s.forEach((si, i) => {
-    const s = state.stops[si];
-    const arr = trip.t0 + trip.prof[2 * i];
+    const s2 = state.stops[si];
     const dep = trip.t0 + trip.prof[2 * i + 1];
-    const cls = state.sim > dep ? 'passed' : pos && pos.k === i && pos.atStop ? 'current' : '';
-    const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s[1]);
-    const open = () => openStation(s[4] >= 0 ? s[4] : si);
+    const arr = trip.t0 + trip.prof[2 * i];
+    const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s2[1]);
+    const open = () => openStation(s2[4] >= 0 ? s2[4] : si);
     link.addEventListener('click', open);
     link.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-    table.append(el('tr', { class: cls }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s[5] ? `Steig ${s[5]}` : '')));
+    const tr = el('tr', {}, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]}` : ''));
+    rows.push({ tr, dep });
+    table.append(tr);
   });
   body.append(table);
+  vehicleView = { trip, sub, rows };
+  updateVehiclePanel();
   showPanel();
+}
+
+// Sekuendlich: nur Klassen und Text anpassen, damit Tippen auf Knoepfe nicht ins Leere geht
+function updateVehiclePanel() {
+  if (!vehicleView || vehicleView.trip !== state.selected) return;
+  const { trip, sub, rows } = vehicleView;
+  const delay = delayOf(trip);
+  const pos = locate(trip, state.sim - (delay || 0));
+  let text = delay === undefined ? 'Fahrplanposition (Soll)' : `${fmtDelay(delay)} gegenüber Fahrplan${state.demo ? ' (Demo, erfundene Werte)' : ''}`;
+  if (!pos) text = state.sim < trip.t0 ? `Fährt ab ${hhmm(trip.t0)}` : 'Fahrt beendet';
+  if (sub.textContent !== text) sub.textContent = text;
+  rows.forEach((r, i) => {
+    const cls = state.sim > r.dep ? 'passed' : pos && pos.k === i && pos.atStop ? 'current' : '';
+    if (r.tr.className !== cls) r.tr.className = cls;
+  });
 }
 
 let stationTimer = null;
@@ -619,8 +741,12 @@ async function openStation(index) {
   state.selected = null;
   state.list = null;
   state.station = index;
+  state.lineView = null;
+  state.journey = null;
+  state.follow = null;
   platformFilter = null;
   clearInterval(stationTimer);
+  scheduleHash();
   await renderStation();
   stationTimer = setInterval(refreshPanel, 15000);
   const s = state.stops[index];
@@ -646,6 +772,18 @@ async function renderStation() {
   const star = el('button', { class: 'star', type: 'button', 'aria-pressed': String(isFav), 'aria-label': isFav ? 'Favorit entfernen' : 'Als Favorit speichern' }, isFav ? '★' : '☆');
   star.addEventListener('click', () => toggleFavorite(stationId, index));
   body.append(el('h2', {}, star, ' ', s[1]));
+  const share = el('button', { class: 'chip', type: 'button' }, 'Link kopieren');
+  share.addEventListener('click', async () => {
+    writeHash();
+    const url = location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      share.textContent = 'Kopiert';
+    } catch {
+      share.replaceWith(el('input', { class: 'urlbox', value: url, readonly: 'readonly', 'aria-label': 'Link zur Haltestelle' }));
+    }
+  });
+  body.append(el('div', { class: 'chips' }, share));
   body.append(el('div', { class: 'sub' }, `Abfahrten nach Fahrplan ab ${hhmm(state.sim)} (Soll, keine Echtzeit)`));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
@@ -661,7 +799,7 @@ async function renderStation() {
     body.append(chips);
   }
 
-  const shown = list.filter((d) => !platformFilter || d.platform === platformFilter).slice(0, 40);
+  const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && (!state.onlyAccessible || accessible(d.flags))).slice(0, 40);
   if (!shown.length) {
     body.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
   } else {
@@ -671,7 +809,7 @@ async function renderStation() {
       const mins = Math.round((base + d.t - state.sim) / 60);
       table.append(el('tr', {},
         el('td', { class: 't' }, hhmm(d.t)),
-        el('td', {}, pill(d.line, style), ' ', cleanHeadsign(d.line, d.headsign)),
+        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', mins <= 0 ? 'jetzt' : `in ${mins} min`)));
     }
     body.append(table);
@@ -693,7 +831,8 @@ function departuresFor(index, limit) {
   return api('/api/departures', { station: index, date: ymd, from: Math.floor(state.sim - dayStart(ymd)), limit }).catch(() => []);
 }
 
-function stationBlock(index, deps, extra) {
+function stationBlock(index, allDeps, extra) {
+  const deps = state.onlyAccessible ? allDeps.filter((d) => accessible(d.flags)) : allDeps;
   const s = state.stops[index];
   const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s[1]);
   const open = () => openStation(index);
@@ -707,7 +846,7 @@ function stationBlock(index, deps, extra) {
     for (const d of deps) {
       const mins = Math.round((base + d.t - state.sim) / 60);
       table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
-        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])), ' ', cleanHeadsign(d.line, d.headsign)),
+        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
     }
     block.append(table);
@@ -818,6 +957,187 @@ $('btn-favs').addEventListener('click', () => (state.list === 'favs' ? closePane
 $('btn-nearby').addEventListener('click', () => { state.here = null; startList('nearby'); });
 $('btn-lines').addEventListener('click', () => (state.list === 'lines' ? closePanel() : (state.list = 'lines', state.selected = null, state.station = null, clearInterval(stationTimer), renderLines())));
 
+// ---------- Linienansicht ----------
+
+function boundsOfStops(idxs) {
+  const pts = idxs.map((i) => [state.stops[i][2], state.stops[i][3]]);
+  return L.latLngBounds(pts);
+}
+
+async function openLine(name) {
+  let dirs = [];
+  try { dirs = await api('/api/line', { name }); } catch (e) { console.error(e); }
+  state.selected = null;
+  state.station = null;
+  state.follow = null;
+  state.journey = null;
+  clearInterval(stationTimer);
+  state.list = 'line';
+  state.lineView = { name, dirs, active: 0 };
+  renderLine();
+  if (dirs[0]) map.fitBounds(boundsOfStops(dirs[0].stops), { padding: [40, 40], maxZoom: 15 });
+}
+
+function renderLine() {
+  const lv = state.lineView;
+  if (!lv) return;
+  const body = $('panel-body');
+  body.replaceChildren();
+  if (!lv.dirs.length) {
+    body.append(el('h2', {}, `Linie ${lv.name}`), el('div', { class: 'empty' }, 'Kein Verlauf im Kartengebiet gefunden.'));
+    showPanel();
+    return;
+  }
+  const route = state.meta.routes[lv.dirs[0].route];
+  body.append(el('h2', {}, pill(route[0], routeStyle(route)), ' ', `Linie ${lv.name}`));
+  body.append(el('div', { class: 'sub' }, 'Verlauf im Kartengebiet, Richtung wählen'));
+  const chips = el('div', { class: 'chips' });
+  lv.dirs.forEach((d, i) => {
+    const b = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(i === lv.active) }, `Richtung ${cleanHeadsign(lv.name, d.headsign) || '?'}`);
+    b.addEventListener('click', () => { lv.active = i; renderLine(); map.fitBounds(boundsOfStops(d.stops), { padding: [40, 40], maxZoom: 15 }); });
+    chips.append(b);
+  });
+  body.append(chips);
+  const table = el('table');
+  for (const si of lv.dirs[lv.active].stops) {
+    const s2 = state.stops[si];
+    const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s2[1]);
+    const open = () => openStation(s2[4] >= 0 ? s2[4] : si);
+    link.addEventListener('click', open);
+    link.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+    table.append(el('tr', {}, el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]}` : '')));
+  }
+  body.append(table);
+  showPanel();
+}
+
+// ---------- Verbindungssuche ----------
+
+function suggestField(label, initial, onPick) {
+  const wrap = el('div', { class: 'sf' });
+  const input = el('input', { type: 'search', placeholder: label, autocomplete: 'off', 'aria-label': label });
+  if (initial) input.value = initial.name;
+  const ul = el('ul', { class: 'sfl' });
+  ul.hidden = true;
+  let seq = 0;
+  let timer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    onPick(null);
+    timer = setTimeout(async () => {
+      const q = input.value.trim();
+      const mine = ++seq;
+      if (q.length < 2) { ul.hidden = true; return; }
+      let res = [];
+      try { res = await api('/api/search', { q }); } catch (e) { console.error(e); }
+      if (mine !== seq) return;
+      ul.replaceChildren();
+      for (const r of res) {
+        const li = el('li', {}, r.name);
+        li.addEventListener('click', () => { input.value = r.name; ul.hidden = true; onPick(r); });
+        ul.append(li);
+      }
+      ul.hidden = !res.length;
+    }, 160);
+  });
+  wrap.append(input, ul);
+  wrap.setValue = (r) => { input.value = r ? r.name : ''; ul.hidden = true; };
+  return wrap;
+}
+
+function openRoute() {
+  state.selected = null;
+  state.station = null;
+  state.follow = null;
+  state.lineView = null;
+  clearInterval(stationTimer);
+  state.list = 'route';
+  renderRoutePanel();
+}
+
+function renderRoutePanel() {
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, '⇄ Verbindung'));
+  const fromField = suggestField('Start', state.route.from, (r) => { state.route.from = r; });
+  const toField = suggestField('Ziel', state.route.to, (r) => { state.route.to = r; });
+  const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.sim) });
+
+  const here = el('button', { class: 'chip', type: 'button' }, 'Mein Standort als Start');
+  here.addEventListener('click', async () => {
+    try {
+      state.here = await locateMe();
+      const near = state.stations.map((s2) => ({ s2, d: distanceM(state.here.lat, state.here.lon, s2.lat, s2.lon) })).sort((a, b) => a.d - b.d)[0];
+      if (!near || near.d > 2000) throw new Error('Keine Haltestelle im Umkreis von 2 km');
+      state.route.from = { index: near.s2.index, name: near.s2.name, lat: near.s2.lat, lon: near.s2.lon };
+      fromField.setValue(state.route.from);
+    } catch (e) { status.textContent = e.message; }
+  });
+  const swap = el('button', { class: 'chip', type: 'button' }, 'Tauschen');
+  swap.addEventListener('click', () => {
+    [state.route.from, state.route.to] = [state.route.to, state.route.from];
+    renderRoutePanel();
+  });
+  const go = el('button', { class: 'chip go', type: 'button' }, 'Suchen');
+  const status = el('div', { class: 'sub' }, 'Nach Fahrplan (Soll), ohne Echtzeit.');
+  const results = el('div', { class: 'results' });
+
+  go.addEventListener('click', async () => {
+    const { from, to } = state.route;
+    if (!from || !to) { status.textContent = 'Bitte Start und Ziel aus der Liste wählen.'; return; }
+    const [hh, mm] = timeInput.value.split(':').map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) { status.textContent = 'Bitte eine Uhrzeit angeben.'; return; }
+    status.textContent = 'Suche läuft …';
+    results.replaceChildren();
+    state.journey = null;
+    const ymd = ymdOf(state.sim);
+    try {
+      state.journeys = await api('/api/plan', { from: from.index, to: to.index, date: ymd, t: hh * 3600 + mm * 60 });
+    } catch (e) {
+      console.error(e);
+      status.textContent = 'Suche fehlgeschlagen.';
+      return;
+    }
+    status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''} nach Fahrplan (Soll)` : 'Keine Verbindung in den nächsten 5 Stunden gefunden.';
+    renderJourneys(results);
+  });
+
+  body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput), el('div', { class: 'chips' }, here, swap, go), status, results);
+  if (state.journeys.length) renderJourneys(results);
+  showPanel();
+}
+
+function renderJourneys(container) {
+  container.replaceChildren();
+  state.journeys.forEach((j, n) => {
+    const card = el('div', { class: 'jcard', role: 'button', tabindex: '0', 'aria-pressed': String(state.journey === j) });
+    const mins = Math.round((j.arr - j.dep) / 60);
+    card.append(el('div', { class: 'jh' }, `${hhmm(j.dep)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
+    for (const leg of j.legs) {
+      if (leg.type === 'walk') {
+        card.append(el('div', { class: 'leg walk' }, `Fußweg ${Math.max(1, Math.round(leg.secs / 60))} min nach ${state.stops[leg.to][1]}`));
+      } else {
+        const style = routeStyle([leg.line, leg.routeType, leg.color, leg.textColor]);
+        card.append(el('div', { class: 'leg' },
+          pill(leg.line, style, () => openLine(leg.line)), ' ',
+          el('span', {}, `${hhmm(leg.dep)} ${state.stops[leg.from][1]}`),
+          el('div', { class: 'sub' }, `Richtung ${cleanHeadsign(leg.line, leg.headsign)}${accessible(leg.flags) ? ' · ♿' : ''}`),
+          el('span', {}, `${hhmm(leg.arr)} ${state.stops[leg.to][1]}`)));
+      }
+    }
+    const pick = () => {
+      state.journey = j;
+      const idxs = j.legs.flatMap((l) => (l.type === 'ride' ? l.stops : [l.from, l.to]));
+      map.fitBounds(boundsOfStops(idxs), { padding: [60, 60], maxZoom: 16 });
+      renderJourneys(container);
+    };
+    card.addEventListener('click', pick);
+    card.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') pick(); });
+    container.append(card);
+  });
+}
+
+$('btn-route').addEventListener('click', () => (state.list === 'route' ? closePanel() : openRoute()));
+
 // ---------- Darstellung ----------
 
 function applyTheme(theme) {
@@ -879,7 +1199,29 @@ async function runSearch() {
   resultsEl.hidden = false;
 }
 
+// ---------- Installieren (PWA) ----------
+
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvent = e;
+  $('btn-install').hidden = false;
+});
+$('btn-install').addEventListener('click', async () => {
+  if (!installEvent) return;
+  installEvent.prompt();
+  try { await installEvent.userChoice; } catch { /* abgebrochen */ }
+  installEvent = null;
+  $('btn-install').hidden = true;
+});
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+  try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
+}
+
 // ---------- Start ----------
+
+// Nur fuer automatische Tests: mit "dbg" im Hash ist der Zustand im Browser erreichbar
+if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map };
 
 async function init() {
   const [meta, stops] = await Promise.all([api('/api/meta'), api('/api/stops')]);
@@ -923,6 +1265,10 @@ async function init() {
 
   resizeCanvas();
   writeHash();
+  if (h && h.st) {
+    const idx = stops.findIndex((x) => x[0] === h.st);
+    if (idx >= 0) openStation(idx);
+  }
 }
 
 init().then(() => requestAnimationFrame(tick)).catch((e) => {

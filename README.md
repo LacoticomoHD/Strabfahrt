@@ -10,6 +10,12 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Favoriten: Haltestellen per Stern speichern, Übersicht mit den nächsten Abfahrten
 - In der Nähe: Haltestellen im Umkreis von 1,5 km per Standort (der Browser fragt nach Erlaubnis)
 - Linienfilter: einzelne Linien ein- oder ausblenden
+- Verbindungssuche von A nach B mit Umstiegen (Fahrplan, ohne Echtzeit), auf der Karte eingezeichnet. Läuft im Browser, auch in der statischen Variante.
+- Linienansicht: auf ein Liniensymbol tippen zeigt den Verlauf je Richtung mit allen Halten
+- Fahrzeug folgen: die Karte fährt mit dem gewählten Fahrzeug mit
+- Barrierefrei: Filter "nur barrierefrei" für Karte und Abfahrten, ♿ in den Abfahrten
+- Haltestelle teilen: "Link kopieren" erzeugt einen Link, der direkt die Haltestelle öffnet
+- Installierbar als App (PWA) mit Zwischenspeicher für den Offline-Start
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
 - Verspätungsanzeige: Hinter jedem Fahrzeug erscheint ab Zoom 14 ein Zeichen mit Sekunden oder Minuten. Rot heißt zu spät, hellblau zu früh, grün pünktlich (unter 30 Sekunden Abweichung). **Echte Werte gibt es erst mit Echtzeitdaten.** Bis dahin zeigt der Schalter "Demo-Verspätung" erfundene Werte, nur zur Ansicht.
@@ -59,7 +65,7 @@ npm run snap:rail    # lädt Gleise von OpenStreetMap (Overpass-API) und schreib
 npm start
 ```
 
-Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg bleiben Luftlinie, Busse ebenfalls. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS.
+Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg bleiben Luftlinie, Busse ebenfalls. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS. Das Gleis-Matching gilt auch für die statische Variante: `build:static` nimmt `data/shapes.json` mit, wenn sie zum Modell passt.
 
 ## Aufbau
 
@@ -71,7 +77,8 @@ Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg 
 | `server/model.mjs` | Fahrplanlogik: Kalender, aktive Fahrten, Abfahrten, Suche |
 | `server/index.mjs` | HTTP-Server und JSON-API (`/api/meta`, `/stops`, `/vehicles`, `/departures`, `/search`, `/shapes`) |
 | `public/` | Frontend (Leaflet, eigene Canvas-Ebene), kein Build-Schritt |
-| `test/` | Tests für die Fahrplanlogik |
+| `test/` | Tests für Fahrplanlogik, Verbindungssuche und Gleis-Matching |
+| `.github/workflows/` | Nächtlicher Auto-Build der Web-Variante |
 
 Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsystemen auf. Der Browser lädt Kartenkacheln von OpenStreetMap und, falls aktiviert, von OpenRailwayMap.
 
@@ -85,6 +92,10 @@ Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsy
 - Code: MIT, siehe `LICENSE`.
 - Ohne Gewähr für Richtigkeit und Vollständigkeit der Daten.
 
+## Nächtlicher Auto-Build (GitHub Actions)
+
+`.github/workflows/pages.yml` baut jede Nacht die Web-Variante mit frischem KVV-Feed neu, legt Bahnen per Overpass auf die OSM-Gleise (Wochen-Cache, bei Fehlschlag Luftlinie) und veröffentlicht auf dem Branch `gh-pages`. Voraussetzung: GitHub Pages steht auf "Deploy from a branch", Branch `gh-pages`, Ordner `/`. Manuell starten: Reiter Actions, Workflow wählen, "Run workflow".
+
 ## Echtzeit anschließen
 
 Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: JSON-Objekt von Fahrt-ID (wie in `trips.txt`) auf Verspätung in Sekunden, positiv für zu spät, negativ für zu früh. Die Fahrzeugposition wird dann um diese Verspätung verschoben. Eine Echtzeitquelle ist noch nicht angebunden. Offiziell wäre das die TRIAS-Schnittstelle des KVV nach Abschluss der Nutzungsvereinbarung.
@@ -93,4 +104,5 @@ Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den W
 
 - Echtzeit über die offizielle TRIAS-Schnittstelle des KVV für die Abfahrtsanzeige, sobald Zugangsdaten nach der KVV-Nutzungsvereinbarung vorliegen
 - Map-Matching für Busse auf das Straßennetz
+- Verbindungssuche: Fußwege zu weiter entfernten Haltestellen, spätere und frühere Abfahrten blättern
 - Eigene Kachelquelle
