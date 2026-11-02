@@ -113,3 +113,8 @@ label { white-space: nowrap; }
   body.panel-open #bar { display: none; }
   body.panel-open .leaflet-bottom { display: none; }
 }
+
+/* Statische Variante: kein Kartenhintergrund, keine Overlays */
+body.static .ovl { display: none; }
+#map { background: #eef1f4; }
+:root[data-theme="dark"] #map { background: #1d232c; }

@@ -1,7 +1,5 @@
 // Laedt data/model.json und beantwortet Zeit- und Ortsanfragen. Keine Abhaengigkeiten, kein Netzwerk.
 
-import fs from 'node:fs';
-
 const DAY = 86400;
 
 export function parseYmd(s) {
@@ -26,8 +24,8 @@ export function addDays(ymd, n) {
 }
 
 export class Model {
-  constructor(file) {
-    const m = JSON.parse(fs.readFileSync(file, 'utf8'));
+  // data: bereits geparstes data/model.json (laeuft in Node und im Browser)
+  constructor(m) {
     this.meta = m.meta;
     this.routes = m.routes;
     this.stops = m.stops;
@@ -196,5 +194,22 @@ export class Model {
     }
     out.sort((a, b) => a.t - b.t);
     return out.slice(0, limit);
+  }
+
+  // Alle befahrenen Haltepaare mit Verkehrsmittel-Gruppe (fuer die Hintergrundkarte ohne Kacheln)
+  network() {
+    const seen = new Map();
+    for (const p of this.patterns) {
+      const type = this.routes[p.route][1];
+      const g = type === 0 || type === 1 ? 0 : type === 2 ? 1 : 2;
+      for (let i = 1; i < p.stops.length; i++) {
+        const a = p.stops[i - 1];
+        const b = p.stops[i];
+        const key = a < b ? `${a},${b}` : `${b},${a}`;
+        const old = seen.get(key);
+        if (old === undefined || g < old) seen.set(key, g);
+      }
+    }
+    return [...seen].map(([k, g]) => { const [a, b] = k.split(',').map(Number); return [a, b, g]; });
   }
 }

@@ -1,8 +1,5 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { Model, parseYmd, addDays } from '../server/model.mjs';
 
 // Kleines Modell: eine Linie A -> B -> C, werktags (Mo-Fr), Fahrt startet 23:50 und endet nach Mitternacht.
@@ -20,9 +17,7 @@ const fixture = {
   trips: [[0, 0, 0, 23 * 3600 + 50 * 60, 't1']],
 };
 
-const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'strab-')), 'model.json');
-fs.writeFileSync(file, JSON.stringify(fixture));
-const model = new Model(file);
+const model = new Model(fixture);
 
 test('Datum wird geprueft', () => {
   assert.ok(parseYmd('20261102'));
@@ -67,4 +62,10 @@ test('Suche: Teilwoerter und Kurzform Hbf', () => {
   assert.equal(model.search('gamma hbf')[0].name, 'Gamma Hbf');
   assert.equal(model.search('gamma hauptbahnhof').length, 0);
   assert.equal(model.search('x').length, 0);
+});
+
+test('Netz: jedes Haltepaar genau einmal, Richtung egal', () => {
+  const net = model.network();
+  assert.equal(net.length, 2);
+  assert.ok(net.every((e) => e[2] === 0)); // Tram
 });

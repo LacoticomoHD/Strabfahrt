@@ -18,7 +18,7 @@ if (!fs.existsSync(MODEL_FILE)) {
 }
 
 console.time('Modell geladen');
-const model = new Model(MODEL_FILE);
+const model = new Model(JSON.parse(fs.readFileSync(MODEL_FILE, 'utf8')));
 console.timeEnd('Modell geladen');
 
 const STATIC_ROOTS = [

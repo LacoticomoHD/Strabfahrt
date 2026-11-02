@@ -2,6 +2,8 @@
 // Alle Zeiten sind Berliner Wanduhrzeit, als "Pseudo-UTC"-Sekunden gefuehrt (siehe wallNow).
 
 const L = window.L;
+// Statische Variante (Artifact/GitHub Pages): Fahrplanlogik laeuft im Browser, keine Kartenkacheln
+const STATIC = window.STRAB_STATIC === true;
 
 // ---------- Hilfen ----------
 
@@ -42,6 +44,7 @@ function hhmmss(sec) {
 }
 
 async function api(path, params = {}) {
+  if (STATIC) return (await import('./local-api.js')).handle(path, params);
   const url = new URL(path, location.origin);
   for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== null) url.searchParams.set(k, v);
   const res = await fetch(url);
@@ -111,9 +114,9 @@ const state = {
 
 // ---------- Karte ----------
 
-const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: true });
+const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: !STATIC, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+if (!STATIC) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
 }).addTo(map);
 
@@ -149,6 +152,9 @@ map.on('resize', resizeCanvas);
 // ---------- Hash (Ansicht teilen) ----------
 
 function readHash() {
+  try { return parseHash(); } catch { return null; }
+}
+function parseHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const z = Number(p.get('z'));
   const lat = Number(p.get('lat'));
@@ -161,7 +167,7 @@ function writeHash() {
   const ol = Object.keys(overlays).filter((k) => map.hasLayer(overlays[k]));
   const p = new URLSearchParams({ z: map.getZoom(), lat: c.lat.toFixed(5), lon: c.lng.toFixed(5) });
   if (ol.length) p.set('ol', ol.join(','));
-  history.replaceState(null, '', `#${p}`);
+  try { history.replaceState(null, '', `#${p}`); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
 }
 
 // ---------- Daten laden ----------
@@ -291,6 +297,30 @@ function drawFrame() {
   const dark = document.documentElement.dataset.theme === 'dark';
   const stopFill = dark ? '#1b2230' : '#fff';
   const stopLine = dark ? '#9db4d8' : '#33415c';
+
+  // Schematisches Liniennetz als Hintergrund (nur ohne Kartenkacheln)
+  if (STATIC && state.networkGroups) {
+    const b = map.getBounds().pad(0.1);
+    const colors = dark ? ['#8aa0c4', '#a7b3c9', '#56627a'] : ['#7d8aa3', '#4a5568', '#b8c0cd'];
+    const widths = [2, 2.4, 1];
+    ctx.lineJoin = 'round';
+    for (const g of [2, 1, 0]) {
+      ctx.beginPath();
+      for (const [a, c] of state.networkGroups[g]) {
+        const sa = state.stops[a];
+        const sc = state.stops[c];
+        if ((sa[2] < b.getSouth() && sc[2] < b.getSouth()) || (sa[2] > b.getNorth() && sc[2] > b.getNorth())
+          || (sa[3] < b.getWest() && sc[3] < b.getWest()) || (sa[3] > b.getEast() && sc[3] > b.getEast())) continue;
+        const p1 = map.latLngToContainerPoint([sa[2], sa[3]]);
+        const p2 = map.latLngToContainerPoint([sc[2], sc[3]]);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
+      }
+      ctx.strokeStyle = colors[g];
+      ctx.lineWidth = widths[g];
+      ctx.stroke();
+    }
+  }
 
   // Haltestellen
   if (zoom >= 14) {
@@ -822,6 +852,13 @@ async function init() {
     state.stations.push({ index: i, lat: s[2], lon: s[3], name: s[1] });
   });
 
+  if (STATIC) {
+    document.body.classList.add('static');
+    const groups = [[], [], []];
+    for (const [a, b, g] of await api('/api/network')) groups[g].push([a, b]);
+    state.networkGroups = groups;
+    $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0). Ohne Gewähr.';
+  }
   const h = readHash();
   const [s, w, n, e] = meta.bbox;
   if (h) map.setView([h.lat, h.lon], h.z);
