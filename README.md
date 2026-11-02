@@ -164,6 +164,26 @@ Der Server holt Live-Daten aus dem kostenlosen GTFS-Realtime-Stream von [gtfs.de
 - Der Stream ist rund 11 MB groß. Der Server lädt ihn nur, solange jemand die App offen hat, standardmäßig jede Minute (`STRAB_RT_INTERVAL=Sekunden`), und pausiert nach 5 Minuten ohne Nutzung. Das sind rund 650 MB pro Stunde Nutzung. Abschalten mit `STRAB_RT=0`.
 - **Nur mit Server.** Die statische Web-Variante (GitHub Pages) kann den Stream nicht selbst verarbeiten. Sie kann aber Live-Daten von einem eigenen, dauerhaft laufenden STRABFAHRT-Server holen: `npm run build:static -- --tiles --rt-url https://dein-server.de`, im Workflow über die Repository-Variable `STRAB_RT_URL`. Der Server muss per HTTPS erreichbar sein.
 
+## Live ohne eigenes Gerät (Vercel, kostenlos)
+
+Der Ordner `api/` enthält kleine Funktionen für den kostenlosen Hobby-Plan von [Vercel](https://vercel.com) (privat, nicht kommerziell, ohne Kreditkarte). Sie holen höchstens einmal pro Minute den Echtzeitstream, filtern auf das Gebiet und liefern rund 17 KB an Webseite und App. Die Fahrplandaten laden sie von der veröffentlichten GitHub-Seite, im Repo liegt nur Code.
+
+Einmalig einrichten:
+1. Auf vercel.com mit "Continue with GitHub" anmelden.
+2. "Add New Project", das Repo `Strabfahrt` importieren, Einstellungen lassen, "Deploy".
+3. Die Adresse (z. B. `https://strabfahrt.vercel.app`) im Repo als Variable eintragen: Settings, Secrets and variables, Actions, Reiter Variables, Name `STRAB_RT_URL`.
+4. Unter Actions den Workflow "Seite bauen und veröffentlichen" einmal starten. Danach zeigen Webseite und App Live-Daten.
+
+Grenzen des Gratis-Plans: 4 CPU-Stunden im Monat. Ein Abruf kostet rund eine halbe Sekunde, das reicht für mehrere hundert Stunden Nutzung. Wird die Grenze erreicht, pausiert Vercel bis zum nächsten Monat, es entstehen keine Kosten. Die Pünktlichkeits-Statistik gibt es dort nicht (kein dauerhafter Speicher).
+
+## Android-App
+
+`app/` ist eine Capacitor-Hülle um die Web-Variante. Die App bringt einen Fahrplan mit, lädt beim Start aber die neuesten Daten von der GitHub-Seite und die Live-Adresse aus `config.json`. Für neue Daten oder eine neue Live-Adresse braucht es also keine neue APK.
+
+- Automatischer Bau: `.github/workflows/apk.yml` baut nach jeder neuen Web-Version die APK und legt sie unter Releases ab (`releases/download/app/strabfahrt.apk`). Dafür zwei Repository-Secrets anlegen: `ANDROID_KEYSTORE_B64` (Signierschlüssel als base64) und `ANDROID_KEYSTORE_PASSWORD`. Ohne sie wird der Lauf übersprungen.
+- Lokal bauen: JDK 21 und Android-SDK, dann `npm run build:static -- --tiles --native`, Ordner `dist-static` nach `app/www` kopieren, in `app/` `npm ci` und `npx cap sync android`, in `app/android` `./gradlew assembleRelease` (Signatur über `STRAB_KEYSTORE_PROPS=pfad/keystore.properties`).
+- Updates lassen sich nur mit demselben Schlüssel über die alte Version installieren. Den Schlüssel gut aufheben.
+
 ## Dauerbetrieb (Raspberry Pi oder kleiner Server)
 
 - Docker: `docker build -t strabfahrt .` und `docker run -d -p 3000:3000 -v strabfahrt-data:/app/data --restart unless-stopped strabfahrt`.

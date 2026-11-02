@@ -25,7 +25,7 @@ copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
 // .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
 copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
 for (const f of ['app.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
-for (const f of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon.svg']) copy(path.join(ROOT, 'public', f), f);
+for (const f of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) copy(path.join(ROOT, 'public', f), f);
 // Gleisgeometrie nur mitnehmen, wenn sie zu genau diesem Modell passt
 const shapesFile = path.join(ROOT, 'data', 'shapes.json');
 if (fs.existsSync(shapesFile)) {
@@ -43,10 +43,17 @@ fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT,
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
 const tiles = process.argv.includes('--tiles');
 copy(path.join(ROOT, 'node_modules', 'qrcode-generator', 'dist', 'qrcode.js'), path.join('vendor', 'qrcode', 'qrcode.js'));
+const nativeApp = process.argv.includes('--native'); // fuer die Android-App: frische Daten von GitHub Pages
+const dataUrl = process.env.STRAB_DATA_URL || 'https://lacoticomohd.github.io/Strabfahrt/';
 const rtArg = process.argv.indexOf('--rt-url');
 const rtUrl = rtArg >= 0 ? process.argv[rtArg + 1] : process.env.STRAB_RT_URL || '';
 if (rtUrl && !/^(https:\/\/[^\s"']+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(rtUrl)) throw new Error('--rt-url muss eine https-Adresse sein');
-fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}${rtUrl ? `window.STRAB_RT_URL = ${JSON.stringify(rtUrl)};\n` : ''}`);
+fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}${rtUrl ? `window.STRAB_RT_URL = ${JSON.stringify(rtUrl)};\n` : ''}${nativeApp ? `window.STRAB_NATIVE = true;\nwindow.STRAB_DATA_URL = ${JSON.stringify(dataUrl)};\n` : ''}`);
+// Live-Adresse auch als Datei: die App liest sie beim Start, ohne neu gebaut werden zu muessen
+fs.writeFileSync(path.join(OUT, 'config.json'), JSON.stringify({ rtUrl: rtUrl || '' }));
+// Zuordnung fuer die Live-Funktion (Vercel), nicht fuer den Browser
+const rtMapFile = path.join(ROOT, 'data', 'rt-map.json');
+if (fs.existsSync(rtMapFile)) copy(rtMapFile, 'rt-map.json');
 if (rtUrl) console.log('Live-Daten von', rtUrl);
 if (tiles) console.log('Variante mit Kacheln: Nutzungsrichtlinie von OpenStreetMap beachten (geringe Last)');
 

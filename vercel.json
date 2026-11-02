@@ -1,0 +1,14 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "echo \"nur Funktionen\"",
+  "outputDirectory": "vercel-public",
+  "regions": [
+    "fra1"
+  ],
+  "functions": {
+    "api/*.mjs": {
+      "maxDuration": 30,
+      "memory": 1024
+    }
+  }
+}

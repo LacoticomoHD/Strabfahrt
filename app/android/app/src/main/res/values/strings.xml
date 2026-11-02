@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">STRABFAHRT</string>
+    <string name="title_activity_main">STRABFAHRT</string>
+    <string name="package_name">de.lacoticomohd.strabfahrt</string>
+    <string name="custom_url_scheme">de.lacoticomohd.strabfahrt</string>
+</resources>

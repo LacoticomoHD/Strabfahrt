@@ -1,0 +1,11 @@
+{
+  "appId": "de.lacoticomohd.strabfahrt",
+  "appName": "STRABFAHRT",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#fcf8ef"
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

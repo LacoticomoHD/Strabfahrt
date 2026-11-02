@@ -2043,6 +2043,11 @@ async function openStats() {
   let data = { days: 0, lines: [] };
   try { data = await rtGet('/api/stats'); } catch (e) { console.error(e); }
   if (state.list !== 'stats') return;
+  if (data.unsupported) {
+    body.replaceChildren(el('h2', {}, '⏱ Pünktlichkeit'), el('div', { class: 'empty' }, 'Die Statistik braucht einen dauerhaft laufenden Server mit Speicher. Der kostenlose Live-Dienst liefert nur aktuelle Verspätungen.'));
+    showPanel();
+    return;
+  }
   body.replaceChildren(el('h2', {}, '⏱ Pünktlichkeit'),
     el('div', { class: 'sub' }, data.days
       ? `Mitgeschrieben vom Server, solange die App offen war: ${data.days} Tag${data.days > 1 ? 'e' : ''} (${fmtDate(data.from)} bis ${fmtDate(data.to)}). "Spät" heißt ab 3 Minuten. Nur Fahrten mit Echtzeitangabe.`
@@ -2144,7 +2149,7 @@ $('btn-install').addEventListener('click', async () => {
   installEvent = null;
   $('btn-install').hidden = true;
 });
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+if (!window.STRAB_NATIVE && 'serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
   try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch { /* im eingebetteten Rahmen nicht erlaubt */ }
 }
 
@@ -2183,7 +2188,11 @@ async function init() {
     $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ' + state.attribution + '. Ohne Gewähr.';
   }
   // Echtzeit: vom eigenen Server oder, in der statischen Variante, von einem Live-Server (STRAB_RT_URL)
-  const rtBase = STATIC ? (window.STRAB_RT_URL || '') : '';
+  let rtBase = STATIC ? (window.STRAB_RT_URL || '') : '';
+  // App: Live-Adresse aus config.json der Webseite, damit sie ohne neue APK geaendert werden kann
+  if (STATIC && !rtBase && window.STRAB_DATA_URL) {
+    try { rtBase = (await (await fetch(`${window.STRAB_DATA_URL}config.json`, { cache: 'no-cache' })).json()).rtUrl || ''; } catch { /* offline */ }
+  }
   if (meta.realtime || rtBase) {
     const poll = async () => {
       try {

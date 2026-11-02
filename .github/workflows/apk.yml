@@ -1,0 +1,87 @@
+name: Android-App bauen
+
+# Baut nach jeder neuen Web-Version die APK und legt sie unter Releases ab:
+#   https://github.com/<Besitzer>/<Repo>/releases/download/app/strabfahrt.apk
+# Voraussetzung: Repository-Secrets ANDROID_KEYSTORE_B64 (Signierschluessel, base64) und
+# ANDROID_KEYSTORE_PASSWORD. Ohne diese wird der Lauf uebersprungen.
+
+on:
+  workflow_run:
+    workflows: ["Seite bauen und veröffentlichen"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-bauen
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      HAS_KEY: ${{ secrets.ANDROID_KEYSTORE_B64 != '' }}
+    steps:
+      - name: Schlüssel vorhanden?
+        if: env.HAS_KEY != 'true'
+        run: echo "::notice::Keine Secrets ANDROID_KEYSTORE_B64/ANDROID_KEYSTORE_PASSWORD, APK-Bau übersprungen"
+
+      - uses: actions/checkout@v4
+        if: env.HAS_KEY == 'true'
+
+      - uses: actions/setup-node@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        if: env.HAS_KEY == 'true'
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Web-Inhalt von gh-pages übernehmen
+        if: env.HAS_KEY == 'true'
+        run: |
+          git fetch --depth 1 origin gh-pages
+          mkdir -p app/www
+          git archive origin/gh-pages | tar -x -C app/www
+          rm -f app/www/rt-map.json app/www/sw.js
+          printf 'window.STRAB_NATIVE = true;\nwindow.STRAB_DATA_URL = "https://%s.github.io/%s/";\n' \
+            "$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" "${{ github.event.repository.name }}" >> app/www/static-flag.js
+
+      - name: Capacitor
+        if: env.HAS_KEY == 'true'
+        working-directory: app
+        run: |
+          npm ci --no-audit --no-fund
+          npx cap sync android
+
+      - name: APK bauen und signieren
+        if: env.HAS_KEY == 'true'
+        working-directory: app/android
+        env:
+          STRAB_VERSION_CODE: ${{ github.run_number }}
+          STRAB_VERSION_NAME: 1.${{ github.run_number }}
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=strabfahrt\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/release.jks" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > "$RUNNER_TEMP/keystore.properties"
+          export STRAB_KEYSTORE_PROPS="$RUNNER_TEMP/keystore.properties"
+          # versionCode muss steigen: Laufnummer + 100 (lokale Builds liegen darunter)
+          export STRAB_VERSION_CODE=$(( ${{ github.run_number }} + 100 ))
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon
+          cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/strabfahrt.apk"
+
+      - name: Unter Releases veröffentlichen
+        if: env.HAS_KEY == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view app >/dev/null 2>&1 || gh release create app --title "STRABFAHRT Android-App" --notes "Immer die neueste APK. Download: strabfahrt.apk"
+          gh release upload app "$RUNNER_TEMP/strabfahrt.apk" --clobber

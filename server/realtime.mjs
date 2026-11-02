@@ -40,7 +40,8 @@ const berlinDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin', 
 const berlinToday = () => berlinDay.format(new Date()).replaceAll('-', '');
 
 export class Realtime {
-  constructor(model, dataDir, { url, interval } = {}) {
+  // opts.map: Zuordnung direkt uebergeben (statt data/rt-map.json), opts.persist=false: keine Statistik-Datei
+  constructor(model, dataDir, { url, interval, map, persist = true } = {}) {
     this.model = model;
     this.dataDir = dataDir;
     this.url = url || process.env.STRAB_RT_URL || 'https://realtime.gtfs.de/realtime-free.pb';
@@ -58,9 +59,13 @@ export class Realtime {
     this.busy = false;
 
     this.tripIndex = new Map(model.trips.map((t, i) => [t.id, i]));
-    const mapFile = path.join(dataDir, 'rt-map.json');
+    this.persist = persist;
+    const mapFile = dataDir ? path.join(dataDir, 'rt-map.json') : '';
     this.map = { trips: {}, routes: [], stops: [] };
-    if (fs.existsSync(mapFile)) {
+    if (map) {
+      if (map.modelBuilt === model.meta.built) this.map = map;
+      else console.warn('rt-map passt nicht zum Modell, KVV-Echtzeit fehlt');
+    } else if (mapFile && fs.existsSync(mapFile)) {
       const m = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
       if (m.modelBuilt === model.meta.built) this.map = m;
       else console.warn('data/rt-map.json passt nicht zu data/model.json, KVV-Echtzeit fehlt bis zum naechsten build:data');
@@ -68,9 +73,11 @@ export class Realtime {
     this.routeSet = new Set(this.map.routes);
     this.stopSet = new Set(this.map.stops);
 
-    this.statsFile = path.join(dataDir, 'stats.json');
+    this.statsFile = dataDir ? path.join(dataDir, 'stats.json') : '';
     this.stats = {};
-    try { this.stats = JSON.parse(fs.readFileSync(this.statsFile, 'utf8')); } catch { /* neu */ }
+    if (persist && this.statsFile) {
+      try { this.stats = JSON.parse(fs.readFileSync(this.statsFile, 'utf8')); } catch { /* neu */ }
+    }
     this.seen = new Map(); // "Datum|Fahrt" -> letzte Verspaetung (fuer die Statistik)
 
     if (this.enabled) {
@@ -178,12 +185,14 @@ export class Realtime {
   }
 
   record(startDate, id, value) {
+    if (!this.persist) return;
     if (!startDate || startDate > berlinToday()) return; // Vorab-Angaben fuer morgen nicht zaehlen
     this.seen.set(`${startDate}|${id}`, value);
   }
 
   // Statistik: je Tag und Linie Fahrten, mittlere Verspaetung, Anteil ab 3 Minuten zu spaet, Ausfaelle
   flushStats() {
+    if (!this.persist) return;
     if (Date.now() - (this.lastFlush || 0) < 10 * 60 * 1000 && this.seen.size < 50000) return;
     this.lastFlush = Date.now();
     const day = new Map();
@@ -211,7 +220,9 @@ export class Realtime {
     // Nur Eintraege der letzten zwei Tage im Speicher halten
     const cutoff = keep.slice(-2)[0] || '';
     for (const key of this.seen.keys()) if (key.slice(0, 8) < cutoff) this.seen.delete(key);
-    try { fs.writeFileSync(this.statsFile, JSON.stringify(this.stats)); } catch (e) { console.warn('Statistik nicht gespeichert:', e.message); }
+    if (this.persist && this.statsFile) {
+      try { fs.writeFileSync(this.statsFile, JSON.stringify(this.stats)); } catch (e) { console.warn('Statistik nicht gespeichert:', e.message); }
+    }
   }
 
   statsSummary() {

@@ -3,3 +3,9 @@ data/
 *.log
 .DS_Store
 dist-static/
+app/node_modules/
+app/www/
+app/android/app/build/
+app/android/.gradle/
+keystore.properties
+*.jks

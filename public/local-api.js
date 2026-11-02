@@ -3,14 +3,26 @@
 
 import { Model } from './model.mjs';
 
+// In der App (STRAB_DATA_URL): neueste Daten von der Webseite holen, sonst die mitgelieferten
+export async function fetchData(name, timeoutMs = 12000) {
+  const remote = window.STRAB_DATA_URL;
+  if (remote) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const r = await fetch(remote + name, { signal: ctrl.signal, cache: 'no-cache' });
+      clearTimeout(timer);
+      if (r.ok) return await r.json();
+    } catch { /* offline: mitgelieferte Datei */ }
+  }
+  const r = await fetch('./' + name);
+  if (!r.ok) throw new Error(`${name}: HTTP ${r.status}`);
+  return r.json();
+}
+
 let modelPromise = null;
 function getModel() {
-  if (!modelPromise) {
-    modelPromise = fetch('./model.json').then((r) => {
-      if (!r.ok) throw new Error(`model.json: HTTP ${r.status}`);
-      return r.json();
-    }).then((json) => new Model(json));
-  }
+  if (!modelPromise) modelPromise = fetchData('model.json', 20000).then((json) => new Model(json));
   return modelPromise;
 }
 
@@ -32,9 +44,10 @@ export async function handle(path, params = {}) {
     case '/api/network':
       return model.network();
     case '/api/shapes': {
-      const r = await fetch('./shapes.json');
-      if (!r.ok) throw new Error('keine Gleisgeometrien vorhanden');
-      return r.json();
+      const shapes = await fetchData('shapes.json');
+      const model = await getModel();
+      if (shapes.meta && shapes.meta.modelBuilt !== model.meta.built) throw new Error('Gleisgeometrie passt nicht zum Fahrplan');
+      return shapes;
     }
     case '/api/vehicles': {
       const bbox = params.bbox ? String(params.bbox).split(',').map(Number) : null;
