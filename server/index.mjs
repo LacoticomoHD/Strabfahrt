@@ -3,6 +3,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { Model, parseYmd } from './model.mjs';
 
@@ -49,14 +50,36 @@ const SECURITY_HEADERS = {
   ].join('; '),
 };
 
-function sendJson(res, status, body, extra = {}) {
-  const data = JSON.stringify(body);
-  res.writeHead(status, {
+// Optionale Gleisgeometrien (scripts/snap-rail.mjs). Nur gueltig fuer genau dieses Modell.
+let shapesRaw = null;
+let shapesGzip = null;
+const SHAPES_FILE = path.join(ROOT, 'data', 'shapes.json');
+if (fs.existsSync(SHAPES_FILE)) {
+  const text = fs.readFileSync(SHAPES_FILE, 'utf8');
+  const parsed = JSON.parse(text);
+  if (parsed.meta && parsed.meta.modelBuilt === model.meta.built) {
+    shapesRaw = text;
+    shapesGzip = zlib.gzipSync(text);
+    console.log(`Gleisgeometrien geladen (${parsed.meta.matched} Abschnitte)`);
+  } else {
+    console.warn('data/shapes.json passt nicht zu data/model.json und wird ignoriert. Bitte "npm run snap:rail" erneut ausfuehren.');
+  }
+}
+
+function sendJson(res, status, body, extra = {}, req = null) {
+  let data = Buffer.from(JSON.stringify(body));
+  const headers = {
     'Content-Type': 'application/json; charset=utf-8',
     'Cache-Control': 'no-store',
     ...SECURITY_HEADERS,
     ...extra,
-  });
+  };
+  if (req && data.length > 2048 && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
+    data = zlib.gzipSync(data);
+    headers['Content-Encoding'] = 'gzip';
+  }
+  headers.Vary = 'Accept-Encoding';
+  res.writeHead(status, headers);
   res.end(data);
 }
 
@@ -77,14 +100,14 @@ const DAY_LIMIT = 3 * 86400;
 
 const TYPE_GROUPS = { tram: [0, 1], rail: [2], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
-function handleApi(url, res) {
+function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
       return sendJson(res, 200, { bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
-      return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' });
+      return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);
 
     case '/api/vehicles': {
       const w = parseTimeWindow(q);
@@ -103,7 +126,20 @@ function handleApi(url, res) {
           TYPE_GROUPS[key].forEach((t) => types.add(t));
         }
       }
-      return sendJson(res, 200, model.vehicles(w.date, w.t0, w.t1, bbox, types));
+      return sendJson(res, 200, model.vehicles(w.date, w.t0, w.t1, bbox, types), {}, req);
+    }
+
+    case '/api/shapes': {
+      if (!shapesRaw) return sendJson(res, 404, { error: 'keine Gleisgeometrien vorhanden' });
+      const wantsGzip = /\bgzip\b/.test(req.headers['accept-encoding'] || '');
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'public, max-age=3600',
+        Vary: 'Accept-Encoding',
+        ...(wantsGzip ? { 'Content-Encoding': 'gzip' } : {}),
+        ...SECURITY_HEADERS,
+      });
+      return res.end(wantsGzip ? shapesGzip : shapesRaw);
     }
 
     case '/api/search':
@@ -161,7 +197,7 @@ const server = http.createServer((req, res) => {
   }
   try {
     const url = new URL(req.url, 'http://localhost');
-    if (url.pathname.startsWith('/api/')) return handleApi(url, res);
+    if (url.pathname.startsWith('/api/')) return handleApi(url, req, res);
     return serveStatic(url, res);
   } catch (e) {
     console.error(e);

@@ -7,11 +7,17 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Klick auf ein Fahrzeug zeigt den Fahrtverlauf mit Zeiten
 - Klick auf eine Haltestelle (ab Zoom 14) oder die Suche zeigt die nächsten Abfahrten, filterbar nach Steig
 - Optionale Overlays von OpenRailwayMap (Gleise, Signale, Höchstgeschwindigkeit)
+- Favoriten: Haltestellen per Stern speichern, Übersicht mit den nächsten Abfahrten
+- In der Nähe: Haltestellen im Umkreis von 1,5 km per Standort (der Browser fragt nach Erlaubnis)
+- Linienfilter: einzelne Linien ein- oder ausblenden
+- Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
+
+Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorage), nichts geht an den Server.
 
 ## Wichtig: Was die App nicht kann
 
 - **Keine Echtzeit.** Alle Positionen und Abfahrten sind Soll-Zeiten aus dem Fahrplan. Verspätungen und Ausfälle werden nicht gezeigt.
-- **Keine echte Streckenführung.** Der KVV-Feed enthält keine Linienverläufe. Fahrzeuge bewegen sich in Luftlinie zwischen zwei Haltestellen und können daher neben den Gleisen und Straßen laufen.
+- **Streckenführung nur mit Zusatzschritt.** Der KVV-Feed enthält keine Linienverläufe. Ohne `npm run snap:rail` bewegen sich Fahrzeuge in Luftlinie zwischen zwei Haltestellen. Auch mit dem Skript bleiben Busse und Abschnitte ohne passenden Gleisweg in Luftlinie.
 - Zeiten sind Berliner Ortszeit. An den beiden Tagen der Zeitumstellung kann der Zeitraffer um eine Stunde abweichen.
 
 ## Start
@@ -36,13 +42,23 @@ npm test
 
 Den Feed sollte man regelmäßig neu bauen, der KVV aktualisiert ihn nahezu täglich.
 
+### Fahrzeuge auf den Gleisen (optional)
+
+```bash
+npm run snap:rail    # lädt Gleise von OpenStreetMap (Overpass-API) und schreibt data/shapes.json
+npm start
+```
+
+Das Skript legt Tram und Bahn auf die OSM-Gleise. Abschnitte ohne passenden Weg bleiben Luftlinie, Busse ebenfalls. Es braucht Internet und wird dort ausgeführt, wo der Server läuft oder auf deinem Rechner (dann `data/shapes.json` kopieren). Nach jedem `build:data` muss es neu laufen, sonst ignoriert der Server die Datei und gibt eine Warnung aus. Der Standort-Knopf funktioniert nur über `localhost` oder HTTPS.
+
 ## Aufbau
 
 | Pfad | Inhalt |
 | --- | --- |
 | `scripts/build-data.mjs` | Liest GTFS, schneidet auf das Gebiet zu, schreibt `data/model.json` |
+| `scripts/snap-rail.mjs` | Legt Tram und Bahn auf OSM-Gleise, schreibt `data/shapes.json` |
 | `server/model.mjs` | Fahrplanlogik: Kalender, aktive Fahrten, Abfahrten, Suche |
-| `server/index.mjs` | HTTP-Server und JSON-API (`/api/meta`, `/stops`, `/vehicles`, `/departures`, `/search`) |
+| `server/index.mjs` | HTTP-Server und JSON-API (`/api/meta`, `/stops`, `/vehicles`, `/departures`, `/search`, `/shapes`) |
 | `public/` | Frontend (Leaflet, eigene Canvas-Ebene), kein Build-Schritt |
 | `test/` | Tests für die Fahrplanlogik |
 
@@ -60,6 +76,6 @@ Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsy
 
 ## Mögliche nächste Schritte
 
-- Echtzeitdaten, sobald eine frei nutzbare Quelle mit passenden Nutzungsbedingungen geklärt ist (die API ist dafür vorbereitet: Verspätung je Fahrt auf die Zeiten aufschlagen)
-- Map-Matching der Fahrzeuge auf OpenStreetMap-Gleise und -Straßen
-- Eigene Kachelquelle, Dark Mode, Favoriten-Haltestellen
+- Echtzeit über die offizielle TRIAS-Schnittstelle des KVV für die Abfahrtsanzeige, sobald Zugangsdaten nach der KVV-Nutzungsvereinbarung vorliegen
+- Map-Matching für Busse auf das Straßennetz
+- Eigene Kachelquelle

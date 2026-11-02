@@ -76,6 +76,15 @@ function pill(line, style) {
   return p;
 }
 
+// ---------- Lokaler Speicher (nur dieser Browser) ----------
+
+function load(key, fallback) {
+  try { const v = localStorage.getItem(key); return v === null ? fallback : JSON.parse(v); } catch { return fallback; }
+}
+function save(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* Speicher gesperrt: Funktion laeuft ohne Merken weiter */ }
+}
+
 // ---------- Zustand ----------
 
 const state = {
@@ -94,6 +103,10 @@ const state = {
   selected: null, // Fahrt
   station: null, // Stationsindex
   vehicles: [],
+  list: null, // 'favs' | 'nearby' | 'lines'
+  hiddenLines: new Set(load('strab.hiddenLines', [])),
+  favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
+  here: null, // { lat, lon } Standort
 };
 
 // ---------- Karte ----------
@@ -101,7 +114,7 @@ const state = {
 const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: true });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, subdomains: 'abc', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
+  maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
 }).addTo(map);
 
 const overlays = {
@@ -194,6 +207,7 @@ async function loadWindow(force = false) {
       return { pid, id, t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
     });
     state.window = { from: base + t0, to: base + t1, bbox, types: typesKey };
+    if (state.list === 'lines') renderLines();
     if (state.selected) {
       const again = state.trips.find((t) => t.id === state.selected.id);
       if (again) state.selected = again;
@@ -204,6 +218,49 @@ async function loadWindow(force = false) {
   } finally {
     state.loading = false;
   }
+}
+
+// ---------- Streckenverlauf ----------
+
+const shapeData = new Map(); // "i,j" -> flache Liste lat,lon,lat,lon...
+const geomCache = new Map();
+
+function segGeom(si, sj) {
+  const key = `${si},${sj}`;
+  let g = geomCache.get(key);
+  if (g) return g;
+  const flat = shapeData.get(key);
+  let pts;
+  if (flat) {
+    pts = [];
+    for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+  } else {
+    const a = state.stops[si];
+    const b = state.stops[sj];
+    pts = [[a[2], a[3]], [b[2], b[3]]];
+  }
+  const kx = Math.cos((pts[0][0] * Math.PI) / 180) * 111320;
+  const cum = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot((pts[i][1] - pts[i - 1][1]) * kx, (pts[i][0] - pts[i - 1][0]) * 110540));
+  }
+  g = { pts, cum, total: cum[cum.length - 1] };
+  geomCache.set(key, g);
+  return g;
+}
+
+function along(g, f) {
+  const last = g.pts[g.pts.length - 1];
+  if (f <= 0 || g.total === 0) return g.pts[0];
+  if (f >= 1) return last;
+  const d = f * g.total;
+  let i = 1;
+  while (i < g.cum.length - 1 && g.cum[i] < d) i++;
+  const span = g.cum[i] - g.cum[i - 1] || 1;
+  const t = (d - g.cum[i - 1]) / span;
+  const a = g.pts[i - 1];
+  const b = g.pts[i];
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
 }
 
 // ---------- Position nach Fahrplan ----------
@@ -220,9 +277,9 @@ function locate(trip, now) {
   trip.k = k;
   const a = state.stops[pat.s[k]];
   if (k >= n - 1 || rel <= prof[2 * k + 1]) return { lat: a[2], lon: a[3], k, f: 0, atStop: true };
-  const b = state.stops[pat.s[k + 1]];
   const f = (rel - prof[2 * k + 1]) / (prof[2 * (k + 1)] - prof[2 * k + 1]);
-  return { lat: a[2] + (b[2] - a[2]) * f, lon: a[3] + (b[3] - a[3]) * f, k, f, atStop: false };
+  const [lat, lon] = along(segGeom(pat.s[k], pat.s[k + 1]), f);
+  return { lat, lon, k, f, atStop: false };
 }
 
 // ---------- Zeichnen ----------
@@ -231,11 +288,14 @@ function drawFrame() {
   const size = map.getSize();
   ctx.clearRect(0, 0, size.x, size.y);
   const zoom = map.getZoom();
+  const dark = document.documentElement.dataset.theme === 'dark';
+  const stopFill = dark ? '#1b2230' : '#fff';
+  const stopLine = dark ? '#9db4d8' : '#33415c';
 
   // Haltestellen
   if (zoom >= 14) {
-    ctx.fillStyle = '#fff';
-    ctx.strokeStyle = '#33415c';
+    ctx.fillStyle = stopFill;
+    ctx.strokeStyle = stopLine;
     ctx.lineWidth = 1.5;
     const b = map.getBounds();
     for (const s of state.stations) {
@@ -246,10 +306,10 @@ function drawFrame() {
       ctx.fill();
       ctx.stroke();
       if (zoom >= 16) {
-        ctx.fillStyle = '#33415c';
+        ctx.fillStyle = dark ? '#cfd8e8' : '#33415c';
         ctx.font = '11px system-ui, sans-serif';
         ctx.fillText(s.name, p.x + 8, p.y + 4);
-        ctx.fillStyle = '#fff';
+        ctx.fillStyle = stopFill;
       }
     }
   }
@@ -260,7 +320,7 @@ function drawFrame() {
     const pat = state.patterns.get(trip.pid);
     const route = state.meta.routes[pat.r];
     const style = routeStyle(route);
-    if (!state.types.has(style.group)) continue;
+    if (!state.types.has(style.group) || state.hiddenLines.has(route[0])) continue;
     const pos = locate(trip, state.sim);
     if (!pos) continue;
     const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
@@ -270,6 +330,7 @@ function drawFrame() {
   state.vehicles = out;
 
   if (state.selected) drawRoute(state.selected);
+  if (state.here) drawHere();
 
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
@@ -304,6 +365,17 @@ function drawFrame() {
 
 const route0 = (route) => route[0];
 
+function drawHere() {
+  const p = map.latLngToContainerPoint([state.here.lat, state.here.lon]);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+  ctx.fillStyle = '#1a73e8';
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#fff';
+  ctx.stroke();
+}
+
 function roundRect(x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y);
@@ -319,11 +391,13 @@ function drawRoute(trip) {
   if (!pat) return;
   const style = routeStyle(state.meta.routes[pat.r]);
   ctx.beginPath();
-  pat.s.forEach((si, i) => {
-    const s = state.stops[si];
-    const p = map.latLngToContainerPoint([s[2], s[3]]);
-    if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
-  });
+  let first = true;
+  for (let i = 1; i < pat.s.length; i++) {
+    for (const pt of segGeom(pat.s[i - 1], pat.s[i]).pts) {
+      const p = map.latLngToContainerPoint(pt);
+      if (first) { ctx.moveTo(p.x, p.y); first = false; } else ctx.lineTo(p.x, p.y);
+    }
+  }
   ctx.lineWidth = 4;
   ctx.strokeStyle = style.bg;
   ctx.globalAlpha = 0.65;
@@ -402,17 +476,25 @@ map.on('click', (e) => {
 
 // ---------- Panels ----------
 
+function showPanel() {
+  $('panel').hidden = false;
+  document.body.classList.add('panel-open');
+}
+
 function closePanel() {
   state.selected = null;
   state.station = null;
+  state.list = null;
   clearInterval(stationTimer);
   $('panel').hidden = true;
+  document.body.classList.remove('panel-open');
 }
 $('panel-close').addEventListener('click', closePanel);
 
 function selectVehicle(trip) {
   clearInterval(stationTimer);
   state.station = null;
+  state.list = null;
   state.selected = trip;
   renderVehiclePanel();
 }
@@ -443,19 +525,26 @@ function renderVehiclePanel() {
     table.append(el('tr', { class: cls }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s[5] ? `Steig ${s[5]}` : '')));
   });
   body.append(table);
-  $('panel').hidden = false;
+  showPanel();
 }
 
 let stationTimer = null;
 let platformFilter = null;
 
+function refreshPanel() {
+  if (state.station !== null) renderStation();
+  else if (state.list === 'favs') renderFavs();
+  else if (state.list === 'nearby') renderNearby();
+}
+
 async function openStation(index) {
   state.selected = null;
+  state.list = null;
   state.station = index;
   platformFilter = null;
   clearInterval(stationTimer);
   await renderStation();
-  stationTimer = setInterval(renderStation, 15000);
+  stationTimer = setInterval(refreshPanel, 15000);
   const s = state.stops[index];
   map.panTo([s[2], s[3]]);
 }
@@ -474,7 +563,11 @@ async function renderStation() {
   const base = dayStart(ymdOf(state.sim));
   const body = $('panel-body');
   body.replaceChildren();
-  body.append(el('h2', {}, s[1]));
+  const stationId = s[0];
+  const isFav = state.favorites.includes(stationId);
+  const star = el('button', { class: 'star', type: 'button', 'aria-pressed': String(isFav), 'aria-label': isFav ? 'Favorit entfernen' : 'Als Favorit speichern' }, isFav ? '★' : '☆');
+  star.addEventListener('click', () => toggleFavorite(stationId, index));
+  body.append(el('h2', {}, star, ' ', s[1]));
   body.append(el('div', { class: 'sub' }, `Abfahrten nach Fahrplan ab ${hhmm(state.sim)} (Soll, keine Echtzeit)`));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
@@ -505,8 +598,166 @@ async function renderStation() {
     }
     body.append(table);
   }
-  $('panel').hidden = false;
+  showPanel();
 }
+
+// ---------- Favoriten, Naehe, Linien ----------
+
+function toggleFavorite(stationId, index) {
+  const i = state.favorites.indexOf(stationId);
+  if (i >= 0) state.favorites.splice(i, 1); else state.favorites.push(stationId);
+  save('strab.favorites', state.favorites);
+  if (state.station === index) renderStation();
+}
+
+function departuresFor(index, limit) {
+  const ymd = ymdOf(state.sim);
+  return api('/api/departures', { station: index, date: ymd, from: Math.floor(state.sim - dayStart(ymd)), limit }).catch(() => []);
+}
+
+function stationBlock(index, deps, extra) {
+  const s = state.stops[index];
+  const link = el('a', { class: 'stop', role: 'button', tabindex: '0' }, s[1]);
+  const open = () => openStation(index);
+  link.addEventListener('click', open);
+  link.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
+  const block = el('div', { class: 'block' }, el('div', { class: 'bh' }, link, extra ? el('span', { class: 'sub' }, ` ${extra}`) : ''));
+  if (!deps.length) block.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
+  else {
+    const table = el('table');
+    const base = dayStart(ymdOf(state.sim));
+    for (const d of deps) {
+      const mins = Math.round((base + d.t - state.sim) / 60);
+      table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
+        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])), ' ', cleanHeadsign(d.line, d.headsign)),
+        el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
+    }
+    block.append(table);
+  }
+  return block;
+}
+
+function startList(mode) {
+  state.selected = null;
+  state.station = null;
+  state.list = mode;
+  clearInterval(stationTimer);
+  refreshPanel();
+  if (mode !== 'lines') stationTimer = setInterval(refreshPanel, 15000);
+  showPanel();
+}
+
+async function renderFavs() {
+  const idxById = new Map(state.stops.map((s, i) => [s[0], i]));
+  const items = state.favorites.map((id) => idxById.get(id)).filter((i) => i !== undefined);
+  const results = await Promise.all(items.map((i) => departuresFor(i, 3)));
+  if (state.list !== 'favs') return;
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, '★ Favoriten'), el('div', { class: 'sub' }, 'Nächste Abfahrten nach Fahrplan (Soll)'));
+  if (!items.length) body.append(el('div', { class: 'empty' }, 'Noch keine Favoriten. Haltestelle öffnen und den Stern antippen.'));
+  items.forEach((i, n) => body.append(stationBlock(i, results[n])));
+  showPanel();
+}
+
+function distanceM(lat1, lon1, lat2, lon2) {
+  const kx = Math.cos(((lat1 + lat2) / 2) * Math.PI / 180) * 111320;
+  return Math.hypot((lon2 - lon1) * kx, (lat2 - lat1) * 110540);
+}
+
+function locateMe() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) return reject(new Error('Standort wird vom Browser nicht unterstützt'));
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+      () => reject(new Error('Standort nicht verfügbar oder nicht erlaubt')),
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 },
+    );
+  });
+}
+
+async function renderNearby() {
+  const body = $('panel-body');
+  if (!state.here) {
+    body.replaceChildren(el('h2', {}, '◎ In der Nähe'), el('div', { class: 'sub' }, 'Standort wird ermittelt …'));
+    showPanel();
+    try {
+      state.here = await locateMe();
+      map.setView([state.here.lat, state.here.lon], Math.max(map.getZoom(), 15));
+    } catch (e) {
+      if (state.list === 'nearby') body.replaceChildren(el('h2', {}, '◎ In der Nähe'), el('div', { class: 'empty' }, e.message));
+      return;
+    }
+  }
+  const near = state.stations
+    .map((s) => ({ s, d: distanceM(state.here.lat, state.here.lon, s.lat, s.lon) }))
+    .filter((x) => x.d <= 1500)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 6);
+  const results = await Promise.all(near.map((x) => departuresFor(x.s.index, 2)));
+  if (state.list !== 'nearby') return;
+  body.replaceChildren(el('h2', {}, '◎ In der Nähe'), el('div', { class: 'sub' }, 'Haltestellen bis 1,5 km, Abfahrten nach Fahrplan (Soll)'));
+  if (!near.length) body.append(el('div', { class: 'empty' }, 'Keine Haltestelle im Umkreis von 1,5 km.'));
+  near.forEach((x, n) => body.append(stationBlock(x.s.index, results[n], `${Math.round(x.d / 10) * 10} m`)));
+  showPanel();
+}
+
+function renderLines() {
+  if (state.list !== 'lines') return;
+  const found = new Map();
+  for (const trip of state.trips) {
+    const route = state.meta.routes[state.patterns.get(trip.pid).r];
+    if (!found.has(route[0])) found.set(route[0], route);
+  }
+  const order = { tram: 0, rail: 1, bus: 2, other: 3 };
+  const lines = [...found.values()].sort((a, b) => order[groupOf(a[1])] - order[groupOf(b[1])] || a[0].localeCompare(b[0], 'de', { numeric: true }));
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, 'Linien'), el('div', { class: 'sub' }, 'Antippen blendet eine Linie ein oder aus (gespeichert in diesem Browser)'));
+  const actions = el('div', { class: 'chips' });
+  const all = el('button', { class: 'chip', type: 'button' }, 'Alle an');
+  all.addEventListener('click', () => { state.hiddenLines.clear(); save('strab.hiddenLines', []); renderLines(); });
+  const none = el('button', { class: 'chip', type: 'button' }, 'Alle aus');
+  none.addEventListener('click', () => { lines.forEach((r) => state.hiddenLines.add(r[0])); save('strab.hiddenLines', [...state.hiddenLines]); renderLines(); });
+  actions.append(all, none);
+  body.append(actions);
+  const grid = el('div', { class: 'linegrid' });
+  for (const route of lines) {
+    const on = !state.hiddenLines.has(route[0]);
+    const b = el('button', { class: 'linebtn', type: 'button', 'aria-pressed': String(on), 'aria-label': `Linie ${route[0]} ${on ? 'ausblenden' : 'einblenden'}` });
+    b.append(pill(route[0], routeStyle(route)));
+    b.addEventListener('click', () => {
+      if (on) state.hiddenLines.add(route[0]); else state.hiddenLines.delete(route[0]);
+      save('strab.hiddenLines', [...state.hiddenLines]);
+      renderLines();
+    });
+    grid.append(b);
+  }
+  if (!lines.length) grid.append(el('div', { class: 'empty' }, 'Gerade keine Linien im Kartenausschnitt.'));
+  body.append(grid);
+  showPanel();
+}
+
+$('btn-favs').addEventListener('click', () => (state.list === 'favs' ? closePanel() : startList('favs')));
+$('btn-nearby').addEventListener('click', () => { state.here = null; startList('nearby'); });
+$('btn-lines').addEventListener('click', () => (state.list === 'lines' ? closePanel() : (state.list = 'lines', state.selected = null, state.station = null, clearInterval(stationTimer), renderLines())));
+
+// ---------- Darstellung ----------
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  $('btn-theme').setAttribute('aria-pressed', String(theme === 'dark'));
+}
+applyTheme(load('strab.theme', null) || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+$('btn-theme').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  save('strab.theme', next);
+});
+
+if (window.innerWidth < 700) $('bar').classList.add('collapsed');
+$('collapse').addEventListener('click', () => {
+  const c = $('bar').classList.toggle('collapsed');
+  $('collapse').setAttribute('aria-expanded', String(!c));
+});
 
 // ---------- Suche ----------
 
@@ -556,6 +807,10 @@ async function init() {
   const [meta, stops] = await Promise.all([api('/api/meta'), api('/api/stops')]);
   state.meta = meta;
   state.stops = stops;
+  try {
+    const shapes = await api('/api/shapes');
+    for (const [k, v] of Object.entries(shapes.segs)) shapeData.set(k, v);
+  } catch { /* ohne Gleisgeometrie fahren Fahrzeuge in Luftlinie */ }
 
   // Stationen = Eltern oder Halte ohne Eltern, die auch bedient werden
   const parentsWithKids = new Set();

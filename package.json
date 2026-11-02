@@ -10,6 +10,7 @@
   },
   "scripts": {
     "build:data": "node scripts/build-data.mjs",
+    "snap:rail": "node scripts/snap-rail.mjs",
     "start": "node server/index.mjs",
     "test": "node --test test/*.test.mjs"
   },
