@@ -28,7 +28,12 @@ const berlinFmt = new Intl.DateTimeFormat('en-CA', {
 });
 
 function wallNow() {
-  const p = Object.fromEntries(berlinFmt.formatToParts(new Date()).map((x) => [x.type, x.value]));
+  return wallOf(Date.now() / 1000);
+}
+
+// Berliner Wanduhrzeit eines Zeitpunkts (Unix-Sekunden) als Pseudo-UTC-Sekunden
+function wallOf(epochSec) {
+  const p = Object.fromEntries(berlinFmt.formatToParts(new Date(epochSec * 1000)).map((x) => [x.type, x.value]));
   return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) / 1000;
 }
 
@@ -63,7 +68,17 @@ function readable(hex) {
   return lum > 0.6 ? '#000' : '#fff';
 }
 
+const styleCache = new Map();
 function routeStyle(route) {
+  const key = `${route[1]}|${route[2]}|${route[3]}`;
+  const hit = styleCache.get(key);
+  if (hit) return hit;
+  const st = computeStyle(route);
+  styleCache.set(key, st);
+  return st;
+}
+
+function computeStyle(route) {
   const group = groupOf(route[1]);
   const bg = /^[0-9a-f]{6}$/i.test(route[2]) ? route[2] : DEFAULT_COLOR[group];
   const fg = /^[0-9a-f]{6}$/i.test(route[3]) ? `#${route[3]}` : readable(bg);
@@ -130,6 +145,9 @@ const state = {
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
+  canceled: new Set(), // ausgefallene Fahrten (Echtzeit)
+  reasons: new Map(), // Fahrt-ID -> Grund (Echtzeit)
+  rt: { active: false, updated: 0, feedTime: 0, error: null },
   demo: false, // erfundene Werte, nur zum Ansehen der Darstellung
   onlyAccessible: false,
   onlyBikes: false,
@@ -347,6 +365,40 @@ function delayColors(d) {
   return { bg: '#2e7d32', fg: '#ffffff' }; // puenktlich: gruen
 }
 
+// Kurzer Hinweis, ob Zeiten live sind
+const liveNote = () => (state.rt.active ? 'mit Live-Verspätungen, wo verfügbar' : 'nach Fahrplan (Soll), keine Echtzeit');
+
+// Echtzeit fuer eine Fahrt-ID (Abfahrten, Verbindungen)
+function rtOf(tripId) {
+  if (state.demo) return { delay: demoDelay(tripId), canceled: false, reason: null };
+  return { delay: state.delays.get(tripId), canceled: state.canceled.has(tripId), reason: state.reasons.get(tripId) || null };
+}
+
+// Zeit-Zelle: Plan-Zeit, dazu farbige Abweichung oder "fällt aus"
+function depTime(d) {
+  const r = rtOf(d.trip);
+  const span = el('span', { class: r.canceled ? 'canc' : '' }, hhmm(d.t));
+  if (r.canceled) {
+    span.title = 'Fahrt fällt aus';
+  } else if (r.delay !== undefined && Math.abs(r.delay) >= 30) {
+    const c = delayColors(r.delay);
+    const b = el('span', { class: 'dly' }, fmtDelay(r.delay).replace(' ', ''));
+    b.style.background = c.bg;
+    b.style.color = c.fg;
+    if (r.reason) b.title = r.reason;
+    return el('span', {}, span, ' ', b);
+  }
+  return span;
+}
+
+// Restzeit-Text mit Echtzeit
+function depWhen(d, base, now, prefix = 'in ') {
+  const r = rtOf(d.trip);
+  if (r.canceled) return 'fällt aus';
+  const mins = Math.round((base + d.t + (r.delay || 0) - now) / 60);
+  return mins <= 0 ? 'jetzt' : `${prefix}${mins} min`;
+}
+
 // ---------- Position nach Fahrplan ----------
 
 function angleBetween(p, q) {
@@ -447,6 +499,7 @@ function drawFrame() {
     const style = routeStyle(route);
     if (!state.types.has(style.group) || state.hiddenLines.has(route[0])) continue;
     if (!flagsOk(trip.flags)) continue;
+    if (!state.demo && state.canceled.has(trip.id)) continue;
     const delay = delayOf(trip);
     const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
@@ -500,7 +553,8 @@ function drawFrame() {
     if (zoom >= 14) {
       ctx.font = 'bold 11px system-ui, sans-serif';
       const label = route0(v.route);
-      const w = Math.max(18, ctx.measureText(label).width + 8);
+      let w = labelWidth.get(label);
+      if (w === undefined) { w = Math.max(18, ctx.measureText(label).width + 8); labelWidth.set(label, w); }
       ctx.fillStyle = v.style.bg;
       roundRect(v.x - w / 2, v.y - 8, w, 16, 5);
       ctx.fill();
@@ -559,6 +613,7 @@ function drawFrame() {
 }
 
 const route0 = (route) => route[0];
+const labelWidth = new Map(); // Breite der Liniennummer im Schild (Schrift bleibt gleich)
 
 function drawHere() {
   const p = map.latLngToContainerPoint([state.here.lat, state.here.lon]);
@@ -758,7 +813,7 @@ map.on('click', (e) => {
     }
     if (bs) { openStation(bs.index); return; }
   }
-  if (['route', 'line', 'detours', 'groupedit'].includes(state.list)) return; // Panel bleibt offen
+  if (['route', 'line', 'detours', 'groupedit', 'alerts', 'stats'].includes(state.list)) return; // Panel bleibt offen
   closePanel();
 });
 
@@ -852,7 +907,8 @@ function updateVehiclePanel() {
   const { trip, sub, rows } = vehicleView;
   const delay = delayOf(trip);
   const pos = locate(trip, state.sim - (delay || 0));
-  let text = delay === undefined ? 'Fahrplanposition (Soll)' : `${fmtDelay(delay)} gegenüber Fahrplan${state.demo ? ' (Demo, erfundene Werte)' : ''}`;
+  const why = !state.demo && state.reasons.get(trip.id);
+  let text = delay === undefined ? (state.rt.active ? 'Fahrplanposition (keine Echtzeit für diese Fahrt)' : 'Fahrplanposition (Soll)') : `${fmtDelay(delay) === '0' ? 'Pünktlich' : `${fmtDelay(delay)} gegenüber Fahrplan`}${state.demo ? ' (Demo, erfundene Werte)' : ' (Echtzeit)'}${why ? ` · ${why}` : ''}`;
   if (!pos) text = state.sim < trip.t0 ? `Fährt ab ${hhmm(trip.t0)}` : 'Fahrt beendet';
   if (sub.textContent !== text) sub.textContent = text;
   rows.forEach((r, i) => {
@@ -920,7 +976,7 @@ async function renderStation() {
   const members = [index, ...(state.children.get(index) || [])];
   const yes = members.filter((m) => state.stops[m][7] === 1).length;
   const no = members.filter((m) => state.stops[m][7] === 2).length;
-  body.append(el('div', { class: 'sub' }, `Abfahrten nach Fahrplan ab ${hhmm(state.sim)} (Soll, keine Echtzeit)`));
+  body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}`));
   body.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
@@ -943,11 +999,10 @@ async function renderStation() {
     const table = el('table');
     for (const d of shown) {
       const style = routeStyle([d.line, d.type, d.color, d.textColor]);
-      const mins = Math.round((base + d.t - state.sim) / 60);
       table.append(el('tr', {},
-        el('td', { class: 't' }, hhmm(d.t)),
+        el('td', { class: 't' }, depTime(d)),
         el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
-        el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', mins <= 0 ? 'jetzt' : `in ${mins} min`)));
+        el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', depWhen(d, base, state.sim))));
     }
     body.append(table);
   }
@@ -1041,10 +1096,9 @@ function stationBlock(index, allDeps, extra) {
     const table = el('table');
     const base = dayStart(ymdOf(state.sim));
     for (const d of deps) {
-      const mins = Math.round((base + d.t - state.sim) / 60);
-      table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
+      table.append(el('tr', {}, el('td', { class: 't' }, depTime(d)),
         el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
-        el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
+        el('td', { class: 'r' }, depWhen(d, base, state.sim))));
     }
     block.append(table);
   }
@@ -1113,10 +1167,9 @@ async function renderFavs() {
     else {
       const table = el('table');
       for (const d of merged.slice(0, 6)) {
-        const mins = Math.round((base + d.t - state.sim) / 60);
-        table.append(el('tr', {}, el('td', { class: 't' }, hhmm(d.t)),
+          table.append(el('tr', {}, el('td', { class: 't' }, depTime(d)),
           el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : '', el('div', { class: 'sub' }, d.station)),
-          el('td', { class: 'r' }, mins <= 0 ? 'jetzt' : `in ${mins} min`)));
+          el('td', { class: 'r' }, depWhen(d, base, state.sim))));
       }
       blk.append(table);
     }
@@ -1472,18 +1525,17 @@ async function renderBoard() {
     const list = data[n].filter((d) => flagsOk(d.flags));
     if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
     for (const d of list) {
-      const mins = Math.round((base + d.t - now) / 60);
       rows.append(el('div', { class: 'brow' },
-        el('span', { class: 'bt' }, hhmm(d.t)),
+        el('span', { class: 'bt' }, depTime(d)),
         pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
         el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
-        el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
+        el('span', { class: 'bm' }, depWhen(d, base, now, ''))));
     }
     col.append(rows);
     cols.append(col);
   });
-  view.append(cols, el('div', { class: 'bnote sub' }, `Nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution || 'KVV (CC0)'}.`));
+  view.append(cols, el('div', { class: 'bnote sub' }, `Zeiten ${liveNote()}. Daten: ${state.attribution || 'KVV (CC0)'}.`));
 }
 
 // ---------- Linienansicht ----------
@@ -1620,7 +1672,7 @@ function renderRoutePanel(autorun = false) {
   const fromField = suggestField('Start (Haltestelle oder Adresse)', state.route.from, (r) => { state.route.from = r; });
   const toField = suggestField('Ziel (Haltestelle oder Adresse)', state.route.to, (r) => { state.route.to = r; });
   const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.sim) });
-  const status = el('div', { class: 'sub' }, 'Nach Fahrplan (Soll), ohne Echtzeit.');
+  const status = el('div', { class: 'sub' }, state.rt.active ? 'Nach Fahrplan, Live-Verspätungen werden angezeigt, ausgefallene Fahrten gemieden.' : 'Nach Fahrplan (Soll), ohne Echtzeit.');
   const results = el('div', { class: 'results' });
   const chart = el('div', { class: 'chart' });
 
@@ -1807,7 +1859,8 @@ function renderJourneys(container) {
         const style = routeStyle([leg.line, leg.routeType, leg.color, leg.textColor]);
         card.append(el('div', { class: 'leg' },
           pill(leg.line, style, () => openLine(leg.line)), ' ',
-          el('span', {}, `${hhmm(leg.dep)} ${state.stops[leg.from][1]}`),
+          el('span', {}, depTime({ t: leg.dep, trip: leg.trip }), ` ${state.stops[leg.from][1]}`),
+          rtOf(leg.trip).canceled ? el('div', { class: 'sub warn' }, '⚠ Diese Fahrt fällt aus') : '',
           el('div', { class: 'sub' }, `Richtung ${cleanHeadsign(leg.line, leg.headsign)}${isDetour(leg.headsign) ? ' · ⚠ Umleitung/Ersatzverkehr' : ''}${accessible(leg.flags) ? ' · ♿' : ''}`),
           el('span', {}, `${hhmm(leg.arr)} ${state.stops[leg.to][1]}`)));
       }
@@ -1935,6 +1988,83 @@ async function openDetours() {
 }
 $('btn-detours').addEventListener('click', () => (state.list === 'detours' ? closePanel() : openDetours()));
 
+// ---------- Echtzeit: Anzeige, Meldungen, Puenktlichkeit ----------
+
+function rtGet(pathName) {
+  return state.rtBase ? fetch(`${state.rtBase.replace(/\/$/, '')}${pathName}`).then((r) => r.json()) : api(pathName);
+}
+
+function setNote() {
+  if (STATIC && !TILES) return;
+  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.`;
+}
+
+function updateLive() {
+  setNote();
+  const box = $('live');
+  const r = state.rt;
+  if (!r.updated && !r.error) { box.hidden = true; return; }
+  box.hidden = false;
+  const age = r.feedTime ? Math.round(Date.now() / 1000 - r.feedTime) : null;
+  const stale = r.error || age === null || age > 300;
+  box.className = stale ? 'live stale' : 'live';
+  box.textContent = r.error && !r.updated ? '● Live-Daten nicht erreichbar' : `● Live ${r.feedTime ? hhmmss(wallOf(r.feedTime)) : ''}`;
+  box.title = `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
+}
+
+async function openAlerts() {
+  state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;
+  clearInterval(stationTimer);
+  state.list = 'alerts';
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Lade …'));
+  showPanel();
+  let data = { alerts: [] };
+  try { data = await rtGet('/api/alerts'); } catch (e) { console.error(e); }
+  if (state.list !== 'alerts') return;
+  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Störungs- und Baustellenmeldungen aus dem Echtzeitstream (gtfs.de), Region Karlsruhe zuerst.'));
+  if (!data.alerts.length) body.append(el('div', { class: 'empty' }, 'Gerade keine Meldungen für das Gebiet.'));
+  for (const a of data.alerts) {
+    const det = el('details', { class: 'block' }, el('summary', {}, a.header));
+    if (a.text && a.text !== a.header) det.append(el('div', { class: 'atext' }, a.text));
+    if (a.url && /^https?:\/\//.test(a.url)) det.append(el('a', { href: a.url, target: '_blank', rel: 'noreferrer' }, 'Mehr dazu'));
+    body.append(det);
+  }
+  showPanel();
+}
+
+async function openStats() {
+  state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;
+  clearInterval(stationTimer);
+  state.list = 'stats';
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, '⏱ Pünktlichkeit'), el('div', { class: 'sub' }, 'Lade …'));
+  showPanel();
+  let data = { days: 0, lines: [] };
+  try { data = await rtGet('/api/stats'); } catch (e) { console.error(e); }
+  if (state.list !== 'stats') return;
+  body.replaceChildren(el('h2', {}, '⏱ Pünktlichkeit'),
+    el('div', { class: 'sub' }, data.days
+      ? `Mitgeschrieben vom Server, solange die App offen war: ${data.days} Tag${data.days > 1 ? 'e' : ''} (${fmtDate(data.from)} bis ${fmtDate(data.to)}). "Spät" heißt ab 3 Minuten. Nur Fahrten mit Echtzeitangabe.`
+      : 'Noch keine Daten. Der Server schreibt mit, sobald Echtzeit läuft und die App geöffnet ist.'));
+  if (data.lines.length) {
+    const table = el('table');
+    table.append(el('tr', { class: 'th' }, el('td', {}, 'Linie'), el('td', { class: 'r' }, 'Fahrten'), el('td', { class: 'r' }, 'Ø'), el('td', { class: 'r' }, 'spät'), el('td', { class: 'r' }, 'Ausfall')));
+    for (const l of data.lines.slice(0, 60)) {
+      const route = state.meta.routes.find((r) => r[0] === l.line && r[1] === l.type) || [l.line, l.type, '', ''];
+      const late = el('td', { class: 'r' }, `${l.latePct} %`);
+      if (l.latePct >= 20) late.style.color = '#d32f2f';
+      table.append(el('tr', {}, el('td', {}, pill(l.line, routeStyle(route), () => openLine(l.line))), el('td', { class: 'r' }, String(l.trips)),
+        el('td', { class: 'r' }, fmtDelay(l.avg)), late, el('td', { class: 'r' }, String(l.canceled))));
+    }
+    body.append(table);
+  }
+  showPanel();
+}
+
+$('btn-alerts').addEventListener('click', () => (state.list === 'alerts' ? closePanel() : openAlerts()));
+$('btn-stats').addEventListener('click', () => (state.list === 'stats' ? closePanel() : openStats()));
+
 // ---------- Darstellung ----------
 
 function applyTheme(theme) {
@@ -2052,12 +2182,28 @@ async function init() {
     state.networkGroups = groups;
     $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ' + state.attribution + '. Ohne Gewähr.';
   }
-  if (meta.realtime) {
+  // Echtzeit: vom eigenen Server oder, in der statischen Variante, von einem Live-Server (STRAB_RT_URL)
+  const rtBase = STATIC ? (window.STRAB_RT_URL || '') : '';
+  if (meta.realtime || rtBase) {
     const poll = async () => {
-      try { state.delays = new Map(Object.entries(await api('/api/delays')).map(([k, v]) => [k, Number(v)])); } catch (e) { console.error(e); }
+      try {
+        const j = rtBase ? await (await fetch(`${rtBase.replace(/\/$/, '')}/api/delays`)).json() : await api('/api/delays');
+        if (!j || j.enabled === false) return;
+        state.delays = new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
+        state.canceled = new Set(j.c || []);
+        state.reasons = new Map(Object.entries(j.r || {}));
+        state.rt = { active: !!j.updated, updated: j.updated, feedTime: j.feedTime, error: j.error };
+      } catch (e) {
+        state.rt = { ...state.rt, error: e.message };
+      }
+      updateLive();
     };
+    state.rtBase = rtBase;
     poll();
     setInterval(poll, 20000);
+    if (!state.attribution.includes('Echtzeit')) state.attribution += `; ${meta.rtAttribution || 'Echtzeit: gtfs.de (CC BY-SA 4.0)'}`;
+    $('btn-alerts').hidden = false;
+    $('btn-stats').hidden = false;
   }
   const h = readHash();
   const [s, w, n, e] = meta.bbox;

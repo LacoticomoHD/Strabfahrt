@@ -43,7 +43,7 @@ if (!fs.existsSync(path.join(ROOT, 'data', 'model.json'))) {
     const i = args.indexOf(flag);
     if (i >= 0 && args[i + 1]) pass.push(flag, args[i + 1]);
   }
-  run(process.execPath, [path.join('scripts', 'build-data.mjs'), ...pass], 'KVV-Fahrplandaten laden und aufbereiten (einmalig, etwa eine Minute)');
+  run(process.execPath, ['--max-old-space-size=4096', path.join('scripts', 'build-data.mjs'), ...pass], 'Fahrplandaten laden und aufbereiten (einmalig, je nach Leitung 3 bis 10 Minuten, rund 300 MB Download)');
 }
 
 process.env.PORT = String(PORT);

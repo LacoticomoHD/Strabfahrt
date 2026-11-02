@@ -14,9 +14,11 @@
     "snap:rail": "node scripts/snap-rail.mjs",
     "build:static": "node scripts/build-static.mjs",
     "start": "node server/index.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check:data": "node scripts/check-data.mjs"
   },
   "dependencies": {
+    "gtfs-realtime-bindings": "^2.2.0",
     "leaflet": "^1.9.4",
     "qrcode-generator": "^2.0.4"
   }

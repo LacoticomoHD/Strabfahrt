@@ -38,9 +38,15 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 - Zeitleiste (Schieber für die Uhrzeit) und "Nacht": springt auf 01:30 der kommenden Nacht und zeigt, welche Linien dann fahren
 - Dunkelmodus (folgt dem System, per Schalter umstellbar) und Handy-Layout mit Bottom-Sheet
 
-- Verspätungsanzeige: Hinter jedem Fahrzeug erscheint ab Zoom 14 ein Zeichen mit Sekunden oder Minuten. Rot heißt zu spät, hellblau zu früh, grün pünktlich (unter 30 Sekunden Abweichung). **Echte Werte gibt es erst mit Echtzeitdaten.** Bis dahin zeigt der Schalter "Demo-Verspätung" erfundene Werte, nur zur Ansicht.
+- Verspätungsanzeige: Hinter jedem Fahrzeug erscheint ab Zoom 14 ein Zeichen mit Sekunden oder Minuten. Rot heißt zu spät, hellblau zu früh, grün pünktlich (unter 30 Sekunden Abweichung). Die Werte kommen live aus dem Echtzeitstream, wenn der Server läuft (siehe Echtzeit). Der Schalter "Demo-Verspätung" zeigt erfundene Werte und überdeckt dann die echten.
 
 Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorage), nichts geht an den Server.
+
+## Prüfung vor dem Veröffentlichen
+
+`npm run check:data` prüft das gebaute Modell (Mindestanzahl Fahrten, Verkehr am heutigen Tag, Verbindung Hauptbahnhof nach Durlach). Der Workflow veröffentlicht nur, wenn Bau, Tests und Prüfung durchlaufen. `build:data` bricht selbst ab, wenn weniger als 20.000 KVV-Fahrten ankommen (`STRAB_MIN_TRIPS`).
+
+Zeitumstellung: An den beiden Umstellungstagen liegen frühe Fahrten nach GTFS-Regel eine Stunde neben der Wanduhr. Das Modell korrigiert das.
 
 ## Datenquellen
 
@@ -49,6 +55,8 @@ Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorag
 | KVV | Tram, Bus, S-Bahn im KVV-Gebiet | CC0 |
 | gtfs.de Fernverkehr | ICE, IC, EC und andere Fernzüge (DB und Partner) | CC BY 4.0, Daten von DELFI e.V. |
 | gtfs.de Regionalverkehr | RE, RB, IRE, weitere S-Bahnen und Privatbahnen | CC BY 4.0, Daten von DELFI e.V. |
+| gtfs.de Nahverkehr | nur zur Zuordnung der Echtzeit, nicht angezeigt | CC BY 4.0, Daten von DELFI e.V. |
+| gtfs.de Echtzeit | Verspätungen, Ausfälle, Meldungen | CC BY-SA 4.0 |
 
 Die Quellenangaben stehen in der App unten in der Leiste und auf der Tafel. Die kostenlosen gtfs.de-Feeds enthalten nur die **nächsten 30 Tage**, der nächtliche Build hält sie aktuell. Für Daten darüber hinaus zeigt die App einen Hinweis und es fahren nur KVV-Linien. Fehlt ein gtfs.de-Feed beim Bauen (z. B. kein Netz), wird er übersprungen. Mit `npm run build:data -- --feeds kvv` baust du nur KVV.
 
@@ -59,7 +67,7 @@ Doppelungen: Der Regionalfeed enthält auch die S-Bahnen, die schon im KVV-Feed 
 ## Wichtig: Was die App nicht kann
 
 - **Fernzüge sind im Gebiet nur grob eingezeichnet.** Gespeichert wird der Teil im Kartengebiet plus der nächste Halt davor und danach. Ein ICE nach Basel bewegt sich deshalb in Luftlinie zum nächsten Halt außerhalb, ohne Gleisverlauf dazwischen.
-- **Keine Echtzeit.** Alle Positionen und Abfahrten sind Soll-Zeiten aus dem Fahrplan. Verspätungen und Ausfälle werden nicht gezeigt.
+- **Echtzeit nur mit laufendem Server** (siehe unten). Ohne ihn sind alle Zeiten Soll-Zeiten. Positionen sind immer geschätzt, nie GPS.
 - **Streckenführung nur mit Zusatzschritt.** Der KVV-Feed enthält keine Linienverläufe. Ohne `npm run snap:rail` bewegen sich Fahrzeuge in Luftlinie zwischen zwei Haltestellen. Auch mit dem Skript bleiben Busse und Abschnitte ohne passenden Gleisweg in Luftlinie.
 - Zeiten sind Berliner Ortszeit. An den beiden Tagen der Zeitumstellung kann der Zeitraffer um eine Stunde abweichen.
 
@@ -69,7 +77,7 @@ Doppelungen: Der Regionalfeed enthält auch die S-Bahnen, die schon im KVV-Feed 
 2. In VS Code: `Strg+Umschalt+P`, "Git: Clone", Adresse `https://github.com/LacoticomoHD/Strabfahrt`, Ordner öffnen.
 3. **F5** drücken (oder `Strg+Umschalt+B`, oder im Terminal `npm run dev`).
 
-Beim ersten Start installiert das Skript die Pakete und lädt den KVV-Fahrplan (etwa eine Minute). Danach öffnet sich der Browser mit der App unter `http://127.0.0.1:3000`. Beenden mit `Strg+C` im Terminal.
+Beim ersten Start installiert das Skript die Pakete und lädt die Fahrpläne (rund 300 MB, je nach Leitung 3 bis 10 Minuten). Danach öffnet sich der Browser mit der App unter `http://127.0.0.1:3000`. Beenden mit `Strg+C` im Terminal.
 
 Weitere Aufgaben unter `Strg+Umschalt+P`, "Tasks: Run Task": Daten neu bauen, Gleise und Straßen matchen (`snap:rail`), Tests, statische Variante bauen. Für die Karte mit Gleisverlauf zuerst einmal "Gleise und Straßen matchen" ausführen und dann neu starten. Bei Port-Konflikt: `PORT=3001 npm run dev` (PowerShell: `$env:PORT=3001; npm run dev`).
 
@@ -144,9 +152,28 @@ Der Server arbeitet nur mit eigenen Dateien und baut keine Verbindung zu Fremdsy
 
 `.github/workflows/pages.yml` baut jede Nacht die Web-Variante mit frischem KVV-Feed neu, legt Bahnen per Overpass auf die OSM-Gleise (Wochen-Cache, bei Fehlschlag Luftlinie) und veröffentlicht auf dem Branch `gh-pages`. Voraussetzung: GitHub Pages steht auf "Deploy from a branch", Branch `gh-pages`, Ordner `/`. Manuell starten: Reiter Actions, Workflow wählen, "Run workflow".
 
-## Echtzeit anschließen
+## Echtzeit (Live-Verspätungen)
 
-Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: JSON-Objekt von Fahrt-ID (wie in `trips.txt`) auf Verspätung in Sekunden, positiv für zu spät, negativ für zu früh. Die Fahrzeugposition wird dann um diese Verspätung verschoben. Eine Echtzeitquelle ist noch nicht angebunden. Die Pünktlichkeits-Statistik (Verspätungen mitschreiben und auswerten) setzt Echtzeit voraus und ist deshalb noch nicht gebaut. Offiziell wäre das die TRIAS-Schnittstelle des KVV nach Abschluss der Nutzungsvereinbarung.
+Der Server holt Live-Daten aus dem kostenlosen GTFS-Realtime-Stream von [gtfs.de](https://gtfs.de/de/realtime/) (Lizenz CC BY-SA 4.0). Enthalten sind Verspätungen, Ausfälle und Meldungen für Baden-Württemberg, also auch KVV-Trams, -Busse, S-Bahnen, Regional- und Fernzüge. Bei einem Test am Abend hatten rund 500 Fahrten im Raum Karlsruhe Live-Werte.
+
+- Fahrzeuge werden um ihre Verspätung verschoben, mit Zeichen rot (zu spät), hellblau (zu früh), grün (pünktlich). Positionen bleiben geschätzt, der Stream enthält keine GPS-Positionen.
+- Abfahrten, Tafel und Verbindungen zeigen die Abweichung. Ausgefallene Fahrten sind durchgestrichen und werden in der Verbindungssuche gemieden.
+- Gründe ("Defektes Stellwerk") stehen beim Fahrzeug. "📢 Meldungen" listet Bau- und Störungsmeldungen, Karlsruher zuerst.
+- "⏱ Pünktlichkeit": Der Server schreibt mit, solange die App benutzt wird (30 Tage, `data/stats.json`), und zeigt je Linie mittlere Verspätung, Anteil ab 3 Minuten zu spät und Ausfälle.
+- Zuordnung: Fern- und Regionalzüge passen direkt. Für KVV-Fahrten lädt `build:data` zusätzlich den gtfs.de-Nahverkehrsfeed (rund 270 MB, wird nicht angezeigt) und ordnet über Linie, erste Abfahrt und letzte Ankunft zu (`data/rt-map.json`, rund 86 % der Fahrten).
+- Der Stream ist rund 11 MB groß. Der Server lädt ihn nur, solange jemand die App offen hat, standardmäßig jede Minute (`STRAB_RT_INTERVAL=Sekunden`), und pausiert nach 5 Minuten ohne Nutzung. Das sind rund 650 MB pro Stunde Nutzung. Abschalten mit `STRAB_RT=0`.
+- **Nur mit Server.** Die statische Web-Variante (GitHub Pages) kann den Stream nicht selbst verarbeiten. Sie kann aber Live-Daten von einem eigenen, dauerhaft laufenden STRABFAHRT-Server holen: `npm run build:static -- --tiles --rt-url https://dein-server.de`, im Workflow über die Repository-Variable `STRAB_RT_URL`. Der Server muss per HTTPS erreichbar sein.
+
+## Dauerbetrieb (Raspberry Pi oder kleiner Server)
+
+- Docker: `docker build -t strabfahrt .` und `docker run -d -p 3000:3000 -v strabfahrt-data:/app/data --restart unless-stopped strabfahrt`.
+- Ohne Docker: `deploy/strabfahrt.service` (systemd) und `deploy/update.sh` (nächtlich per cron: neu bauen, prüfen, nur bei Erfolg übernehmen, neu starten).
+- Empfohlen: 2 GB RAM für den Datenbau (der Nahverkehrsfeed ist groß), der laufende Server braucht deutlich weniger.
+- Für HTTPS einen Reverse-Proxy davorsetzen (z. B. Caddy) oder einen Tunnel nutzen.
+
+## Echtzeit-Schnittstelle
+
+Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den Wert `"realtime": true` meldet. Antwort: `{ d: {Fahrt-ID: Sekunden}, c: [ausgefallene IDs], r: {Fahrt-ID: Grund}, updated, feedTime, error }`. Dazu `GET /api/alerts` und `GET /api/stats`. Diese drei Endpunkte erlauben Abrufe von anderen Ursprüngen (CORS).
 
 ## Mögliche nächste Schritte
 

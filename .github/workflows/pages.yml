@@ -32,8 +32,13 @@ jobs:
       - run: npm ci
       - run: npm test
 
-      - name: KVV-Feed laden und Modell bauen
+      - name: Fahrplan-Feeds laden und Modell bauen (KVV, Fern-, Regional-, Nahverkehr)
         run: npm run build:data
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Daten prüfen (bricht vor dem Veröffentlichen ab, wenn etwas fehlt)
+        run: npm run check:data
 
       - name: Kalenderwoche für den Gleis-Cache
         id: week
@@ -53,6 +58,13 @@ jobs:
 
       - name: Statische Variante mit Karte bauen
         run: npm run build:static -- --tiles
+        env:
+          # Optional: Adresse eines eigenen Live-Servers (Repository-Variable STRAB_RT_URL), sonst ohne Echtzeit
+          STRAB_RT_URL: ${{ vars.STRAB_RT_URL }}
+
+      - name: Fertige Seite prüfen
+        run: |
+          for f in index.html app.js model.json model.js local-api.js sw.js; do test -s "dist-static/$f" || { echo "fehlt: $f"; exit 1; }; done
 
       - name: Auf gh-pages veröffentlichen
         run: |

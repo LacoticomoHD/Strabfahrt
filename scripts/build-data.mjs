@@ -5,7 +5,9 @@
 //   fv   Fernverkehr (ICE, IC, EC ...), gtfs.de, Daten von DELFI e.V. (CC BY 4.0)
 //   rv   Regionalverkehr (RE, RB, S-Bahnen ...), gtfs.de, Daten von DELFI e.V. (CC BY 4.0)
 // Die gtfs.de-Feeds decken nur die naechsten 30 Tage ab und sollten taeglich neu gebaut werden.
+//   nv   Nahverkehr Deutschland, gtfs.de: wird nicht angezeigt, nur zur Zuordnung der Echtzeitdaten (data/rt-map.json)
 // Faellt ein optionaler Feed aus, wird er uebersprungen. Fuer Gueterzuege gibt es keine offenen Fahrplandaten.
+// Plausibilitaet: weniger als STRAB_MIN_TRIPS (Standard 20000) KVV-Fahrten bricht den Bau ab.
 //
 // Aufruf:
 //   node scripts/build-data.mjs                     laedt alle Feeds und baut data/model.json
@@ -31,14 +33,20 @@ const FEEDS = [
     license: 'CC0', attribution: 'KVV (CC0)',
   },
   {
-    id: 'fv', label: 'Fernverkehr', prefix: 'fv:', forceType: 100,
+    id: 'fv', label: 'Fernverkehr', prefix: 'fv:', stopPrefix: 'de:', forceType: 100,
     url: 'https://download.gtfs.de/germany/fv_free/latest.zip',
     license: 'CC BY 4.0', attribution: 'Fernverkehr: gtfs.de, Daten von DELFI e.V. (CC BY 4.0)',
   },
   {
-    id: 'rv', label: 'Regionalverkehr', prefix: 'rv:', skipDuplicateRail: true,
+    id: 'rv', label: 'Regionalverkehr', prefix: 'rv:', stopPrefix: 'de:', skipDuplicateRail: true,
     url: 'https://download.gtfs.de/germany/rv_free/latest.zip',
     license: 'CC BY 4.0', attribution: 'Regionalverkehr: gtfs.de, Daten von DELFI e.V. (CC BY 4.0)',
+  },
+  {
+    // Nur fuer die Echtzeit: ordnet die Fahrt-IDs des gtfs.de-Echtzeitstreams den KVV-Fahrten zu (gross, rund 270 MB)
+    id: 'nv', label: 'Nahverkehr (Zuordnung Echtzeit)', prefix: 'nv:', stopPrefix: 'de:', matchOnly: true,
+    url: 'https://download.gtfs.de/germany/nv_free/latest.zip',
+    license: 'CC BY 4.0', attribution: '',
   },
 ];
 const FV_TYPE = 100; // interner Typ fuer Fernverkehr
@@ -90,6 +98,7 @@ async function obtain(feed) {
 // ---------- CSV ----------
 
 function parseLine(line) {
+  if (line.indexOf('"') < 0) return line.split(',');
   const out = [];
   let i = 0;
   const n = line.length;
@@ -177,6 +186,10 @@ const shared = {
   tripOut: [],
   railNames: new Set(), // Kurznamen der Schienenlinien des Haupt-Feeds, gegen Doppelungen
   feedMeta: [],
+  kvvKeys: new Map(), // "Linie|erste Abfahrt|letzte Ankunft" -> KVV-Fahrt-IDs
+  rtTrips: new Map(), // Fahrt-ID im gtfs.de-Stream -> eigene Fahrt-IDs
+  rtRoutes: new Set(), // gtfs.de-Linien-IDs mit Fahrten im Gebiet (fuer Meldungen)
+  rtStops: new Set(), // gtfs.de-Halte-IDs im Gebiet (fuer Meldungen)
 };
 
 const stopIndex = (id) => {
@@ -192,14 +205,18 @@ const stopIndex = (id) => {
 async function processFeed(feed, raw) {
   const f = (n) => path.join(raw, n);
   const px = feed.prefix;
+  const sp = feed.stopPrefix || feed.prefix;
+  const gtfsde = feed.id !== 'kvv';
   const stats = { routes: 0, skippedRoutes: 0, kept: 0, skipped: 0 };
 
   // Linien
   const routeIdx = new Map();
+  const matchRoutes = new Map(); // Linien, die nicht ins Modell kommen, aber den KVV-Fahrten zugeordnet werden
   await readCsv(f('routes.txt'), (g) => {
     const short = g('route_short_name') || g('route_long_name');
     const type = normType(Number(g('route_type')), feed);
-    if (feed.skipDuplicateRail && type === 2 && shared.railNames.has(short)) { stats.skippedRoutes++; return; }
+    if (feed.matchOnly) { matchRoutes.set(g('route_id'), short); return; }
+    if (feed.skipDuplicateRail && type === 2 && shared.railNames.has(short)) { matchRoutes.set(g('route_id'), short); stats.skippedRoutes++; return; }
     routeIdx.set(g('route_id'), shared.routes.length);
     shared.routes.push([short, type, g('route_color'), g('route_text_color'), px + g('agency_id')]);
     if (feed.required && type === 2) shared.railNames.add(short);
@@ -207,11 +224,17 @@ async function processFeed(feed, raw) {
   });
 
   // Haltestellen
+  const areaStops = new Set();
   await readCsv(f('stops.txt'), (g) => {
     const parent = g('parent_station');
-    shared.stopRows.set(px + g('stop_id'), {
-      id: px + g('stop_id'), feed: feed.id, name: g('stop_name'), lat: Number(g('stop_lat')), lon: Number(g('stop_lon')),
-      parent: parent ? px + parent : '', platform: g('platform_code'), type: g('location_type'),
+    const lat = Number(g('stop_lat'));
+    const lon = Number(g('stop_lon'));
+    if (inBox(lat, lon)) { areaStops.add(g('stop_id')); if (gtfsde) shared.rtStops.add(g('stop_id')); }
+    if (feed.matchOnly) return;
+    if (shared.stopRows.has(sp + g('stop_id'))) return; // gleiche gtfs.de-Haltestelle aus anderem Feed
+    shared.stopRows.set(sp + g('stop_id'), {
+      id: sp + g('stop_id'), feed: feed.id, name: g('stop_name'), lat: Number(g('stop_lat')), lon: Number(g('stop_lon')),
+      parent: parent ? sp + parent : '', platform: g('platform_code'), type: g('location_type'),
       wb: Number(g('wheelchair_boarding')) || 0, // 0 keine Angabe (erbt von der Station), 1 stufenfrei, 2 nicht stufenfrei
     });
   });
@@ -221,6 +244,7 @@ async function processFeed(feed, raw) {
   await readCsv(f('trips.txt'), (g) => {
     const wc = Number(g('wheelchair_accessible')) || 0; // 0 unbekannt, 1 ja, 2 nein
     const bk = Number(g('bikes_allowed')) || 0;
+    if (!routeIdx.has(g('route_id')) && !matchRoutes.has(g('route_id'))) return;
     trips.set(g('trip_id'), { route: g('route_id'), service: px + g('service_id'), headsign: g('trip_headsign'), flags: (wc & 3) | ((bk & 3) << 2) });
   });
   console.log(`[${feed.id}] Linien: ${stats.routes}${stats.skippedRoutes ? ` (${stats.skippedRoutes} uebersprungen, schon im KVV-Feed)` : ''}, Fahrten im Feed: ${trips.size}`);
@@ -237,8 +261,24 @@ async function processFeed(feed, raw) {
     const list = rows;
     currentId = null;
     rows = [];
-    if (!trip || !routeIdx.has(trip.route) || list.length < 2) { stats.skipped++; return; }
+    if (!trip || list.length < 2) { stats.skipped++; return; }
+    if (!routeIdx.has(trip.route)) {
+      // Nur Zuordnung zum Echtzeitstream: gleiche Linie, gleiche erste Abfahrt und letzte Ankunft wie eine KVV-Fahrt
+      if (!matchRoutes.has(trip.route) || !list.some((r) => areaStops.has(r.stop))) return;
+      shared.rtRoutes.add(trip.route);
+      list.sort((a, b) => a.seq - b.seq);
+      const key = `${matchRoutes.get(trip.route)}|${list[0].dep ?? list[0].arr}|${list[list.length - 1].arr ?? list[list.length - 1].dep}`;
+      const ids = shared.kvvKeys.get(key);
+      if (ids) { shared.rtTrips.set(id, ids); stats.matched = (stats.matched || 0) + 1; } else stats.unmatched = (stats.unmatched || 0) + 1;
+      return;
+    }
     list.sort((a, b) => a.seq - b.seq);
+    if (feed.required) {
+      const short = shared.routes[routeIdx.get(trip.route)][0];
+      const key = `${short}|${list[0].dep ?? list[0].arr}|${list[list.length - 1].arr ?? list[list.length - 1].dep}`;
+      if (!shared.kvvKeys.has(key)) shared.kvvKeys.set(key, []);
+      shared.kvvKeys.get(key).push(id);
+    }
 
     // fehlende Zeiten auffuellen
     let prev = null;
@@ -253,7 +293,7 @@ async function processFeed(feed, raw) {
     let first = -1;
     let last = -1;
     list.forEach((r, i) => {
-      const s = shared.stopRows.get(px + r.stop);
+      const s = shared.stopRows.get(sp + r.stop);
       if (s && inBox(s.lat, s.lon)) {
         if (first < 0) first = i;
         last = i;
@@ -262,15 +302,16 @@ async function processFeed(feed, raw) {
     if (first < 0) { stats.skipped++; return; }
     const seg = list.slice(Math.max(0, first - 1), Math.min(list.length, last + 2));
     if (seg.length < 2) { stats.skipped++; return; }
-    if (seg.some((r) => !shared.stopRows.has(px + r.stop))) { stats.skipped++; return; }
+    if (seg.some((r) => !shared.stopRows.has(sp + r.stop))) { stats.skipped++; return; }
+    if (gtfsde) shared.rtRoutes.add(trip.route);
 
     const start = seg[0].arr;
-    const stops = seg.map((r) => stopIndex(px + r.stop));
+    const stops = seg.map((r) => stopIndex(sp + r.stop));
     const rel = [];
     for (const r of seg) rel.push(r.arr - start, r.dep - start);
 
     // Ohne Zielangabe im Feed wird der echte Endhalt der ungekuerzten Fahrt genommen
-    const dest = trip.headsign || list.find((r) => r.headsign)?.headsign || shared.stopRows.get(px + list[list.length - 1].stop)?.name || '';
+    const dest = trip.headsign || list.find((r) => r.headsign)?.headsign || shared.stopRows.get(sp + list[list.length - 1].stop)?.name || '';
     const rIdx = routeIdx.get(trip.route);
     const pKey = `${rIdx}|${dest}|${stops.join(',')}`;
     let pIdx = shared.patterns.get(pKey);
@@ -300,14 +341,19 @@ async function processFeed(feed, raw) {
     const id = g('trip_id');
     if (id !== currentId) {
       flush();
-      if (finished.has(id)) throw new Error(`[${feed.id}] stop_times.txt ist nicht nach trip_id gruppiert: ${id}`);
-      finished.add(id);
+      if (!feed.matchOnly) {
+        if (finished.has(id)) throw new Error(`[${feed.id}] stop_times.txt ist nicht nach trip_id gruppiert: ${id}`);
+        finished.add(id);
+      }
       currentId = id;
     }
+    if (feed.matchOnly && !trips.has(id)) return;
     rows.push({ stop: g('stop_id'), seq: Number(g('stop_sequence')), arr: toSec(g('arrival_time')), dep: toSec(g('departure_time')), headsign: g('stop_headsign') });
-    if (++lineCount % 1000000 === 0) console.log(`  [${feed.id}] Zeilen:`, lineCount);
+    if (++lineCount % 5000000 === 0) console.log(`  [${feed.id}] Zeilen:`, lineCount);
   });
   flush();
+  if (feed.matchOnly || stats.matched || stats.unmatched) console.log(`[${feed.id}] Echtzeit-Zuordnung: ${stats.matched || 0} Fahrten zugeordnet, ${stats.unmatched || 0} ohne Gegenstueck`);
+  if (feed.matchOnly) return;
   console.log(`[${feed.id}] Fahrten uebernommen: ${stats.kept}, verworfen: ${stats.skipped}`);
 
   // Kalender
@@ -413,12 +459,22 @@ async function main() {
     if (target) outStops[i][4] = addStop(target);
     else if (row.parent && shared.stopRows.has(row.parent)) outStops[i][4] = addStop(row.parent);
   }
+  // Stationen ohne Ortsnamen (z. B. "Hauptbahnhof"): Namen des Steigs uebernehmen, wenn alle Steige gleich heissen
+  for (let i = 0; i < outStops.length; i++) {
+    if (outStops[i][6] !== 1 || outStops[i][1].includes(',') || !outStops[i][0].startsWith('de:')) continue;
+    const kids = new Set(outStops.filter((x) => x[4] === i).map((x) => x[1]));
+    if (kids.size === 1) { const [k] = kids; if (k !== outStops[i][1] && k.length > outStops[i][1].length) outStops[i][1] = k; }
+  }
   console.log(`Haltestellen: ${base} Halte, ${outStops.length - base} Elternstationen, ${merged} Stationen anderer Feeds mit dem KVV-Feed zusammengefuehrt`);
 
   // Stufenfreiheit: ohne eigene Angabe gilt die der Station
   for (let i = 0; i < outStops.length; i++) {
     if (outStops[i][7] === 0 && outStops[i][4] >= 0) outStops[i][7] = outStops[outStops[i][4]][7] || 0;
   }
+
+  const minTrips = Number(process.env.STRAB_MIN_TRIPS || 20000);
+  const kvvTrips = (shared.feedMeta.find((m) => m.id === 'kvv') || {}).trips || 0;
+  if (kvvTrips < minTrips) throw new Error(`Plausibilitaet: nur ${kvvTrips} KVV-Fahrten (erwartet mindestens ${minTrips}). Abbruch, nichts geschrieben.`);
 
   // Kalender
   const svcOut = new Array(shared.services.size);
@@ -435,6 +491,11 @@ async function main() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const outFile = path.join(DATA_DIR, 'model.json');
   fs.writeFileSync(outFile, JSON.stringify(model));
+  const rtFile = path.join(DATA_DIR, 'rt-map.json');
+  fs.writeFileSync(rtFile, JSON.stringify({
+    modelBuilt: model.meta.built, trips: Object.fromEntries(shared.rtTrips), routes: [...shared.rtRoutes], stops: [...shared.rtStops],
+  }));
+  console.log(`Echtzeit-Zuordnung: ${shared.rtTrips.size} Stream-Fahrten auf KVV-Fahrten, ${shared.rtRoutes.size} Linien, ${shared.rtStops.size} Halte im Gebiet -> ${rtFile}`);
   const mb = (fs.statSync(outFile).size / 1048576).toFixed(1);
   console.log(`Geschrieben: ${outFile} (${mb} MB), Linien: ${shared.routes.length}, Muster: ${shared.patternList.length}, Zeitprofile: ${shared.profileList.length}, Fahrten: ${shared.tripOut.length}`);
 }

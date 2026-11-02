@@ -3,6 +3,8 @@
 //
 //   node scripts/build-static.mjs            ohne Kartenkacheln (schematisches Liniennetz)
 //   node scripts/build-static.mjs --tiles    mit OpenStreetMap-Kacheln (fuer eigenen Webspace, GitHub Pages)
+//   --rt-url https://mein-server.de          Live-Daten von einem laufenden STRABFAHRT-Server holen (muss HTTPS sein)
+//                                            (auch ueber die Umgebungsvariable STRAB_RT_URL)
 //
 // Voraussetzung: data/model.json und node_modules/leaflet (npm install).
 
@@ -41,7 +43,11 @@ fs.writeFileSync(path.join(OUT, 'local-api.js'), fs.readFileSync(path.join(ROOT,
 for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_modules', 'leaflet', 'dist', f), path.join('vendor', 'leaflet', f));
 const tiles = process.argv.includes('--tiles');
 copy(path.join(ROOT, 'node_modules', 'qrcode-generator', 'dist', 'qrcode.js'), path.join('vendor', 'qrcode', 'qrcode.js'));
-fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}`);
+const rtArg = process.argv.indexOf('--rt-url');
+const rtUrl = rtArg >= 0 ? process.argv[rtArg + 1] : process.env.STRAB_RT_URL || '';
+if (rtUrl && !/^(https:\/\/[^\s"']+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(rtUrl)) throw new Error('--rt-url muss eine https-Adresse sein');
+fs.writeFileSync(path.join(OUT, 'static-flag.js'), `window.STRAB_STATIC = true;\n${tiles ? 'window.STRAB_TILES = true;\n' : ''}${rtUrl ? `window.STRAB_RT_URL = ${JSON.stringify(rtUrl)};\n` : ''}`);
+if (rtUrl) console.log('Live-Daten von', rtUrl);
 if (tiles) console.log('Variante mit Kacheln: Nutzungsrichtlinie von OpenStreetMap beachten (geringe Last)');
 
 let html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');

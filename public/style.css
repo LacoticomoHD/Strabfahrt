@@ -197,3 +197,14 @@ body.board-open #bar, body.board-open #top, body.board-open #panel, body.board-o
 .qrbox { width: 260px; height: 260px; background: #fff; padding: 8px; border-radius: 8px; }
 .urltext { word-break: break-all; max-width: 520px; text-align: center; }
 @media (max-width: 700px) { .bcols.multi { grid-template-columns: 1fr; } }
+
+/* Echtzeit */
+.live { font-size: 12px; font-weight: 700; color: #2e7d32; white-space: nowrap; }
+.live.stale { color: #b26a00; }
+.dly { display: inline-block; border-radius: 4px; padding: 0 4px; font-size: 11px; font-weight: 700; line-height: 1.5; }
+.canc { text-decoration: line-through; color: #d32f2f; }
+tr:has(.canc) td, .brow:has(.canc) { color: var(--muted); }
+.sub.warn { color: #d32f2f; }
+.atext { white-space: pre-line; font-size: 13px; margin: 6px 0; }
+#panel details summary { cursor: pointer; font-weight: 600; }
+#panel tr.th td { font-weight: 700; color: var(--muted); font-size: 12px; }

@@ -60,6 +60,7 @@
       <button id="now" type="button">Jetzt</button>
       <button id="night" type="button" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">☾ Nacht</button>
       <span id="count" aria-live="off"></span>
+      <span id="live" class="live" hidden></span>
       <button id="collapse" type="button" aria-label="Optionen ein- oder ausklappen" aria-expanded="true">Optionen ▾</button>
     </div>
     <div class="row">
@@ -87,12 +88,14 @@
         <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>
         <label class="ovl"><input type="checkbox" id="ovl-signals"> Signale</label>
         <label class="ovl"><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
-        <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden)</label>
+        <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden, überdeckt Live)</label>
       </div>
       <div class="group">
         <span class="gt">Weiteres</span>
         <label title="Weniger Bilder pro Sekunde und geringere Auflösung, schont den Akku"><input type="checkbox" id="saver"> Akkusparmodus</label>
         <button id="btn-detours" type="button" class="chip">⚠ Umleitungen heute</button>
+        <button id="btn-alerts" type="button" class="chip" hidden>📢 Meldungen</button>
+        <button id="btn-stats" type="button" class="chip" hidden>⏱ Pünktlichkeit</button>
       </div>
       <p id="note" class="wide">Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0), Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.</p>
     </div>

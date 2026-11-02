@@ -1,0 +1,19 @@
+# systemd-Dienst fuer STRABFAHRT (z. B. Raspberry Pi). Pfade und Benutzer anpassen:
+#   sudo cp deploy/strabfahrt.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now strabfahrt
+[Unit]
+Description=STRABFAHRT Fahrplankarte Karlsruhe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/Strabfahrt
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+Environment=NODE_OPTIONS=--max-old-space-size=4096
+ExecStart=/usr/bin/node scripts/dev.mjs --no-open
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

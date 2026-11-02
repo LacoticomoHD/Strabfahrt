@@ -23,6 +23,14 @@ export function addDays(ymd, n) {
   return formatYmd(d);
 }
 
+const offsetFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Berlin', timeZoneName: 'longOffset' });
+// Abstand Berlin zu UTC in Minuten zu einem Zeitpunkt
+export function berlinOffset(ms) {
+  const tz = offsetFmt.formatToParts(new Date(ms)).find((p) => p.type === 'timeZoneName').value; // "GMT+01:00"
+  const m = /GMT([+-])(\d{2}):(\d{2})/.exec(tz);
+  return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) : 0;
+}
+
 export class Model {
   // data: bereits geparstes data/model.json (laeuft in Node und im Browser)
   constructor(m) {
@@ -92,6 +100,24 @@ export class Model {
     });
 
     this.activeCache = new Map();
+    this._dstCache = new Map();
+  }
+
+  // Zeitumstellung: GTFS-Zeiten zaehlen ab "12 Uhr minus 12 Stunden". An den Umstellungstagen weicht das
+  // in den fruehen Stunden um eine Stunde von der Wanduhr ab. Liefert die Korrektur in Sekunden.
+  dst(ymd, gtfsSec) {
+    if (gtfsSec >= 3 * 3600) return 0;
+    let d = this._dstCache.get(ymd);
+    if (d === undefined) {
+      const y = Number(ymd.slice(0, 4));
+      const m = Number(ymd.slice(4, 6)) - 1;
+      const day = Number(ymd.slice(6, 8));
+      const early = berlinOffset(Date.UTC(y, m, day - 1, 22, 30)); // kurz vor Mitternacht
+      const noon = berlinOffset(Date.UTC(y, m, day, 11));
+      d = early === noon ? null : { shift: (early - noon) * 60, boundary: early < noon ? 3 * 3600 : 2 * 3600 };
+      this._dstCache.set(ymd, d);
+    }
+    return d && gtfsSec < d.boundary ? d.shift : 0;
   }
 
   serviceActive(sIdx, ymd, weekdayMon0) {
@@ -125,7 +151,7 @@ export class Model {
       for (const sIdx of this.activeServices(day)) {
         for (const ti of this.tripsByService[sIdx]) {
           const t = this.trips[ti];
-          const start = t.start + shift;
+          const start = t.start + shift + this.dst(day, t.start);
           if (start > t1) continue;
           if (start + this.profileEnd[t.profile] < t0) continue;
           yield { trip: t, start };
@@ -179,12 +205,13 @@ export class Model {
         const p = this.patterns[pid];
         if (pos === p.stops.length - 1) continue; // Endhalt: keine Abfahrt
         for (const dayOffset of [-1, 0, 1]) {
-          const active = this.activeServices(addDays(ymd, dayOffset));
+          const day = addDays(ymd, dayOffset);
+          const active = this.activeServices(day);
           const shift = dayOffset * DAY;
           for (const ti of this.patternTrips[pid]) {
             const t = this.trips[ti];
             if (!active.has(t.service)) continue;
-            const dep = t.start + shift + this.profiles[t.profile][pos * 2 + 1];
+            const dep = t.start + shift + this.dst(day, t.start) + this.profiles[t.profile][pos * 2 + 1];
             if (dep < from || dep > to) continue;
             const r = this.routes[p.route];
             out.push({ t: dep, line: r[0], type: r[1], color: r[2], textColor: r[3], headsign: p.headsign, platform: this.stops[sIdx][5], stop: sIdx, trip: t.id, flags: t.flags });
@@ -279,7 +306,7 @@ export class Model {
   // RAPTOR-Kern.
   //   sources: [[Station, Zeit, istFussweg]]; targets: [[Station, Fusssekunden]] oder null (ohne Zielpruning, fuer Erreichbarkeit)
   //   limit: spaeteste interessante Ankunft
-  _raptor(sources, targets, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity, accessible = false } = {}) {
+  _raptor(sources, targets, ymd, depSec, { maxRounds = 4, window = 5 * 3600, minTransfer = 120, limit = Infinity, accessible = false, exclude = null } = {}) {
     const pi = this._planIndex();
     const N = this.stops.length;
     const egress = new Map(targets || []);
@@ -288,13 +315,15 @@ export class Model {
     const byPattern = new Map();
     for (const dayOffset of [-1, 0, 1]) {
       const shift = dayOffset * DAY;
-      for (const sIdx of this.activeServices(addDays(ymd, dayOffset))) {
+      const day = addDays(ymd, dayOffset);
+      for (const sIdx of this.activeServices(day)) {
         for (const ti of this.tripsByService[sIdx]) {
           const t = this.trips[ti];
-          const start = t.start + shift;
+          const start = t.start + shift + this.dst(day, t.start);
           if (start > depSec + window) continue;
           if (start + this.profileEnd[t.profile] < depSec) continue;
           if (accessible && (t.flags & 3) !== 1) continue; // nur ausdruecklich barrierefreie Fahrten
+          if (exclude && exclude.has(t.id)) continue; // ausgefallene Fahrten (Echtzeit)
           let list = byPattern.get(t.pattern);
           if (!list) byPattern.set(t.pattern, (list = []));
           list.push({ ti, start });
@@ -390,6 +419,7 @@ export class Model {
             let found = null;
             let foundDep = Infinity;
             for (const c of list) {
+              if (c.start > foundDep) break; // Abfahrt liegt nie vor dem Fahrtbeginn
               const dep = c.start + this.profiles[this.trips[c.ti].profile][2 * pos + 1];
               if (dep >= ready && dep < foundDep) { found = c; foundDep = dep; }
             }

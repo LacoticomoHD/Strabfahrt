@@ -78,8 +78,8 @@ qs,1,1,1,1,1,1,1,20261101,20261130`,
   'calendar_dates.txt': 'service_id,date,exception_type',
 });
 
-const run = spawnSync(process.execPath, [script, '--raw', kvv, '--raw-fv', fv, '--raw-rv', rv], {
-  env: { ...process.env, STRAB_DATA_DIR: path.join(tmp, 'out') }, encoding: 'utf8',
+const run = spawnSync(process.execPath, [script, '--feeds', 'kvv,fv,rv', '--raw', kvv, '--raw-fv', fv, '--raw-rv', rv], {
+  env: { ...process.env, STRAB_DATA_DIR: path.join(tmp, 'out'), STRAB_MIN_TRIPS: '1' }, encoding: 'utf8',
 });
 const model = run.status === 0 ? JSON.parse(fs.readFileSync(path.join(tmp, 'out', 'model.json'), 'utf8')) : null;
 
@@ -121,9 +121,9 @@ test('Gleiche Station aus anderem Feed haengt am KVV-Hauptbahnhof', () => {
   const idx = (id) => model.stops.findIndex((s) => s[0] === id);
   const kvvParent = idx('PHBF');
   assert.ok(kvvParent >= 0);
-  assert.equal(model.stops[idx('fv:FH1')][4], kvvParent, 'ICE-Halt gehoert zur KVV-Station');
-  assert.equal(model.stops[idx('rv:RHBF')][4], kvvParent, 'Regio-Halt gehoert zur KVV-Station');
-  assert.equal(model.stops[idx('rv:RDUR')][4], -1, 'Durlach bleibt eigene Station (anderer Name)');
+  assert.equal(model.stops[idx('de:FH1')][4], kvvParent, 'ICE-Halt gehoert zur KVV-Station');
+  assert.equal(model.stops[idx('de:RHBF')][4], kvvParent, 'Regio-Halt gehoert zur KVV-Station');
+  assert.equal(model.stops[idx('de:RDUR')][4], -1, 'Durlach bleibt eigene Station (anderer Name)');
 });
 
 test('Fahrten: KVV 1, Fern 1, Regio 1 (die doppelte S1 fehlt)', () => {

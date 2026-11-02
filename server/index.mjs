@@ -6,6 +6,7 @@ import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { Model, parseYmd } from './model.mjs';
+import { Realtime, RT_ATTRIBUTION } from './realtime.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.PORT || 3000);
@@ -20,6 +21,8 @@ if (!fs.existsSync(MODEL_FILE)) {
 console.time('Modell geladen');
 const model = new Model(JSON.parse(fs.readFileSync(MODEL_FILE, 'utf8')));
 console.timeEnd('Modell geladen');
+const realtime = new Realtime(model, path.join(ROOT, 'data'));
+console.log(realtime.enabled ? 'Echtzeit an (gtfs.de, wird bei Nutzung geladen)' : 'Echtzeit aus');
 
 const STATIC_ROOTS = [
   { prefix: '/vendor/leaflet/', dir: path.join(ROOT, 'node_modules', 'leaflet', 'dist') },
@@ -111,13 +114,16 @@ function parseSpec(q, prefix) {
   return lat !== null && lon !== null ? { lat, lon } : null;
 }
 
+// Echtzeit-Endpunkte duerfen auch von der statischen Web-Variante (anderer Ursprung) abgefragt werden
+const CORS = { 'Access-Control-Allow-Origin': '*' };
+
 const TYPE_GROUPS = { tram: [0, 1], rail: [2], fern: [100], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
 function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
-      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes });
+      return sendJson(res, 200, { realtime: realtime.enabled, rtAttribution: RT_ATTRIBUTION, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
       return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);
@@ -168,7 +174,7 @@ function handleApi(url, req, res) {
       const from = parseSpec(q, 'from');
       const to = parseSpec(q, 'to');
       const t = num(q.get('t'), -DAY_LIMIT, DAY_LIMIT);
-      const opts = { accessible: q.get('acc') === '1' };
+      const opts = { accessible: q.get('acc') === '1', exclude: realtime.canceled };
       if (from === null || to === null || !parseYmd(date) || (url.pathname !== '/api/profile' && t === null)) {
         return sendJson(res, 400, { error: 'from/to (Station oder Lat/Lon), date, t ungueltig' });
       }
@@ -176,6 +182,17 @@ function handleApi(url, req, res) {
       if (url.pathname === '/api/last') return sendJson(res, 200, model.lastJourney(from, to, date, t, opts), {}, req);
       return sendJson(res, 200, model.plan(from, to, date, t, opts).slice(0, 5), {}, req);
     }
+
+    case '/api/delays':
+      realtime.touch();
+      return sendJson(res, 200, realtime.snapshot(), CORS, req);
+
+    case '/api/alerts':
+      realtime.touch();
+      return sendJson(res, 200, { updated: realtime.updated, alerts: realtime.alerts }, CORS, req);
+
+    case '/api/stats':
+      return sendJson(res, 200, realtime.statsSummary(), CORS, req);
 
     case '/api/disruptions': {
       const date = q.get('date') || '';

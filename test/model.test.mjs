@@ -208,3 +208,30 @@ test('Umleitungen: Linien mit Umleitungs-Zielangabe werden gezaehlt', () => {
   assert.equal(d[0].total, 3);
   assert.deepEqual(d[0].headsigns, ['3 Heide (Umleitung)']);
 });
+
+test('Ausgefallene Fahrten werden in der Verbindungssuche gemieden', () => {
+  const js = planModel.plan(0, 2, '20261102', 7 * 3600 + 55 * 60, { exclude: new Set(['b1']) });
+  assert.ok(js.every((j) => !j.legs.some((l) => l.trip === 'b1')));
+  assert.ok(js.some((j) => j.transfers === 0), 'Direktfahrt bleibt');
+});
+
+test('Zeitumstellung: fruehe Fahrten am Umstellungstag auf Wanduhrzeit korrigiert', () => {
+  const m = new Model({
+    meta: { bbox: [0, 0, 1, 1], built: 'dst' },
+    routes: [['N1', 3, '', '', '1']],
+    stops: [['a', 'A', 0.1, 0.1, -1, '', 0, 0], ['b', 'B', 0.2, 0.2, -1, '', 0, 0]],
+    patterns: [[0, 'B', [0, 1]]],
+    profiles: [[0, 0, 600, 600]],
+    services: [{ d: '1111111', s: '20260101', e: '20261231', add: [], rem: [] }],
+    trips: [[0, 0, 0, 3600, 'n-1uhr', 0], [0, 0, 0, 10 * 3600, 'n-10uhr', 0]],
+  });
+  // Sommerzeit-Beginn 29.03.2026: GTFS 01:00 ist Wanduhr 00:00
+  assert.equal(m.dst('20260329', 3600), -3600);
+  assert.equal(m.dst('20260329', 10 * 3600), 0);
+  // Winterzeit-Beginn 25.10.2026: GTFS 01:00 ist Wanduhr 02:00 (Sommerzeit)
+  assert.equal(m.dst('20261025', 3600), 3600);
+  // normaler Tag
+  assert.equal(m.dst('20261102', 3600), 0);
+  const deps = m.departures(0, '20260329', 0, 3 * 3600);
+  assert.equal(deps[0].t, 0, 'Abfahrt zur Wanduhrzeit 00:00');
+});
