@@ -14,7 +14,7 @@ function getModel() {
   return modelPromise;
 }
 
-const TYPE_GROUPS = { tram: [0, 1], rail: [2], bus: [3, 11], other: [4, 5, 6, 7, 12] };
+const TYPE_GROUPS = { tram: [0, 1], rail: [2], fern: [100], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
 // Start/Ziel: Station (from) oder Punkt (fromLat, fromLon)
 function spec(params, prefix) {
@@ -26,7 +26,7 @@ export async function handle(path, params = {}) {
   const model = await getModel();
   switch (path) {
     case '/api/meta':
-      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', built: model.meta.built, routes: model.routes };
+      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes };
     case '/api/stops':
       return model.stops;
     case '/api/network':

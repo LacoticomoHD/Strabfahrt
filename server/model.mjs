@@ -535,7 +535,7 @@ export class Model {
     const seen = new Map();
     for (const p of this.patterns) {
       const type = this.routes[p.route][1];
-      const g = type === 0 || type === 1 ? 0 : type === 2 ? 1 : 2;
+      const g = type === 0 || type === 1 ? 0 : type === 2 || type === 100 ? 1 : 2;
       for (let i = 1; i < p.stops.length; i++) {
         const a = p.stops[i - 1];
         const b = p.stops[i];

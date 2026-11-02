@@ -3,7 +3,7 @@
 Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrtsanzeige je Haltestelle.
 
 - Fahrzeuge bewegen sich auf der Karte (Zeitraffer, Datum und Uhrzeit frei wählbar)
-- Filter nach Tram, Bahn, Bus, Sonstige
+- Filter nach Tram, Bahn, Fernverkehr, Bus, Sonstige
 - Klick auf ein Fahrzeug zeigt den Fahrtverlauf mit Zeiten
 - Klick auf eine Haltestelle (ab Zoom 14) oder die Suche zeigt die nächsten Abfahrten, filterbar nach Steig
 - Optionale Overlays von OpenRailwayMap (Gleise, Signale, Höchstgeschwindigkeit)
@@ -35,8 +35,23 @@ Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit eigener Abfahrts
 
 Favoriten, Linienfilter und Theme werden nur im Browser gespeichert (localStorage), nichts geht an den Server.
 
+## Datenquellen
+
+| Feed | Inhalt | Lizenz |
+| --- | --- | --- |
+| KVV | Tram, Bus, S-Bahn im KVV-Gebiet | CC0 |
+| gtfs.de Fernverkehr | ICE, IC, EC und andere Fernzüge (DB und Partner) | CC BY 4.0, Daten von DELFI e.V. |
+| gtfs.de Regionalverkehr | RE, RB, IRE, weitere S-Bahnen und Privatbahnen | CC BY 4.0, Daten von DELFI e.V. |
+
+Die Quellenangaben stehen in der App unten in der Leiste und auf der Tafel. Die kostenlosen gtfs.de-Feeds enthalten nur die **nächsten 30 Tage**, der nächtliche Build hält sie aktuell. Für Daten darüber hinaus zeigt die App einen Hinweis und es fahren nur KVV-Linien. Fehlt ein gtfs.de-Feed beim Bauen (z. B. kein Netz), wird er übersprungen. Mit `npm run build:data -- --feeds kvv` baust du nur KVV.
+
+Doppelungen: Der Regionalfeed enthält auch die S-Bahnen, die schon im KVV-Feed stehen. Linien mit gleichem Namen werden aus dem Regionalfeed nicht übernommen. Haltestellen mit gleichem Namen (z. B. "Karlsruhe Hbf") und höchstens 250 m Abstand werden zu einer Station zusammengelegt, sodass Abfahrten und Umstiege am Hauptbahnhof zusammenpassen.
+
+**Güterzüge gibt es nicht:** Für Güterverkehr existieren keine offenen Fahrplan- oder Positionsdaten. Der Schalter "Gleise" (OpenRailwayMap) zeigt aber die Infrastruktur, auf der sie fahren.
+
 ## Wichtig: Was die App nicht kann
 
+- **Fernzüge sind im Gebiet nur grob eingezeichnet.** Gespeichert wird der Teil im Kartengebiet plus der nächste Halt davor und danach. Ein ICE nach Basel bewegt sich deshalb in Luftlinie zum nächsten Halt außerhalb, ohne Gleisverlauf dazwischen.
 - **Keine Echtzeit.** Alle Positionen und Abfahrten sind Soll-Zeiten aus dem Fahrplan. Verspätungen und Ausfälle werden nicht gezeigt.
 - **Streckenführung nur mit Zusatzschritt.** Der KVV-Feed enthält keine Linienverläufe. Ohne `npm run snap:rail` bewegen sich Fahrzeuge in Luftlinie zwischen zwei Haltestellen. Auch mit dem Skript bleiben Busse und Abschnitte ohne passenden Gleisweg in Luftlinie.
 - Zeiten sind Berliner Ortszeit. An den beiden Tagen der Zeitumstellung kann der Zeitraffer um eine Stunde abweichen.

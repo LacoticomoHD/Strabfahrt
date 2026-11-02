@@ -110,13 +110,13 @@ function parseSpec(q, prefix) {
   return lat !== null && lon !== null ? { lat, lon } : null;
 }
 
-const TYPE_GROUPS = { tram: [0, 1], rail: [2], bus: [3, 11], other: [4, 5, 6, 7, 12] };
+const TYPE_GROUPS = { tram: [0, 1], rail: [2], fern: [100], bus: [3, 11], other: [4, 5, 6, 7, 12] };
 
 function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
-      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', built: model.meta.built, routes: model.routes });
+      return sendJson(res, 200, { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
       return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);

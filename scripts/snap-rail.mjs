@@ -74,7 +74,7 @@ const flat = (pts) => pts.flatMap((p) => [round5(p[0]), round5(p[1])]);
   const pairs = new Set();
   for (const [route, , stops] of model.patterns) {
     const type = model.routes[route][1];
-    if (type !== 0 && type !== 1 && type !== 2) continue;
+    if (type !== 0 && type !== 1 && type !== 2 && type !== 100) continue;
     for (let i = 1; i < stops.length; i++) pairs.add(`${stops[i - 1]},${stops[i]}`);
   }
   console.log('Haltepaare Schiene:', pairs.size);

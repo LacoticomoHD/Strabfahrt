@@ -54,8 +54,8 @@ async function api(path, params = {}) {
   return res.json();
 }
 
-const groupOf = (type) => (type === 0 || type === 1 ? 'tram' : type === 2 ? 'rail' : type === 3 || type === 11 ? 'bus' : 'other');
-const DEFAULT_COLOR = { tram: 'd1202e', rail: '2a2a2a', bus: '7a3e98', other: '555555' };
+const groupOf = (type) => (type === 0 || type === 1 ? 'tram' : type === 2 ? 'rail' : type === 100 ? 'fern' : type === 3 || type === 11 ? 'bus' : 'other');
+const DEFAULT_COLOR = { tram: 'd1202e', rail: '2a2a2a', fern: 'b71c1c', bus: '7a3e98', other: '555555' };
 
 function readable(hex) {
   const n = parseInt(hex, 16);
@@ -113,7 +113,7 @@ const state = {
   sim: wallNow(),
   speed: 1,
   playing: true,
-  types: new Set(['tram', 'rail', 'bus', 'other']),
+  types: new Set(['tram', 'rail', 'fern', 'bus', 'other']),
   meta: null,
   stops: [],
   stations: [], // { index, lat, lon, name }
@@ -652,8 +652,11 @@ function updateNotice() {
   const ymd = ymdOf(state.sim);
   let text = '';
   const days = (a, b) => Math.round((dayStart(a) - dayStart(b)) / 86400);
+  const outside = (f) => (f.end && ymd > f.end) || (f.start && ymd < f.start);
+  const secondary = (m.feeds || []).filter((f) => f.id !== 'kvv' && outside(f));
   if (m.feedEnd && ymd > m.feedEnd) text = `Für den ${fmtDate(ymd)} liegt kein Fahrplan vor, er gilt nur bis ${fmtDate(m.feedEnd)}. Fahrzeuge und Verbindungen fehlen.`;
   else if (m.feedStart && ymd < m.feedStart) text = `Für den ${fmtDate(ymd)} liegt kein Fahrplan vor, er gilt erst ab ${fmtDate(m.feedStart)}.`;
+  else if (secondary.length) text = `Für den ${fmtDate(ymd)} fehlen Daten zu ${secondary.map((f) => f.label).join(' und ')} (verfügbar ${[...new Set(secondary.map((f) => `${fmtDate(f.start)} bis ${fmtDate(f.end)}`))].join(', ')}). Es fahren nur KVV-Linien.`;
   else if (m.feedEnd && days(m.feedEnd, ymd) <= 7) text = `Der Fahrplan gilt nur noch bis ${fmtDate(m.feedEnd)}. Danach fehlen Daten bis zum nächsten Feed.`;
   else if (m.built) {
     const age = Math.floor((Date.now() - Date.parse(m.built)) / 86400000);
@@ -1124,7 +1127,7 @@ function renderLines() {
     const route = state.meta.routes[state.patterns.get(trip.pid).r];
     if (!found.has(route[0])) found.set(route[0], route);
   }
-  const order = { tram: 0, rail: 1, bus: 2, other: 3 };
+  const order = { tram: 0, rail: 1, fern: 2, bus: 3, other: 4 };
   const lines = [...found.values()].sort((a, b) => order[groupOf(a[1])] - order[groupOf(b[1])] || a[0].localeCompare(b[0], 'de', { numeric: true }));
   const body = $('panel-body');
   body.replaceChildren(el('h2', {}, 'Linien'), el('div', { class: 'sub' }, 'Antippen blendet eine Linie ein oder aus (gespeichert in diesem Browser)'));
@@ -1383,7 +1386,7 @@ async function renderBoard() {
       el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
       el('span', { class: 'bm' }, mins <= 0 ? 'jetzt' : `${mins} min`)));
   }
-  view.append(rows, el('div', { class: 'bnote sub' }, 'Nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0).'));
+  view.append(rows, el('div', { class: 'bnote sub' }, `Nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution || 'KVV (CC0)'}.`));
 }
 
 // ---------- Linienansicht ----------
@@ -1808,12 +1811,14 @@ async function init() {
     state.stations.push({ index: i, lat: s[2], lon: s[3], name: s[1] });
   });
 
+  state.attribution = (meta.feeds && meta.feeds.length ? meta.feeds.map((f) => f.attribution) : ['KVV (CC0)']).join('; ');
+  if (!(STATIC && !TILES)) $('note').textContent = `Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Ohne Gewähr.`;
   if (STATIC && !TILES) {
     document.body.classList.add('static');
     const groups = [[], [], []];
     for (const [a, b, g] of await api('/api/network')) groups[g].push([a, b]);
     state.networkGroups = groups;
-    $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: KVV (CC0). Ohne Gewähr.';
+    $('note').textContent = 'Vorschau ohne Kartenkacheln, das Liniennetz ist schematisch (Luftlinie zwischen Haltestellen). Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ' + state.attribution + '. Ohne Gewähr.';
   }
   if (meta.realtime) {
     const poll = async () => {
