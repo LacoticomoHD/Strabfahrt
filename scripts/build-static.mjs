@@ -24,7 +24,7 @@ const copy = (from, to) => fs.copyFileSync(need(from), path.join(OUT, to));
 copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
 // .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
 copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
-for (const f of ['app.js', 'style.css']) copy(path.join(ROOT, 'public', f), f);
+for (const f of ['app.js', 'style.css', 'insets.js']) copy(path.join(ROOT, 'public', f), f);
 for (const f of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) copy(path.join(ROOT, 'public', f), f);
 // Gleisgeometrie nur mitnehmen, wenn sie zu genau diesem Modell passt
 const shapesFile = path.join(ROOT, 'data', 'shapes.json');
@@ -62,6 +62,7 @@ html = html
   .replaceAll('href="/vendor/', 'href="vendor/')
   .replaceAll('src="/vendor/', 'src="vendor/')
   .replace('href="/style.css"', 'href="style.css"')
+  .replace('src="/insets.js"', 'src="insets.js"')
   .replace('<script src="vendor/leaflet/leaflet.js"></script>', '<script src="static-flag.js"></script>\n  <script src="vendor/leaflet/leaflet.js"></script>')
   .replace('<script src="/app.js" type="module"></script>', '<script src="app.js" type="module"></script>')
   .replace('<title>STRABFAHRT – Fahrzeuge im Raum Karlsruhe</title>', tiles ? '<title>STRABFAHRT</title>' : '<title>STRABFAHRT (Vorschau)</title>');

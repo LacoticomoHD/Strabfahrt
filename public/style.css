@@ -1,4 +1,8 @@
 :root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
   --bg: #ffffff;
   --fg: #1d2330;
   --muted: #5d6677;
@@ -208,3 +212,20 @@ tr:has(.canc) td, .brow:has(.canc) { color: var(--muted); }
 .atext { white-space: pre-line; font-size: 13px; margin: 6px 0; }
 #panel details summary { cursor: pointer; font-weight: 600; }
 #panel tr.th td { font-weight: 700; color: var(--muted); font-size: 12px; }
+
+/* Systemleisten (Statusleiste, Navigationsleiste, Notch) */
+#top { top: calc(10px + var(--sat)); left: calc(10px + var(--sal)); right: calc(10px + var(--sar)); }
+#bar { bottom: calc(10px + var(--sab)); left: calc(10px + var(--sal)); max-width: calc(100vw - 20px - var(--sal) - var(--sar)); }
+.leaflet-top { top: var(--sat); }
+.leaflet-bottom { bottom: var(--sab); }
+.leaflet-left { left: var(--sal); }
+.leaflet-right { right: var(--sar); }
+body::before, body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 1003; pointer-events: none; background: var(--bg); opacity: .92; }
+body::before { top: 0; height: var(--sat); }
+body::after { bottom: 0; height: var(--sab); }
+@media (min-width: 701px) {
+  #panel { top: calc(60px + var(--sat)); right: calc(10px + var(--sar)); max-height: calc(100vh - 220px - var(--sat) - var(--sab)); }
+}
+@media (max-width: 700px) {
+  #panel { padding-bottom: calc(18px + var(--sab)); max-height: calc(55vh + var(--sab)); }
+}
