@@ -176,6 +176,64 @@ const state = {
 
 const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: TILES, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+// Live-Standort: Knopf über dem Zoom. 1. Tipp: Standort zeigen und mitfahren, Karte verschieben: Mitfahren aus,
+// erneuter Tipp: wieder mitfahren, Tipp während des Mitfahrens: Standort aus.
+const loc = { watch: null, follow: false, marker: null, circle: null, last: null, first: true };
+loc.btn = $('btn-locate');
+loc.btn.addEventListener('click', () => toggleLocate());
+
+function locState(mode) {
+  loc.btn.setAttribute('aria-pressed', String(mode === 'follow'));
+  loc.btn.classList.toggle('on', mode !== 'off');
+  loc.btn.classList.toggle('follow', mode === 'follow');
+  loc.btn.classList.toggle('wait', mode === 'wait');
+}
+
+function toast(msg) {
+  let t = document.getElementById('toast');
+  if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.append(t); }
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+function stopLocate() {
+  if (loc.watch !== null) navigator.geolocation.clearWatch(loc.watch);
+  loc.watch = null;
+  loc.follow = false;
+  if (loc.marker) { map.removeLayer(loc.marker); map.removeLayer(loc.circle); loc.marker = null; loc.circle = null; }
+  locState('off');
+}
+
+function toggleLocate() {
+  if (loc.watch !== null && loc.follow) return stopLocate();
+  if (loc.watch !== null) { loc.follow = true; locState('follow'); if (loc.last) map.panTo(loc.last); return; }
+  if (!navigator.geolocation) { toast('Standort wird hier nicht unterstützt.'); return; }
+  loc.first = true;
+  loc.follow = true;
+  locState('wait');
+  loc.watch = navigator.geolocation.watchPosition((pos) => {
+    const ll = [pos.coords.latitude, pos.coords.longitude];
+    loc.last = ll;
+    const acc = Math.min(pos.coords.accuracy || 0, 2000);
+    if (!loc.marker) {
+      loc.circle = L.circle(ll, { radius: acc, color: '#1a73e8', weight: 1, fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }).addTo(map);
+      loc.marker = L.circleMarker(ll, { radius: 7, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(map);
+    } else {
+      loc.marker.setLatLng(ll);
+      loc.circle.setLatLng(ll).setRadius(acc);
+    }
+    if (loc.first) { loc.first = false; map.setView(ll, Math.max(map.getZoom(), 16)); }
+    else if (loc.follow) map.panTo(ll, { animate: true });
+    locState(loc.follow ? 'follow' : 'on');
+  }, (err) => {
+    stopLocate();
+    toast(err.code === 1 ? 'Standort nicht erlaubt. Bitte in den Einstellungen freigeben.' : 'Standort gerade nicht verfügbar.');
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+map.on('dragstart', () => { if (loc.follow) { loc.follow = false; locState('on'); } });
 if (TILES) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
 }).addTo(map);
@@ -994,13 +1052,6 @@ async function renderStation() {
   const board = el('button', { class: 'chip', type: 'button' }, 'Als Tafel öffnen');
   board.addEventListener('click', () => openBoard(index));
   body.append(el('div', { class: 'chips' }, share, board));
-  const reachRow = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Wohin komme ich in:'));
-  for (const m of [15, 30, 45, 60]) {
-    const b = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.reach && state.reach.center === index && state.reach.max === m) }, `${m} min`);
-    b.addEventListener('click', () => showReach(index, m));
-    reachRow.append(b);
-  }
-  body.append(reachRow);
   const near = nearbyStations(index);
   if (near.length) {
     const row = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Umsteigen in der Nähe:'));

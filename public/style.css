@@ -229,3 +229,10 @@ body::after { bottom: 0; height: var(--sab); }
 @media (max-width: 700px) {
   #panel { padding-bottom: calc(18px + var(--sab)); max-height: calc(55vh + var(--sab)); }
 }
+
+/* Standort-Knopf */
+#btn-locate.on { color: #1a73e8; }
+#btn-locate.follow { background: #1a73e8; color: #fff; }
+#btn-locate.wait { opacity: .6; }
+#toast { position: fixed; left: 50%; top: calc(70px + var(--sat)); transform: translateX(-50%); z-index: 1100; max-width: 90vw; padding: 8px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s; }
+#toast.show { opacity: 1; }
