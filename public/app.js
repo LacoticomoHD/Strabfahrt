@@ -879,6 +879,8 @@ $('trails').addEventListener('change', (e) => { state.trails = e.target.checked;
 state.saver = load('strab.saver', typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 $('saver').checked = state.saver;
 $('saver').addEventListener('change', (e) => { state.saver = e.target.checked; save('strab.saver', state.saver); resizeCanvas(); needsDraw = true; });
+$('lead').value = String(load('strab.lead', 5));
+$('lead').addEventListener('change', (e) => { state.lead = Number(e.target.value) || 5; save('strab.lead', state.lead); });
 if (window.StrabNative) {
   $('notify-wrap').hidden = false;
   try { $('notify').checked = window.StrabNative.notifyEnabled(); } catch { /* alte App */ }
@@ -964,6 +966,86 @@ function selectVehicle(trip) {
 
 let vehicleView = null;
 
+// ---------- Erinnerungen (Abfahrts- und Ankunfts-Wecker) ----------
+// Zeiten im Modell sind Berliner Wanduhr als Pseudo-UTC; für Wecker echte Unix-Sekunden
+const toUnix = (simSec) => simSec - (wallNow() - Date.now() / 1000);
+state.alarms = load('strab.alarms', {});
+state.lead = Number(load('strab.lead', 5)) || 5;
+const webTimers = new Map();
+
+function alarmKey(kind, trip, stopIdx) { return `${kind}|${trip}|${stopIdx}`; }
+
+function saveAlarms() {
+  const now = Date.now() / 1000;
+  for (const [k, a] of Object.entries(state.alarms)) if (a.planned + 3600 < now) delete state.alarms[k];
+  save('strab.alarms', state.alarms);
+}
+
+function toggleAlarm(a) {
+  if (state.alarms[a.key]) {
+    delete state.alarms[a.key];
+    try { window.StrabNative && window.StrabNative.cancelAlarm(a.key); } catch { /* alte App */ }
+    clearTimeout(webTimers.get(a.key));
+    webTimers.delete(a.key);
+    toast('Erinnerung gelöscht');
+  } else {
+    a.lead = a.lead || state.lead;
+    state.alarms[a.key] = a;
+    let native = false;
+    try { if (window.StrabNative && window.StrabNative.setAlarm) { window.StrabNative.setAlarm(JSON.stringify({ ...a, base: state.rtBase || '' })); native = true; } } catch { native = false; }
+    if (!native && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    toast(`Erinnerung ${a.lead} Min. vor ${a.kind === 'arr' ? 'Ankunft' : 'Abfahrt'}${native ? '' : ' (nur solange die Seite offen ist)'}`);
+  }
+  saveAlarms();
+  scheduleWebAlarms();
+}
+
+// Ohne App: Erinnerung per Browser, solange die Seite offen ist; nutzt die jeweils aktuelle Live-Verspätung
+function scheduleWebAlarms() {
+  if (window.StrabNative && window.StrabNative.setAlarm) return;
+  for (const t of webTimers.values()) clearTimeout(t);
+  webTimers.clear();
+  for (const a of Object.values(state.alarms)) {
+    const r = rtOf(a.trip);
+    const fire = (a.planned + (r.delay || 0) - a.lead * 60) * 1000 - Date.now();
+    if (fire < -120000) continue;
+    webTimers.set(a.key, setTimeout(() => {
+      const r2 = rtOf(a.trip);
+      const when = hhmm(wallOf(a.planned + (r2.delay || 0)));
+      const msg = r2.canceled ? `${a.line} ${a.dest}: Fahrt fällt aus!` : `${a.line} ${a.dest}: ${a.kind === 'arr' ? 'Ankunft' : 'Abfahrt'} ${a.stopName} um ${when}${r2.delay ? ` (${fmtDelayExact(r2.delay)})` : ''}`;
+      if ('Notification' in window && Notification.permission === 'granted') new Notification('STRABFAHRT', { body: msg, icon: 'icon-192.png' });
+      else toast(msg);
+      delete state.alarms[a.key];
+      saveAlarms();
+    }, Math.max(0, fire)));
+  }
+}
+
+function bellButton(a) {
+  const on = Boolean(state.alarms[a.key]);
+  const b = el('button', { class: `bell${on ? ' on' : ''}`, type: 'button', 'aria-pressed': String(on), 'aria-label': on ? 'Erinnerung löschen' : 'Erinnerung setzen', title: on ? 'Erinnerung löschen' : `${state.lead} Min. vorher erinnern` }, on ? '🔔' : '🔕');
+  b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    toggleAlarm(a);
+    const now = Boolean(state.alarms[a.key]);
+    b.className = `bell${now ? ' on' : ''}`;
+    b.textContent = now ? '🔔' : '🔕';
+    b.setAttribute('aria-pressed', String(now));
+  });
+  return b;
+}
+
+// Pünktlichkeit je Linie aus der Statistik, zwischengespeichert
+let statsCache = null;
+async function lineStats() {
+  if (statsCache && Date.now() - statsCache.at < 10 * 60 * 1000) return statsCache.data;
+  try {
+    const data = await rtGet('/api/stats');
+    statsCache = { at: Date.now(), data: data && !data.unsupported ? data : null };
+  } catch { statsCache = { at: Date.now(), data: null }; }
+  return statsCache.data;
+}
+
 function renderVehiclePanel() {
   const trip = state.selected;
   if (!trip) return;
@@ -993,6 +1075,11 @@ function renderVehiclePanel() {
   });
   body.append(el('div', { class: 'chips' }, follow));
 
+  // Ziel verfolgen: erwartete Ankunft am gewählten Halt, live
+  const targetBox = el('div', { class: 'target', hidden: '' });
+  body.append(targetBox);
+  if (state.target && state.target.trip !== trip.id) state.target = null;
+
   const table = el('table');
   const rows = [];
   pat.s.forEach((si, i) => {
@@ -1003,12 +1090,14 @@ function renderVehiclePanel() {
     const open = () => openStation(s2[4] >= 0 ? s2[4] : si);
     link.addEventListener('click', open);
     link.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
-    const tr = el('tr', {}, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]}` : ''));
-    rows.push({ tr, dep });
+    const goal = i > 0 ? el('button', { class: 'goal', type: 'button', title: 'Als Ziel verfolgen', 'aria-label': `Ankunft in ${s2[1]} verfolgen` }, '🎯') : '';
+    if (goal) goal.addEventListener('click', () => { state.target = state.target && state.target.idx === i ? null : { trip: trip.id, idx: i }; renderVehiclePanel(); });
+    const tr = el('tr', { class: '' }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]} ` : '', goal));
+    rows.push({ tr, dep, arr });
     table.append(tr);
   });
   body.append(table);
-  vehicleView = { trip, sub, rows };
+  vehicleView = { trip, sub, rows, targetBox, pat };
   updateVehiclePanel();
   showPanel();
 }
@@ -1023,10 +1112,26 @@ function updateVehiclePanel() {
   let text = delay === undefined ? (state.rt.active ? 'Fahrplanposition (keine Echtzeit für diese Fahrt)' : 'Fahrplanposition (Soll)') : `${fmtDelay(delay) === '0' ? 'Pünktlich' : `${fmtDelay(delay)} gegenüber Fahrplan`}${state.demo ? ' (Demo, erfundene Werte)' : ' (Echtzeit)'}${why ? ` · ${why}` : ''}`;
   if (!pos) text = state.sim < trip.t0 ? `Fährt ab ${hhmm(trip.t0)}` : 'Fahrt beendet';
   if (sub.textContent !== text) sub.textContent = text;
+  const tg = state.target && state.target.trip === trip.id ? state.target.idx : null;
   rows.forEach((r, i) => {
-    const cls = state.sim > r.dep ? 'passed' : pos && pos.k === i && pos.atStop ? 'current' : '';
-    if (r.tr.className !== cls) r.tr.className = cls;
+    const cls = (state.sim > r.dep ? 'passed' : pos && pos.k === i && pos.atStop ? 'current' : '') + (i === tg ? ' goalrow' : '');
+    if (r.tr.className !== cls.trim()) r.tr.className = cls.trim();
   });
+  const box = vehicleView.targetBox;
+  if (tg === null) { box.hidden = true; return; }
+  const r = rows[tg];
+  const stopIdx = vehicleView.pat.s[tg];
+  const name = state.stops[stopIdx][1];
+  const real = r.arr + (delay || 0);
+  const mins = Math.round((real - state.sim) / 60);
+  const txt = `🎯 Ankunft ${name}: ${hhmm(real)}${delay !== undefined && Math.abs(delay) >= 30 ? ` (${fmtDelayExact(delay)})` : ''} · ${mins > 0 ? `in ${mins} Min.` : 'erreicht'}`;
+  box.hidden = false;
+  if (!box.firstChild) {
+    box.append(el('span', {}, ''));
+    const route = state.meta.routes[vehicleView.pat.r];
+    box.append(bellButton({ key: alarmKey('arr', trip.id, stopIdx), kind: 'arr', trip: trip.id, stopId: state.stops[stopIdx][0], stopName: name, line: route[0], dest: cleanHeadsign(route[0], vehicleView.pat.h), planned: toUnix(r.arr) }));
+  }
+  if (box.firstChild.textContent !== txt) box.firstChild.textContent = txt;
 }
 
 let stationTimer = null;
@@ -1137,9 +1242,27 @@ async function renderStation() {
       table.append(el('tr', {},
         el('td', { class: 't' }, depTime(d)),
         el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
-        el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', depWhen(d, base, state.sim))));
+        el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', depWhen(d, base, state.sim), ' ',
+          bellButton({ key: alarmKey('dep', d.trip, index), kind: 'dep', trip: d.trip, stopId: s[0], stopName: s[1], line: d.line, dest: cleanHeadsign(d.line, d.headsign), planned: toUnix(base + d.t) }))));
     }
     body.append(table);
+    // Pünktlichkeit der Linien an dieser Haltestelle (aus der laufenden Statistik)
+    const lines = [...new Set(shown.map((d) => d.line))];
+    const punct = el('div', { class: 'block punct' });
+    body.append(punct);
+    lineStats().then((st) => {
+      if (!st || state.station !== index) return;
+      const by = new Map(st.lines.map((l) => [l.line, l]));
+      const rowsP = lines.map((l) => by.get(l)).filter(Boolean).slice(0, 8);
+      if (!rowsP.length) return;
+      punct.append(el('div', { class: 'bh' }, 'Pünktlichkeit der Linien hier', el('span', { class: 'sub' }, ` · ${st.days} Tag${st.days === 1 ? '' : 'e'} Live-Daten`)));
+      for (const l of rowsP) {
+        const style = routeStyle([l.line, l.type, '', '']);
+        const ownColor = shown.find((d) => d.line === l.line);
+        punct.append(el('div', { class: 'prow' }, pill(l.line, ownColor ? routeStyle([ownColor.line, ownColor.type, ownColor.color, ownColor.textColor]) : style),
+          ` Ø ${fmtDelayExact(l.avg)} · ${l.latePct} % ab 3 Min. zu spät${l.canceled ? ` · ${l.canceled} Ausfälle` : ''}`));
+      }
+    });
   }
   showPanel();
 }
@@ -1997,8 +2120,21 @@ function renderJourneys(container) {
     const card = el('div', { class: 'jcard', role: 'button', tabindex: '0', 'aria-pressed': String(state.journey === j) });
     const mins = Math.round((j.arr - j.start) / 60);
     card.append(el('div', { class: 'jh' }, `${hhmm(j.start)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
+    let prevArr = null; // erwartete Ankunft der vorigen Fahrt (mit Live-Verspätung)
+    let walkSecs = 0;
+    let prevStop = null;
     for (const leg of j.legs) {
+      if (leg.type === 'ride' && prevArr !== null) {
+        const r = rtOf(leg.trip);
+        const spare = Math.round((leg.dep + (r.delay || 0) - prevArr - walkSecs) / 60);
+        const live = r.delay !== undefined || rtOf(prevStop.trip).delay !== undefined;
+        const cls = r.canceled || spare < 1 ? 'bad' : spare < 4 ? 'tight' : 'ok';
+        const label = r.canceled ? 'Anschluss fällt aus' : spare < 1 ? `Anschluss gefährdet (${spare} Min.)` : spare < 4 ? `knapp: ${spare} Min.` : `${spare} Min.`;
+        card.append(el('div', { class: `xfer ${cls}` }, `${cls === 'ok' ? '✓' : '⚠'} Umstieg in ${state.stops[leg.from][1]}: ${label}${live ? ' (live)' : ' (nach Fahrplan)'}`));
+        walkSecs = 0;
+      }
       if (leg.type === 'walk') {
+        if (prevArr !== null) walkSecs += leg.secs;
         const m = Math.max(1, Math.round(leg.secs / 60));
         const text = leg.fromPoint ? `Fußweg ${m} min zur Haltestelle ${state.stops[leg.to][1]}` : leg.toPoint ? `Fußweg ${m} min zum Ziel` : `Fußweg ${m} min nach ${state.stops[leg.to][1]}`;
         card.append(el('div', { class: 'leg walk' }, text));
@@ -2009,7 +2145,9 @@ function renderJourneys(container) {
           el('span', {}, depTime({ t: leg.dep, trip: leg.trip }), ` ${state.stops[leg.from][1]}`),
           rtOf(leg.trip).canceled ? el('div', { class: 'sub warn' }, '⚠ Diese Fahrt fällt aus') : '',
           el('div', { class: 'sub' }, `Richtung ${cleanHeadsign(leg.line, leg.headsign)}${isDetour(leg.headsign) ? ' · ⚠ Umleitung/Ersatzverkehr' : ''}${accessible(leg.flags) ? ' · ♿' : ''}`),
-          el('span', {}, `${hhmm(leg.arr)} ${state.stops[leg.to][1]}`)));
+          el('span', {}, depTime({ t: leg.arr, trip: leg.trip }), ` ${state.stops[leg.to][1]}`)));
+        prevArr = leg.arr + (rtOf(leg.trip).delay || 0);
+        prevStop = leg;
       }
     }
     const note = el('div', { class: 'sub' });
@@ -2160,6 +2298,15 @@ function updateLive() {
 }
 
 window.strabOpenAlerts = () => openAlerts();
+// Android-Schnellstart: Haltestelle über ihre ID öffnen (wartet, bis die Daten geladen sind)
+window.strabOpenStationId = (id, tries = 0) => {
+  if (window.__strabOpened === id) return; // mehrfacher Aufruf durch die App
+  if (!state.stops || !state.stops.length) { if (tries < 40) setTimeout(() => window.strabOpenStationId(id, tries + 1), 250); return; }
+  window.__strabOpened = id;
+  const i = state.stops.findIndex((st) => st[0] === id);
+  if (i >= 0) openStation(i);
+};
+if (window.__strabOpenId) window.strabOpenStationId(window.__strabOpenId);
 
 // Android-App: neue Version unter GitHub-Releases gefunden
 window.strabShowUpdate = (info) => {
@@ -2368,6 +2515,7 @@ async function init() {
         state.rt = { ...state.rt, error: e.message };
       }
       updateLive();
+      scheduleWebAlarms();
     };
     state.rtBase = rtBase;
     syncNative();

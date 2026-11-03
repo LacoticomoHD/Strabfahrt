@@ -245,3 +245,20 @@ a.chip { text-decoration: none; display: inline-block; }
 .deptime .planned { text-decoration: line-through; opacity: .6; }
 .deptime .real { font-variant-numeric: tabular-nums; }
 .dly { font-variant-numeric: tabular-nums; }
+
+/* Erinnerungen, Ziel, Anschluss, Pünktlichkeit */
+.bell, .goal { border: 0; background: none; cursor: pointer; font-size: 15px; padding: 0 2px; line-height: 1; opacity: .45; vertical-align: middle; }
+.bell.on, .goal:hover, .bell:hover { opacity: 1; }
+tr.goalrow { background: var(--hl); font-weight: 600; }
+tr.goalrow .goal { opacity: 1; }
+.target { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #012f57; color: #fff; font-weight: 600; }
+.target .bell { opacity: .7; }
+.target .bell.on { opacity: 1; }
+.xfer { margin: 4px 0; padding: 3px 8px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
+.xfer.ok { background: #e3f2e5; color: #1b5e20; }
+.xfer.tight { background: #fff3cd; color: #7a4f00; }
+.xfer.bad { background: #fde2e2; color: #a01818; }
+:root[data-theme="dark"] .xfer.ok { background: #1d3a24; color: #a6e3b0; }
+:root[data-theme="dark"] .xfer.tight { background: #3d3214; color: #f2d58a; }
+:root[data-theme="dark"] .xfer.bad { background: #44201f; color: #f5a3a3; }
+.punct .prow { margin: 3px 0; font-size: 13px; }

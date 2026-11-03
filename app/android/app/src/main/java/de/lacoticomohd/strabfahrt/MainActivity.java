@@ -79,10 +79,40 @@ public class MainActivity extends BridgeActivity {
 
     // Tipp auf eine Störungs-Benachrichtigung: Meldungen in der App öffnen
     private void openAlertsFrom(Intent intent) {
-        if (intent == null || !intent.getBooleanExtra("openAlerts", false)) return;
+        if (intent == null) return;
+        String station = intent.getStringExtra("station");
+        if (station != null) {
+            intent.removeExtra("station");
+            WebView w = getBridge().getWebView();
+            String q = org.json.JSONObject.quote(station);
+            String js = "window.strabOpenStationId ? window.strabOpenStationId(" + q + ") : (window.__strabOpenId = " + q + ")";
+            for (int ms : new int[] { 800, 2500, 5000 }) w.postDelayed(() -> w.evaluateJavascript(js, null), ms);
+        }
+        if (!intent.getBooleanExtra("openAlerts", false)) return;
         intent.removeExtra("openAlerts");
         WebView web = getBridge().getWebView();
         web.postDelayed(() -> web.evaluateJavascript("window.strabOpenAlerts && window.strabOpenAlerts()", null), 1500);
+    }
+
+    // Schnellstart-Kacheln: lange auf das App-Symbol drücken, Favoriten direkt öffnen (höchstens 4)
+    private void updateShortcuts(String favoritesJson) {
+        try {
+            org.json.JSONArray favs = new org.json.JSONArray(favoritesJson);
+            java.util.List<androidx.core.content.pm.ShortcutInfoCompat> list = new java.util.ArrayList<>();
+            int max = Math.min(4, androidx.core.content.pm.ShortcutManagerCompat.getMaxShortcutCountPerActivity(this));
+            for (int i = 0; i < favs.length() && list.size() < max; i++) {
+                org.json.JSONObject f = favs.getJSONObject(i);
+                String name = f.optString("name", "Haltestelle");
+                Intent open = new Intent(this, MainActivity.class).setAction(Intent.ACTION_VIEW).putExtra("station", f.getString("id"));
+                list.add(new androidx.core.content.pm.ShortcutInfoCompat.Builder(this, "fav-" + i)
+                    .setShortLabel(name.length() > 24 ? name.substring(0, 24) : name)
+                    .setLongLabel(name)
+                    .setIcon(androidx.core.graphics.drawable.IconCompat.createWithResource(this, R.mipmap.ic_launcher))
+                    .setIntent(open)
+                    .build());
+            }
+            androidx.core.content.pm.ShortcutManagerCompat.setDynamicShortcuts(this, list);
+        } catch (Exception ignored) { /* Kacheln sind optional */ }
     }
 
     @Override
@@ -102,6 +132,18 @@ public class MainActivity extends BridgeActivity {
         public void setFavorites(String favoritesJson, String linesJson, String base) {
             StrabStore.save(MainActivity.this, favoritesJson, linesJson, base);
             StrabStore.refreshNow(MainActivity.this);
+            updateShortcuts(favoritesJson);
+        }
+
+        @JavascriptInterface
+        public void setAlarm(String json) {
+            try { AlarmReceiver.set(MainActivity.this, json); } catch (Exception e) { return; }
+            if (!hasPermission()) runOnUiThread(() -> ActivityCompat.requestPermissions(MainActivity.this, new String[] { Manifest.permission.POST_NOTIFICATIONS }, 4712));
+        }
+
+        @JavascriptInterface
+        public void cancelAlarm(String key) {
+            try { AlarmReceiver.cancel(MainActivity.this, key); } catch (Exception ignored) { /* schon weg */ }
         }
 
         @JavascriptInterface
