@@ -241,3 +241,7 @@ body::after { bottom: 0; height: var(--sab); }
 a.chip { text-decoration: none; display: inline-block; }
 #update { position: fixed; left: 50%; transform: translateX(-50%); top: calc(118px + var(--sat)); z-index: 1100; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 92vw; padding: 8px 12px; border-radius: 10px; background: #012f57; color: #fff; box-shadow: var(--shadow); }
 #update .chip { background: #f2c14e; color: #012f57; border-color: #f2c14e; font-weight: 600; }
+.deptime { white-space: nowrap; }
+.deptime .planned { text-decoration: line-through; opacity: .6; }
+.deptime .real { font-variant-numeric: tabular-nums; }
+.dly { font-variant-numeric: tabular-nums; }

@@ -425,6 +425,13 @@ function fmtDelay(d) {
   return a < 60 ? `${sign}${Math.round(a)} s` : `${sign}${Math.round(a / 60)} min`;
 }
 
+// Sekundengenau für Tafeln und Panels: +0:54, +2:05, −0:40
+function fmtDelayExact(d) {
+  const a = Math.round(Math.abs(d));
+  const sign = d > 0 ? '+' : d < 0 ? '−' : '±';
+  return `${sign}${Math.floor(a / 60)}:${String(a % 60).padStart(2, '0')}`;
+}
+
 function delayColors(d) {
   if (d >= 30) return { bg: '#d32f2f', fg: '#ffffff' }; // zu spaet: rot
   if (d <= -30) return { bg: '#8fd3ff', fg: '#06324d' }; // zu frueh: hellblau
@@ -446,15 +453,24 @@ function depTime(d) {
   const span = el('span', { class: r.canceled ? 'canc' : '' }, hhmm(d.t));
   if (r.canceled) {
     span.title = 'Fahrt fällt aus';
-  } else if (r.delay !== undefined && Math.abs(r.delay) >= 30) {
-    const c = delayColors(r.delay);
-    const b = el('span', { class: 'dly' }, fmtDelay(r.delay).replace(' ', ''));
-    b.style.background = c.bg;
-    b.style.color = c.fg;
-    if (r.reason) b.title = r.reason;
-    return el('span', {}, span, ' ', b);
+    return span;
   }
-  return span;
+  if (r.delay === undefined || r.delay === null) {
+    span.title = 'Keine Live-Daten, Zeit nach Fahrplan';
+    return span;
+  }
+  // Live-Daten vorhanden: Abweichung sekundengenau, ab einer Minute zusätzlich die erwartete Zeit
+  const c = delayColors(r.delay);
+  const b = el('span', { class: 'dly' }, Math.abs(r.delay) < 30 ? `● ${fmtDelayExact(r.delay)}` : fmtDelayExact(r.delay));
+  b.style.background = c.bg;
+  b.style.color = c.fg;
+  b.title = (r.delay >= 30 ? 'Verspätung' : r.delay <= -30 ? 'Zu früh' : 'Pünktlich') + ` (Live): ${fmtDelayExact(r.delay)} min:s` + (r.reason ? `. ${r.reason}` : '');
+  const parts = [span, ' ', b];
+  if (Math.abs(r.delay) >= 60) {
+    span.classList.add('planned');
+    parts.splice(1, 0, ' ', el('b', { class: 'real' }, hhmm(d.t + r.delay)));
+  }
+  return el('span', { class: 'deptime' }, ...parts);
 }
 
 // Restzeit-Text mit Echtzeit
