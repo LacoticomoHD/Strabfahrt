@@ -1063,7 +1063,10 @@ async function renderStation() {
   share.addEventListener('click', () => copyCurrentLink(share));
   const board = el('button', { class: 'chip', type: 'button' }, 'Als Tafel öffnen');
   board.addEventListener('click', () => openBoard(index));
-  body.append(el('div', { class: 'chips' }, share, board));
+  // Fußweg zur Haltestelle in Google Maps (Startpunkt wählt Google Maps selbst, die App schickt keinen Standort mit)
+  const walk = el('a', { class: 'chip', href: `https://www.google.com/maps/dir/?api=1&destination=${s[2]},${s[3]}&travelmode=walking`, target: '_blank', rel: 'noopener' }, '🚶 Hinlaufen');
+  walk.title = 'Fußweg in Google Maps öffnen';
+  body.append(el('div', { class: 'chips' }, share, board, walk));
   const near = nearbyStations(index);
   if (near.length) {
     const row = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Umsteigen in der Nähe:'));
