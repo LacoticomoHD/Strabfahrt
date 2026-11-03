@@ -41,7 +41,7 @@ const berlinToday = () => berlinDay.format(new Date()).replaceAll('-', '');
 
 export class Realtime {
   // opts.map: Zuordnung direkt uebergeben (statt data/rt-map.json), opts.persist=false: keine Statistik-Datei
-  constructor(model, dataDir, { url, interval, map, persist = true } = {}) {
+  constructor(model, dataDir, { url, interval, map, persist = true, collect = false } = {}) {
     this.model = model;
     this.dataDir = dataDir;
     this.url = url || process.env.STRAB_RT_URL || 'https://realtime.gtfs.de/realtime-free.pb';
@@ -60,6 +60,7 @@ export class Realtime {
 
     this.tripIndex = new Map(model.trips.map((t, i) => [t.id, i]));
     this.persist = persist;
+    this.collect = persist || collect; // Statistik im Speicher sammeln (Vercel speichert sie selbst)
     const mapFile = dataDir ? path.join(dataDir, 'rt-map.json') : '';
     this.map = { trips: {}, routes: [], stops: [] };
     if (map) {
@@ -185,14 +186,14 @@ export class Realtime {
   }
 
   record(startDate, id, value) {
-    if (!this.persist) return;
+    if (!this.collect) return;
     if (!startDate || startDate > berlinToday()) return; // Vorab-Angaben fuer morgen nicht zaehlen
     this.seen.set(`${startDate}|${id}`, value);
   }
 
   // Statistik: je Tag und Linie Fahrten, mittlere Verspaetung, Anteil ab 3 Minuten zu spaet, Ausfaelle
   flushStats() {
-    if (!this.persist) return;
+    if (!this.collect) return;
     if (Date.now() - (this.lastFlush || 0) < 10 * 60 * 1000 && this.seen.size < 50000) return;
     this.lastFlush = Date.now();
     const day = new Map();

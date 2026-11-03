@@ -1,10 +1,16 @@
 package de.lacoticomohd.strabfahrt;
 
+import android.Manifest;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebView;
 
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -30,6 +36,9 @@ public class MainActivity extends BridgeActivity {
 
         WebView web = getBridge().getWebView();
         web.addJavascriptInterface(new Bridge(), "StrabInsets");
+        web.addJavascriptInterface(new NativeBridge(), "StrabNative");
+        StrabStore.schedule(this);
+        openAlertsFrom(getIntent());
 
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
@@ -40,6 +49,60 @@ public class MainActivity extends BridgeActivity {
             return insets;
         });
         ViewCompat.requestApplyInsets(web);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        openAlertsFrom(intent);
+    }
+
+    // Tipp auf eine Störungs-Benachrichtigung: Meldungen in der App öffnen
+    private void openAlertsFrom(Intent intent) {
+        if (intent == null || !intent.getBooleanExtra("openAlerts", false)) return;
+        intent.removeExtra("openAlerts");
+        WebView web = getBridge().getWebView();
+        web.postDelayed(() -> web.evaluateJavascript("window.strabOpenAlerts && window.strabOpenAlerts()", null), 1500);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != 4711) return;
+        boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+        StrabStore.setNotify(this, granted);
+        if (granted) StrabStore.refreshNow(this);
+        WebView web = getBridge().getWebView();
+        web.post(() -> web.evaluateJavascript("window.strabNotifyChanged && window.strabNotifyChanged(" + granted + ")", null));
+    }
+
+    /** Favoriten fürs Widget, Benachrichtigungen bei Störungen. */
+    private class NativeBridge {
+        @JavascriptInterface
+        public void setFavorites(String favoritesJson, String linesJson, String base) {
+            StrabStore.save(MainActivity.this, favoritesJson, linesJson, base);
+            StrabStore.refreshNow(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public boolean notifyEnabled() {
+            return StrabStore.notifyEnabled(MainActivity.this) && hasPermission();
+        }
+
+        @JavascriptInterface
+        public void setNotify(boolean on) {
+            if (!on) { StrabStore.setNotify(MainActivity.this, false); return; }
+            if (hasPermission()) {
+                StrabStore.setNotify(MainActivity.this, true);
+                StrabStore.refreshNow(MainActivity.this);
+                return;
+            }
+            runOnUiThread(() -> ActivityCompat.requestPermissions(MainActivity.this, new String[] { Manifest.permission.POST_NOTIFICATIONS }, 4711));
+        }
+
+        private boolean hasPermission() {
+            return Build.VERSION.SDK_INT < 33 || ContextCompat.checkSelfPermission(MainActivity.this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED;
+        }
     }
 
     private class Bridge {

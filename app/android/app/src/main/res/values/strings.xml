@@ -4,4 +4,6 @@
     <string name="title_activity_main">STRABFAHRT</string>
     <string name="package_name">de.lacoticomohd.strabfahrt</string>
     <string name="custom_url_scheme">de.lacoticomohd.strabfahrt</string>
+    <string name="widget_description">Nächste Abfahrten an deiner Lieblingshaltestelle</string>
+    <string name="channel_alerts">Störungen</string>
 </resources>

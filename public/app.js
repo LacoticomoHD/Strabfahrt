@@ -69,8 +69,12 @@ function readable(hex) {
 }
 
 const styleCache = new Map();
+// Züge ohne eigene Linienfarbe: Regionalzüge blau, fremde S-Bahnen petrol
+const railKind = (name) => (/^(RE|RB|IRE|MEX|RS|FEX)\d*/i.test(name || '') ? 'regio' : /^S\d/i.test(name || '') ? 'sbahn' : '');
+const RAIL_COLOR = { regio: '1565c0', sbahn: '00796b' };
+
 function routeStyle(route) {
-  const key = `${route[1]}|${route[2]}|${route[3]}`;
+  const key = `${route[1]}|${route[2]}|${route[3]}|${route[1] === 2 ? railKind(route[0]) : ''}`;
   const hit = styleCache.get(key);
   if (hit) return hit;
   const st = computeStyle(route);
@@ -80,7 +84,8 @@ function routeStyle(route) {
 
 function computeStyle(route) {
   const group = groupOf(route[1]);
-  const bg = /^[0-9a-f]{6}$/i.test(route[2]) ? route[2] : DEFAULT_COLOR[group];
+  const own = /^[0-9a-f]{6}$/i.test(route[2]);
+  const bg = own ? route[2] : (group === 'rail' && RAIL_COLOR[railKind(route[0])]) || DEFAULT_COLOR[group];
   const fg = /^[0-9a-f]{6}$/i.test(route[3]) ? `#${route[3]}` : readable(bg);
   return { bg: `#${bg}`, fg, group };
 }
@@ -778,6 +783,12 @@ $('trails').addEventListener('change', (e) => { state.trails = e.target.checked;
 state.saver = load('strab.saver', typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 $('saver').checked = state.saver;
 $('saver').addEventListener('change', (e) => { state.saver = e.target.checked; save('strab.saver', state.saver); resizeCanvas(); needsDraw = true; });
+if (window.StrabNative) {
+  $('notify-wrap').hidden = false;
+  try { $('notify').checked = window.StrabNative.notifyEnabled(); } catch { /* alte App */ }
+  $('notify').addEventListener('change', (e) => { try { window.StrabNative.setNotify(e.target.checked); } catch (err) { console.warn(err); } });
+  window.strabNotifyChanged = (granted) => { $('notify').checked = granted; };
+}
 $('speed').addEventListener('change', (e) => { state.speed = Number(e.target.value); state.window = null; });
 $('now').addEventListener('click', () => { state.sim = wallNow(); state.speed = 1; $('speed').value = '1'; state.window = null; });
 $('when').addEventListener('change', (e) => {
@@ -926,6 +937,23 @@ function refreshPanel() {
   else if (state.list === 'nearby') renderNearby();
 }
 
+// Andere Stationen in Gehweite (z. B. "Durlach Bahnhof" und "Karlsruhe-Durlach"), Luftlinie mal 1,3, 80 m pro Minute
+let topStations = null;
+function nearbyStations(index, maxM = 400, limit = 4) {
+  if (!topStations) topStations = state.stops.map((st, i) => i).filter((i) => state.stops[i][4] < 0 && (state.stops[i][6] !== 1 || state.children.has(i)));
+  const s = state.stops[index];
+  const cosLat = Math.cos((s[2] * Math.PI) / 180);
+  const out = [];
+  for (const i of topStations) {
+    if (i === index) continue;
+    const t = state.stops[i];
+    if (t[1] === s[1]) continue;
+    const m = Math.hypot((t[3] - s[3]) * cosLat * 111320, (t[2] - s[2]) * 110540);
+    if (m <= maxM) out.push({ i, m: Math.round(m / 10) * 10, min: Math.max(1, Math.ceil((m * 1.3) / 80)) });
+  }
+  return out.sort((a, b) => a.m - b.m).slice(0, limit);
+}
+
 async function openStation(index) {
   state.selected = null;
   state.list = null;
@@ -973,6 +1001,16 @@ async function renderStation() {
     reachRow.append(b);
   }
   body.append(reachRow);
+  const near = nearbyStations(index);
+  if (near.length) {
+    const row = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Umsteigen in der Nähe:'));
+    for (const n of near) {
+      const b = el('button', { class: 'chip', type: 'button', title: `etwa ${n.m} m Fußweg` }, `🚶 ${state.stops[n.i][1]} · ${n.min} Min.`);
+      b.addEventListener('click', () => openStation(n.i));
+      row.append(b);
+    }
+    body.append(row);
+  }
   const members = [index, ...(state.children.get(index) || [])];
   const yes = members.filter((m) => state.stops[m][7] === 1).length;
   const no = members.filter((m) => state.stops[m][7] === 2).length;
@@ -1076,6 +1114,18 @@ function toggleFavorite(stationId, index) {
   if (i >= 0) state.favorites.splice(i, 1); else state.favorites.push(stationId);
   save('strab.favorites', state.favorites);
   if (state.station === index) renderStation();
+  syncNative();
+}
+
+// Android-App: Favoriten und ihre Linien ans Widget und an die Störungsmeldungen geben
+async function syncNative() {
+  const nat = window.StrabNative;
+  if (!nat || !state.stops) return;
+  const byId = new Map(state.stops.map((st, i) => [st[0], i]));
+  const favs = state.favorites.filter((id) => byId.has(id)).map((id) => ({ id, name: state.stops[byId.get(id)][1] }));
+  const lines = new Set();
+  for (const f of favs.slice(0, 8)) for (const d of await departuresFor(byId.get(f.id), 120)) lines.add(d.line);
+  try { nat.setFavorites(JSON.stringify(favs), JSON.stringify([...lines]), state.rtBase || ''); } catch (e) { console.warn(e); }
 }
 
 function departuresFor(index, limit) {
@@ -2012,6 +2062,8 @@ function updateLive() {
   box.title = `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
 }
 
+window.strabOpenAlerts = () => openAlerts();
+
 async function openAlerts() {
   state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;
   clearInterval(stationTimer);
@@ -2208,6 +2260,7 @@ async function init() {
       updateLive();
     };
     state.rtBase = rtBase;
+    syncNative();
     poll();
     setInterval(poll, 20000);
     if (!state.attribution.includes('Echtzeit')) state.attribution += `; ${meta.rtAttribution || 'Echtzeit: gtfs.de (CC BY-SA 4.0)'}`;
