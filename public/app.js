@@ -2359,6 +2359,8 @@ if (window.__strabOpenId) window.strabOpenStationId(window.__strabOpenId);
 // Android-App: neue Version unter GitHub-Releases gefunden
 window.strabShowUpdate = (info) => {
   if (!info || !info.url || document.getElementById('update')) return;
+  if (window.__strabUpdateShown === info.versionCode) return;
+  window.__strabUpdateShown = info.versionCode;
   const box = el('div', { id: 'update', role: 'status' },
     el('span', {}, `Neue App-Version ${info.versionName || ''} verfügbar.`),
     el('a', { class: 'chip', href: info.url, target: '_blank', rel: 'noopener' }, 'Herunterladen'));
@@ -2368,6 +2370,15 @@ window.strabShowUpdate = (info) => {
   document.body.append(box);
 };
 try { const u = window.StrabNative && window.StrabNative.pendingUpdate(); if (u) setTimeout(() => window.strabShowUpdate(JSON.parse(u)), 1500); } catch { /* alte App */ }
+window.strabUpdateResult = (r) => toast(r === 'aktuell' ? 'Du hast die neueste Version.' : 'Update-Prüfung gerade nicht möglich.');
+if (window.StrabNative && window.StrabNative.checkUpdateNow) {
+  let ver = '';
+  try { ver = window.StrabNative.appVersion(); } catch { /* alt */ }
+  const btn = el('button', { class: 'chip', type: 'button', title: 'Bei GitHub nach einer neueren App-Version sehen' }, `App ${ver} · Nach Updates suchen`);
+  btn.addEventListener('click', () => { window.__strabUpdateShown = null; window.StrabNative.checkUpdateNow(); toast('Suche nach Updates …'); });
+  const weiteres = $('btn-detours') && $('btn-detours').parentElement;
+  if (weiteres) weiteres.append(btn);
+}
 
 async function openAlerts() {
   state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;

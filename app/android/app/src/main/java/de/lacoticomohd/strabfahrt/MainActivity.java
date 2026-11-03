@@ -39,7 +39,6 @@ public class MainActivity extends BridgeActivity {
         web.addJavascriptInterface(new NativeBridge(), "StrabNative");
         StrabStore.schedule(this);
         openAlertsFrom(getIntent());
-        checkForUpdate(web);
 
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
@@ -53,19 +52,41 @@ public class MainActivity extends BridgeActivity {
     }
 
     private volatile String pendingUpdate = "";
+    private long lastUpdateCheck = 0;
+
+    // Bei jedem Öffnen (auch aus dem Hintergrund) höchstens alle 30 Min. nach einer neuen Version sehen
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (System.currentTimeMillis() - lastUpdateCheck > 30 * 60 * 1000) checkForUpdate(false);
+    }
+
+    private int myVersionCode() {
+        try { return (int) androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(getPackageManager().getPackageInfo(getPackageName(), 0)); }
+        catch (Exception e) { return 0; }
+    }
 
     // Neue APK unter GitHub-Releases? version.json vergleichen, Hinweis in der App zeigen
-    private void checkForUpdate(WebView web) {
+    private void checkForUpdate(boolean manual) {
+        lastUpdateCheck = System.currentTimeMillis();
+        WebView web = getBridge().getWebView();
         new Thread(() -> {
+            String js;
             try {
-                int mine = (int) androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(getPackageManager().getPackageInfo(getPackageName(), 0));
-                org.json.JSONObject v = new org.json.JSONObject(StrabWorker.get(UPDATE_URL));
-                if (v.optInt("versionCode", 0) <= mine) return;
-                pendingUpdate = v.toString();
-                web.postDelayed(() -> web.evaluateJavascript("window.strabShowUpdate && window.strabShowUpdate(" + pendingUpdate + ")", null), 4000);
-            } catch (Exception ignored) {
-                // offline oder noch keine Version veröffentlicht
+                org.json.JSONObject v = new org.json.JSONObject(StrabWorker.get(UPDATE_URL + "?t=" + System.currentTimeMillis()));
+                if (v.optInt("versionCode", 0) > myVersionCode()) {
+                    pendingUpdate = v.toString();
+                    js = "window.strabShowUpdate && window.strabShowUpdate(" + pendingUpdate + ")";
+                } else {
+                    js = manual ? "window.strabUpdateResult && window.strabUpdateResult('aktuell')" : null;
+                }
+            } catch (Exception e) {
+                js = manual ? "window.strabUpdateResult && window.strabUpdateResult('fehler')" : null;
             }
+            if (js == null) return;
+            final String run = js;
+            // Seite braucht beim Kaltstart etwas, bis die Funktion existiert: mehrmals versuchen
+            for (int ms : manual ? new int[] { 0 } : new int[] { 1500, 5000, 12000 }) web.postDelayed(() -> web.evaluateJavascript(run, null), ms);
         }).start();
     }
 
@@ -149,6 +170,17 @@ public class MainActivity extends BridgeActivity {
         @JavascriptInterface
         public String pendingUpdate() {
             return pendingUpdate;
+        }
+
+        @JavascriptInterface
+        public String appVersion() {
+            try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName + " (" + myVersionCode() + ")"; }
+            catch (Exception e) { return "?"; }
+        }
+
+        @JavascriptInterface
+        public void checkUpdateNow() {
+            checkForUpdate(true);
         }
 
         @JavascriptInterface
