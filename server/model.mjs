@@ -190,6 +190,9 @@ export class Model {
       if (s.lower.startsWith(needle)) starts.push(s);
       else if (tokens.every((t) => s.lower.includes(t) || (ALIASES[t] && s.lower.includes(ALIASES[t])))) contains.push(s);
     }
+    // Exakte Treffer zuerst, dann Bahnhöfe, sonst Reihenfolge wie bisher
+    const rank = (s) => (s.lower === needle ? 0 : /bahnhof|hbf|\bbf\b/.test(s.lower) ? 1 : 2);
+    starts.sort((a, b) => rank(a) - rank(b));
     return [...starts, ...contains].slice(0, limit).map((s) => {
       const st = this.stops[s.index];
       return { index: s.index, name: st[1], lat: st[2], lon: st[3] };

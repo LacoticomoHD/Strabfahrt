@@ -123,7 +123,7 @@ test('Gleiche Station aus anderem Feed haengt am KVV-Hauptbahnhof', () => {
   assert.ok(kvvParent >= 0);
   assert.equal(model.stops[idx('de:FH1')][4], kvvParent, 'ICE-Halt gehoert zur KVV-Station');
   assert.equal(model.stops[idx('de:RHBF')][4], kvvParent, 'Regio-Halt gehoert zur KVV-Station');
-  assert.equal(model.stops[idx('de:RDUR')][4], -1, 'Durlach bleibt eigene Station (anderer Name)');
+  assert.equal(model.stops[idx('de:RDUR')][4], idx('DUR'), 'Karlsruhe-Durlach haengt am KVV-Bahnhof (Namensteil + Bahnhof, unter 300 m)');
 });
 
 test('Fahrten: KVV 1, Fern 1, Regio 1 (die doppelte S1 fehlt)', () => {

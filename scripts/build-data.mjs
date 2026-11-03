@@ -209,6 +209,11 @@ async function processFeed(feed, raw) {
   const gtfsde = feed.id !== 'kvv';
   const stats = { routes: 0, skippedRoutes: 0, kept: 0, skipped: 0 };
 
+  // Betreiber (für die Doppelungsprüfung: nur Linien der KVV-Betriebe gelten als schon vorhanden)
+  const agencyNames = new Map();
+  if (fs.existsSync(f('agency.txt'))) await readCsv(f('agency.txt'), (g) => { agencyNames.set(g('agency_id'), g('agency_name')); });
+  const KVV_OPERATOR = /albtal|karlsruher verkehrsverbund|kvv|verkehrsbetriebe karlsruhe|vbk/i;
+
   // Linien
   const routeIdx = new Map();
   const matchRoutes = new Map(); // Linien, die nicht ins Modell kommen, aber den KVV-Fahrten zugeordnet werden
@@ -216,7 +221,7 @@ async function processFeed(feed, raw) {
     const short = g('route_short_name') || g('route_long_name');
     const type = normType(Number(g('route_type')), feed);
     if (feed.matchOnly) { matchRoutes.set(g('route_id'), short); return; }
-    if (feed.skipDuplicateRail && type === 2 && shared.railNames.has(short)) { matchRoutes.set(g('route_id'), short); stats.skippedRoutes++; return; }
+    if (feed.skipDuplicateRail && type === 2 && shared.railNames.has(short) && (!agencyNames.get(g('agency_id')) || KVV_OPERATOR.test(agencyNames.get(g('agency_id'))))) { matchRoutes.set(g('route_id'), short); stats.skippedRoutes++; return; }
     routeIdx.set(g('route_id'), shared.routes.length);
     shared.routes.push([short, type, g('route_color'), g('route_text_color'), px + g('agency_id')]);
     if (feed.required && type === 2) shared.railNames.add(short);
@@ -452,6 +457,20 @@ async function main() {
       for (const cand of (primary.get(normName(station.name)) || new Map()).values()) {
         const d = metersBetween(station, cand);
         if (d <= bestD) { bestD = d; target = cand.id; }
+      }
+      // Sonst: Bahnhof mit abweichendem Namen ("Bruchsal" = "Bruchsal Bahnhof/ZOB", "Karlsruhe-Durlach" = "Durlach Bahnhof").
+      // Alle Namensteile müssen im KVV-Namen vorkommen, der KVV-Name muss "Bahnhof" enthalten, höchstens 300 m.
+      if (!target) {
+        const words = normName(station.name).split(' ').filter(Boolean);
+        let bestD2 = 300;
+        for (const [key, cands] of primary) {
+          const kw = new Set(key.split(' '));
+          if (!words.length || !(kw.has('bf') || kw.has('hbf')) || !words.every((w) => kw.has(w))) continue;
+          for (const cand of cands.values()) {
+            const d = metersBetween(station, cand);
+            if (d <= bestD2) { bestD2 = d; target = cand.id; }
+          }
+        }
       }
       mergeCache.set(station.id, target);
       if (target) merged++;
