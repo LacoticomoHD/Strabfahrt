@@ -2,6 +2,8 @@ name: Android-App bauen
 
 # Baut nach jeder neuen Web-Version die APK und legt sie unter Releases ab:
 #   https://github.com/<Besitzer>/<Repo>/releases/download/app/strabfahrt.apk
+#   https://github.com/<Besitzer>/<Repo>/releases/download/app/version.json (die App prüft darüber auf Updates)
+# Eine neue Version entsteht nur, wenn sich App-Code oder Oberfläche geändert haben, nicht bei reinen Datenupdates.
 # Voraussetzung: Repository-Secrets ANDROID_KEYSTORE_B64 (Signierschluessel, base64) und
 # ANDROID_KEYSTORE_PASSWORD. Ohne diese wird der Lauf uebersprungen.
 
@@ -54,19 +56,33 @@ jobs:
           printf 'window.STRAB_NATIVE = true;\nwindow.STRAB_DATA_URL = "https://%s.github.io/%s/";\n' \
             "$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" "${{ github.event.repository.name }}" >> app/www/static-flag.js
 
-      - name: Capacitor
+      - name: Hat sich die App geändert?
         if: env.HAS_KEY == 'true'
+        run: |
+          # Fingerabdruck aus Oberfläche (ohne Fahrplandaten) und nativem Code
+          FP=$( { (cd app/www && find . -type f ! -name model.json ! -name shapes.json ! -name rt-map.json ! -name config.json ! -name sw.js | sort | xargs sha256sum); \
+                  git ls-files -s app/android app/package-lock.json app/capacitor.config.json; } | sha256sum | cut -c1-16)
+          echo "FP=$FP" >> "$GITHUB_ENV"
+          OLD=$(curl -fsSL "https://github.com/${{ github.repository }}/releases/download/app/version.json" 2>/dev/null | sed -n 's/.*"fp": *"\([0-9a-f]*\)".*/\1/p')
+          if [ "$OLD" = "$FP" ] && [ "${{ github.event_name }}" != "workflow_dispatch" ]; then
+            echo "::notice::App unverändert ($FP), keine neue Version"; echo "BUILD=false" >> "$GITHUB_ENV"
+          else
+            echo "BUILD=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Capacitor
+        if: env.BUILD == 'true'
         working-directory: app
         run: |
           npm ci --no-audit --no-fund
           npx cap sync android
 
       - name: APK bauen und signieren
-        if: env.HAS_KEY == 'true'
+        if: env.BUILD == 'true'
         working-directory: app/android
         env:
           STRAB_VERSION_CODE: ${{ github.run_number }}
-          STRAB_VERSION_NAME: 1.${{ github.run_number }}
+          STRAB_VERSION_NAME: 2.${{ github.run_number }}
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
           printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=strabfahrt\nkeyPassword=%s\n' \
@@ -79,9 +95,13 @@ jobs:
           cp app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/strabfahrt.apk"
 
       - name: Unter Releases veröffentlichen
-        if: env.HAS_KEY == 'true'
+        if: env.BUILD == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view app >/dev/null 2>&1 || gh release create app --title "STRABFAHRT Android-App" --notes "Immer die neueste APK. Download: strabfahrt.apk"
+          CODE=$(( ${{ github.run_number }} + 100 ))
+          printf '{"versionCode": %s, "versionName": "2.%s", "fp": "%s", "built": "%s", "url": "https://github.com/%s/releases/download/app/strabfahrt.apk"}\n' \
+            "$CODE" "${{ github.run_number }}" "$FP" "$(date -u +%Y-%m-%dT%H:%MZ)" "${{ github.repository }}" > "$RUNNER_TEMP/version.json"
           gh release upload app "$RUNNER_TEMP/strabfahrt.apk" --clobber
+          gh release upload app "$RUNNER_TEMP/version.json" --clobber

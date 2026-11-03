@@ -39,6 +39,7 @@ public class MainActivity extends BridgeActivity {
         web.addJavascriptInterface(new NativeBridge(), "StrabNative");
         StrabStore.schedule(this);
         openAlertsFrom(getIntent());
+        checkForUpdate(web);
 
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
@@ -50,6 +51,25 @@ public class MainActivity extends BridgeActivity {
         });
         ViewCompat.requestApplyInsets(web);
     }
+
+    private volatile String pendingUpdate = "";
+
+    // Neue APK unter GitHub-Releases? version.json vergleichen, Hinweis in der App zeigen
+    private void checkForUpdate(WebView web) {
+        new Thread(() -> {
+            try {
+                int mine = (int) androidx.core.content.pm.PackageInfoCompat.getLongVersionCode(getPackageManager().getPackageInfo(getPackageName(), 0));
+                org.json.JSONObject v = new org.json.JSONObject(StrabWorker.get(UPDATE_URL));
+                if (v.optInt("versionCode", 0) <= mine) return;
+                pendingUpdate = v.toString();
+                web.postDelayed(() -> web.evaluateJavascript("window.strabShowUpdate && window.strabShowUpdate(" + pendingUpdate + ")", null), 4000);
+            } catch (Exception ignored) {
+                // offline oder noch keine Version veröffentlicht
+            }
+        }).start();
+    }
+
+    private static final String UPDATE_URL = "https://github.com/LacoticomoHD/Strabfahrt/releases/download/app/version.json";
 
     @Override
     protected void onNewIntent(Intent intent) {
@@ -82,6 +102,11 @@ public class MainActivity extends BridgeActivity {
         public void setFavorites(String favoritesJson, String linesJson, String base) {
             StrabStore.save(MainActivity.this, favoritesJson, linesJson, base);
             StrabStore.refreshNow(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public String pendingUpdate() {
+            return pendingUpdate;
         }
 
         @JavascriptInterface

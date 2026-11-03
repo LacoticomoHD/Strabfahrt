@@ -137,6 +137,7 @@ const state = {
   meta: null,
   stops: [],
   stations: [], // { index, lat, lon, name }
+  labelBoxes: [], // anklickbare Namensboxen der Haltestellen { x, y, w, h, index }
   patterns: new Map(),
   profiles: new Map(),
   trips: [],
@@ -532,13 +533,14 @@ function drawFrame() {
   if (state.takt.on) drawTakt(zoom);
   else if (state.reach) drawReach(zoom);
 
+  state.labelBoxes = [];
   // Haltestellen: kräftiger Ring mit hellem Rand, damit sie sich von der Karte abheben
   if (zoom >= 13 && !state.takt.on) {
     const r = zoom >= 17 ? 7 : zoom >= 16 ? 6 : zoom >= 15 ? 5 : zoom >= 14 ? 4.2 : 3.2;
     const ring = dark ? '#f2c14e' : '#012f57';
     const halo = dark ? 'rgba(10,14,22,.85)' : 'rgba(255,255,255,.95)';
     const labels = zoom >= 15;
-    ctx.font = `600 ${zoom >= 17 ? 13 : 12}px system-ui, sans-serif`;
+    ctx.font = `700 ${zoom >= 17 ? 13 : 12}px system-ui, sans-serif`;
     ctx.lineJoin = 'round';
     const b = map.getBounds();
     for (const s of state.stations) {
@@ -556,11 +558,19 @@ function drawFrame() {
       ctx.strokeStyle = ring;
       ctx.stroke();
       if (labels) {
-        ctx.lineWidth = 3.5;
-        ctx.strokeStyle = halo;
-        ctx.strokeText(s.name, p.x + r + 5, p.y + 4);
-        ctx.fillStyle = dark ? '#e6ebf5' : '#012f57';
-        ctx.fillText(s.name, p.x + r + 5, p.y + 4);
+        // Name in weißer, fetter Schrift auf halbtransparenter Box; die Box ist anklickbar (öffnet die Abfahrten)
+        const tw = ctx.measureText(s.name).width;
+        const bx = p.x + r + 4;
+        const by = p.y - 10;
+        const bw = tw + 12;
+        const bh = 20;
+        ctx.fillStyle = dark ? 'rgba(8,12,18,.82)' : 'rgba(1,47,87,.82)';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 5); else ctx.rect(bx, by, bw, bh);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(s.name, bx + 6, p.y + 4);
+        state.labelBoxes.push({ x: bx, y: by, w: bw, h: bh, index: s.index });
       }
     }
   }
@@ -884,7 +894,12 @@ map.on('click', (e) => {
     if (d < bestD) { best = v; bestD = d; }
   }
   if (best) { selectVehicle(best.trip); return; }
-  if (map.getZoom() >= 14) {
+  // Tipp auf einen Haltestellennamen (oberste Box zuerst)
+  for (let i = state.labelBoxes.length - 1; i >= 0; i--) {
+    const b = state.labelBoxes[i];
+    if (pt.x >= b.x - 4 && pt.x <= b.x + b.w + 4 && pt.y >= b.y - 4 && pt.y <= b.y + b.h + 4) { openStation(b.index); return; }
+  }
+  if (map.getZoom() >= 13) {
     let bs = null;
     let bd = 14;
     for (const s of state.stations) {
@@ -2129,6 +2144,19 @@ function updateLive() {
 }
 
 window.strabOpenAlerts = () => openAlerts();
+
+// Android-App: neue Version unter GitHub-Releases gefunden
+window.strabShowUpdate = (info) => {
+  if (!info || !info.url || document.getElementById('update')) return;
+  const box = el('div', { id: 'update', role: 'status' },
+    el('span', {}, `Neue App-Version ${info.versionName || ''} verfügbar.`),
+    el('a', { class: 'chip', href: info.url, target: '_blank', rel: 'noopener' }, 'Herunterladen'));
+  const later = el('button', { class: 'chip', type: 'button' }, 'Später');
+  later.addEventListener('click', () => box.remove());
+  box.append(later);
+  document.body.append(box);
+};
+try { const u = window.StrabNative && window.StrabNative.pendingUpdate(); if (u) setTimeout(() => window.strabShowUpdate(JSON.parse(u)), 1500); } catch { /* alte App */ }
 
 async function openAlerts() {
   state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;
