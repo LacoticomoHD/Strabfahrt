@@ -176,6 +176,8 @@ const state = {
 
 const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: TILES, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
+// Eigener Hinweis neben den Pflichtangaben (OpenStreetMap, Daten), deutlich als App-Urheber getrennt
+if (map.attributionControl) map.attributionControl.addAttribution('<span class="owner">App © 2026 Sebastian Of</span>');
 
 // Live-Standort: Knopf über dem Zoom. 1. Tipp: Standort zeigen und mitfahren, Karte verschieben: Mitfahren aus,
 // erneuter Tipp: wieder mitfahren, Tipp während des Mitfahrens: Standort aus.
@@ -502,7 +504,6 @@ function drawFrame() {
   const zoom = map.getZoom();
   const dark = document.documentElement.dataset.theme === 'dark';
   const stopFill = dark ? '#1b2230' : '#fff';
-  const stopLine = dark ? '#9db4d8' : '#33415c';
 
   // Schematisches Liniennetz als Hintergrund (nur ohne Kartenkacheln)
   if (!TILES && state.networkGroups) {
@@ -531,24 +532,35 @@ function drawFrame() {
   if (state.takt.on) drawTakt(zoom);
   else if (state.reach) drawReach(zoom);
 
-  // Haltestellen
-  if (zoom >= 14 && !state.takt.on) {
-    ctx.fillStyle = stopFill;
-    ctx.strokeStyle = stopLine;
-    ctx.lineWidth = 1.5;
+  // Haltestellen: kräftiger Ring mit hellem Rand, damit sie sich von der Karte abheben
+  if (zoom >= 13 && !state.takt.on) {
+    const r = zoom >= 17 ? 7 : zoom >= 16 ? 6 : zoom >= 15 ? 5 : zoom >= 14 ? 4.2 : 3.2;
+    const ring = dark ? '#f2c14e' : '#012f57';
+    const halo = dark ? 'rgba(10,14,22,.85)' : 'rgba(255,255,255,.95)';
+    const labels = zoom >= 15;
+    ctx.font = `600 ${zoom >= 17 ? 13 : 12}px system-ui, sans-serif`;
+    ctx.lineJoin = 'round';
     const b = map.getBounds();
     for (const s of state.stations) {
       if (s.lat < b.getSouth() || s.lat > b.getNorth() || s.lon < b.getWest() || s.lon > b.getEast()) continue;
       const p = map.latLngToContainerPoint([s.lat, s.lon]);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, zoom >= 16 ? 5 : 3.5, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, r + 2, 0, Math.PI * 2);
+      ctx.fillStyle = halo;
       ctx.fill();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = stopFill;
+      ctx.fill();
+      ctx.lineWidth = zoom >= 15 ? 2.5 : 2;
+      ctx.strokeStyle = ring;
       ctx.stroke();
-      if (zoom >= 16) {
-        ctx.fillStyle = dark ? '#cfd8e8' : '#33415c';
-        ctx.font = '11px system-ui, sans-serif';
-        ctx.fillText(s.name, p.x + 8, p.y + 4);
-        ctx.fillStyle = stopFill;
+      if (labels) {
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = halo;
+        ctx.strokeText(s.name, p.x + r + 5, p.y + 4);
+        ctx.fillStyle = dark ? '#e6ebf5' : '#012f57';
+        ctx.fillText(s.name, p.x + r + 5, p.y + 4);
       }
     }
   }

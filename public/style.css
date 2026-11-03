@@ -236,3 +236,5 @@ body::after { bottom: 0; height: var(--sab); }
 #btn-locate.wait { opacity: .6; }
 #toast { position: fixed; left: 50%; top: calc(70px + var(--sat)); transform: translateX(-50%); z-index: 1100; max-width: 90vw; padding: 8px 14px; border-radius: 8px; background: var(--fg); color: var(--bg); box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity .2s; }
 #toast.show { opacity: 1; }
+.leaflet-control-attribution .owner { font-weight: 600; color: #012f57; }
+:root[data-theme="dark"] .leaflet-control-attribution .owner { color: #f2c14e; }
