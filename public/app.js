@@ -1976,7 +1976,7 @@ function renderRoutePanel(autorun = false) {
       status.textContent = 'Suche fehlgeschlagen.';
       return;
     }
-    status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''} nach Fahrplan (Soll)${state.routeAcc ? ', nur barrierefreie Fahrten' : ''}` : `Keine Verbindung in den nächsten 5 Stunden gefunden${state.routeAcc ? ' (nur barrierefreie Fahrten)' : ''}.`;
+    status.textContent = state.journeys.length ? `${state.journeys.length} Verbindung${state.journeys.length > 1 ? 'en' : ''}${state.rt.active ? ', mit Live-Prognose für Ankunft und Umstiege' : ' nach Fahrplan (Soll)'}${state.routeAcc ? ', nur barrierefreie Fahrten' : ''}` : `Keine Verbindung in den nächsten 5 Stunden gefunden${state.routeAcc ? ' (nur barrierefreie Fahrten)' : ''}.`;
     renderJourneys(results);
     scheduleHash();
   };
@@ -2114,12 +2114,60 @@ function downloadIcs(j, note) {
   }
 }
 
+// Live-Prognose einer Verbindung: erwartete Ankunft, Umstiege, Ausfälle
+function journeyForecast(j) {
+  let prevArr = null;
+  let walk = 0;
+  let worst = 'ok';
+  let live = false;
+  let canceled = false;
+  let arrDelay = 0;
+  const rank = { ok: 0, tight: 1, bad: 2 };
+  for (const leg of j.legs) {
+    if (leg.type === 'walk') { if (prevArr !== null) walk += leg.secs; continue; }
+    const r = rtOf(leg.trip);
+    if (r.delay !== undefined) live = true;
+    if (r.canceled) canceled = true;
+    if (prevArr !== null) {
+      const spare = (leg.dep + (r.delay || 0) - prevArr - walk) / 60;
+      const lvl = r.canceled || spare < 1 ? 'bad' : spare < 4 ? 'tight' : 'ok';
+      if (rank[lvl] > rank[worst]) worst = lvl;
+    }
+    prevArr = leg.arr + (r.delay || 0);
+    arrDelay = r.delay || 0;
+    walk = 0;
+  }
+  return { arrDelay, worst, live, canceled, arr: j.arr + arrDelay };
+}
+
+function forecastBox(j) {
+  const f = journeyForecast(j);
+  let cls = 'ok';
+  const parts = [];
+  if (f.canceled) { cls = 'bad'; parts.push('⚠ Eine Fahrt fällt aus, nimm eine andere Verbindung'); }
+  else {
+    if (!f.live) parts.push(`Ankunft ${hhmm(j.arr)} nach Fahrplan (keine Live-Daten)`);
+    else if (Math.abs(f.arrDelay) < 60) parts.push(`✓ Pünktlich an: ${hhmm(f.arr)}`);
+    else if (f.arrDelay > 0) { cls = 'tight'; parts.push(`Ankunft voraussichtlich ${hhmm(f.arr)}, ${Math.round(f.arrDelay / 60)} Min. später`); }
+    else parts.push(`Ankunft voraussichtlich ${hhmm(f.arr)}, etwas früher`);
+    if (j.transfers > 0) {
+      if (f.worst === 'bad') { cls = 'bad'; parts.push('Umstieg gefährdet, besser „Später →“ prüfen'); }
+      else if (f.worst === 'tight') { if (cls === 'ok') cls = 'tight'; parts.push('Umstieg knapp, aber machbar'); }
+      else parts.push('Umstieg klappt');
+    }
+  }
+  return el('div', { class: `xfer fc ${cls}` }, parts.join(' · '));
+}
+
+let journeyBox = null;
 function renderJourneys(container) {
+  journeyBox = container;
   container.replaceChildren();
   state.journeys.forEach((j) => {
     const card = el('div', { class: 'jcard', role: 'button', tabindex: '0', 'aria-pressed': String(state.journey === j) });
     const mins = Math.round((j.arr - j.start) / 60);
     card.append(el('div', { class: 'jh' }, `${hhmm(j.start)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
+    card.append(forecastBox(j));
     let prevArr = null; // erwartete Ankunft der vorigen Fahrt (mit Live-Verspätung)
     let walkSecs = 0;
     let prevStop = null;
@@ -2516,6 +2564,7 @@ async function init() {
       }
       updateLive();
       scheduleWebAlarms();
+      if (state.list === 'route' && journeyBox && journeyBox.isConnected && state.journeys && state.journeys.length) renderJourneys(journeyBox);
     };
     state.rtBase = rtBase;
     syncNative();
