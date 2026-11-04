@@ -2364,8 +2364,8 @@ function updateLive() {
   const age = r.feedTime ? Math.round(Date.now() / 1000 - r.feedTime) : null;
   const stale = r.error || age === null || age > 300;
   box.className = stale ? 'live stale' : 'live';
-  box.textContent = r.error && !r.updated ? '● Live-Daten nicht erreichbar' : `● Live ${r.feedTime ? hhmmss(wallOf(r.feedTime)) : ''}`;
-  box.title = `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
+  box.textContent = r.error && !r.updated ? '● Live-Daten nicht erreichbar' : r.outdated ? `● Live-Quelle hängt (Stand ${hhmm(wallOf(r.feedTime))}), Fahrplan` : `● Live ${r.feedTime ? hhmmss(wallOf(r.feedTime)) : ''}`;
+  box.title = r.outdated ? 'Der Echtzeit-Stream von gtfs.de liefert gerade keine neuen Daten. Bis er wieder läuft, zeigt die App den Fahrplan (KVV-Daten an Haltestellen gehen weiter).' : `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
 }
 
 window.strabOpenAlerts = () => openAlerts();
@@ -2589,10 +2589,12 @@ async function init() {
       try {
         const j = rtBase ? await (await fetch(`${rtBase.replace(/\/$/, '')}/api/delays`)).json() : await api('/api/delays');
         if (!j || j.enabled === false) return;
-        state.delays = new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
-        state.canceled = new Set(j.c || []);
-        state.reasons = new Map(Object.entries(j.r || {}));
-        state.rt = { active: !!j.updated, updated: j.updated, feedTime: j.feedTime, error: j.error };
+        // Quelle hängt (Stand älter als 20 Min.): alte Verspätungen nicht mehr anzeigen, sonst wären sie falsch
+        const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
+        state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
+        state.canceled = old ? new Set() : new Set(j.c || []);
+        state.reasons = old ? new Map() : new Map(Object.entries(j.r || {}));
+        state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error };
       } catch (e) {
         state.rt = { ...state.rt, error: e.message };
       }
