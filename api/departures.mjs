@@ -1,4 +1,5 @@
 import { getLive, getModel, send } from './_live.mjs';
+import { kvvForStation } from './_kvv.mjs';
 
 // Nächste Abfahrten einer Station mit Live-Verspätung, für das Android-Widget.
 // GET /api/departures?stop=<Haltestellen-ID>&limit=6
@@ -22,10 +23,12 @@ export default async function handler(req, res) {
     const ymd = `${p.year}${p.month}${p.day}`;
     const now = Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second);
     const list = model.departures(idx, ymd, now - 30 * 60, now + 3 * 3600, 200);
+    const kvv = await kvvForStation(model, idx, list).catch(() => null);
     const out = [];
     for (const d of list) {
-      const canceled = rt ? rt.canceled.has(d.trip) : false;
-      const delay = rt && rt.delays.has(d.trip) ? rt.delays.get(d.trip) : null;
+      const k = kvv && kvv.map.get(d.trip);
+      const canceled = (k && k.canceled) || (rt ? rt.canceled.has(d.trip) : false);
+      const delay = k && k.delay !== null ? k.delay : rt && rt.delays.has(d.trip) ? rt.delays.get(d.trip) : null;
       const real = d.t + (delay || 0);
       if (real < now - 30) continue;
       const hh = Math.floor((d.t % 86400 + 86400) % 86400 / 3600);
@@ -36,7 +39,7 @@ export default async function handler(req, res) {
       });
       if (out.length >= limit) break;
     }
-    send(res, 200, { name: model.stops[idx][1], updated: Date.now(), live: Boolean(rt && rt.updated), departures: out }, 30);
+    send(res, 200, { name: model.stops[idx][1], updated: Date.now(), live: Boolean(rt && rt.updated), source: kvv && kvv.map.size ? 'kvv' : 'gtfs.de', departures: out }, 30);
   } catch (e) {
     send(res, 502, { error: String(e.message || e) }, 15);
   }

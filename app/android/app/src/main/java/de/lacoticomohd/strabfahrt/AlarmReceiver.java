@@ -99,7 +99,7 @@ public class AlarmReceiver extends BroadcastReceiver {
             String base = a.optString("base", "");
             if (!base.startsWith("https://")) base = StrabStore.base(c);
             if (base.endsWith("/")) base = base.substring(0, base.length() - 1);
-            JSONObject t = new JSONObject(StrabWorker.get(base + "/api/trip?id=" + URLEncoder.encode(a.getString("trip"), "UTF-8")));
+            JSONObject t = new JSONObject(StrabWorker.get(base + "/api/trip?id=" + URLEncoder.encode(a.getString("trip"), "UTF-8") + "&stop=" + URLEncoder.encode(a.optString("stopId", ""), "UTF-8")));
             canceled = t.optBoolean("canceled");
             if (!t.isNull("delay")) { delay = t.optLong("delay"); live = true; }
         } catch (Exception offline) {

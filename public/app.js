@@ -413,9 +413,17 @@ function demoDelay(id) {
   return ((h >>> 0) % 600) - 150; // -150 bis +449 Sekunden
 }
 
+// KVV-Echtzeit (TRIAS) je Station: genauer, hat Vorrang, solange sie frisch ist (90 s)
+state.kvv = new Map(); // trip -> { delay, canceled, at }
+function kvvOf(tripId) {
+  const k = state.kvv.get(tripId);
+  return k && Date.now() - k.at < 90000 ? k : null;
+}
+
 function delayOf(trip) {
   if (state.demo) return demoDelay(trip.id);
-  return state.delays.get(trip.id);
+  const k = kvvOf(trip.id);
+  return k && k.delay !== undefined ? k.delay : state.delays.get(trip.id);
 }
 
 function fmtDelay(d) {
@@ -444,7 +452,8 @@ const liveNote = () => (state.rt.active ? 'mit Live-Verspätungen, wo verfügbar
 // Echtzeit fuer eine Fahrt-ID (Abfahrten, Verbindungen)
 function rtOf(tripId) {
   if (state.demo) return { delay: demoDelay(tripId), canceled: false, reason: null };
-  return { delay: state.delays.get(tripId), canceled: state.canceled.has(tripId), reason: state.reasons.get(tripId) || null };
+  const k = kvvOf(tripId);
+  return { delay: k && k.delay !== undefined ? k.delay : state.delays.get(tripId), canceled: (k && k.canceled) || state.canceled.has(tripId), reason: state.reasons.get(tripId) || null, kvv: Boolean(k) };
 }
 
 // Zeit-Zelle: Plan-Zeit, dazu farbige Abweichung oder "fällt aus"
@@ -1187,6 +1196,20 @@ async function renderStation() {
     console.error(e);
   }
   if (state.station !== index) return;
+  // Genauere KVV-Echtzeit für diese Station holen (höchstens 2,5 s warten)
+  let kvvUsed = false;
+  if (state.rtBase && Math.abs(state.sim - wallNow()) < 120) {
+    try {
+      const k = await Promise.race([rtGet(`/api/stopevents?stop=${encodeURIComponent(state.stops[index][0])}`), new Promise((r) => setTimeout(() => r(null), 2500))]);
+      if (k && k.d) {
+        const at = Date.now();
+        for (const [t, v] of Object.entries(k.d)) state.kvv.set(t, { delay: v, canceled: false, at });
+        for (const t of k.c || []) state.kvv.set(t, { ...(state.kvv.get(t) || {}), canceled: true, at });
+        kvvUsed = k.matched > 0;
+      }
+    } catch { /* nur gtfs.de */ }
+    if (state.station !== index) return;
+  }
   const base = dayStart(ymdOf(state.sim));
   const body = $('panel-body');
   body.replaceChildren();
@@ -1216,7 +1239,7 @@ async function renderStation() {
   const members = [index, ...(state.children.get(index) || [])];
   const yes = members.filter((m) => state.stops[m][7] === 1).length;
   const no = members.filter((m) => state.stops[m][7] === 2).length;
-  body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}`));
+  body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}${kvvUsed ? ' · Live-Quelle: KVV' : ''}`));
   body.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
