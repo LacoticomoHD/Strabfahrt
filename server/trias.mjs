@@ -90,8 +90,9 @@ export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000 } 
       signal: ctrl.signal,
     });
     const xml = await res.text();
-    if (!res.ok) throw new Error(`TRIAS HTTP ${res.status}`);
-    return parseStopEvents(xml);
+    const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
+    if (!res.ok) return { error: `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status };
+    return { ...parseStopEvents(xml), raw, status: res.status };
   } finally {
     clearTimeout(timer);
   }

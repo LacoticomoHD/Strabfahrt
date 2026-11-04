@@ -31,5 +31,5 @@ export async function kvvForStation(model, idx, deps) {
   }
   const r = await c.promise;
   const { dayStartUnix } = berlinNow();
-  return { error: r.error, events: r.events.length, map: matchEvents(deps, r.events, dayStartUnix) };
+  return { error: r.error, events: r.events.length, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, status: r.status };
 }

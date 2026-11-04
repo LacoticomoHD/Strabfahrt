@@ -20,6 +20,8 @@ export default async function handler(req, res) {
     const k = await kvvForStation(model, idx, deps);
     const d = {}; const c = []; const bay = {};
     if (k) for (const [trip, v] of k.map) { if (v.delay !== null) d[trip] = v.delay; if (v.canceled) c.push(trip); if (v.bay) bay[trip] = v.bay; }
+    const debug = new URL(req.url, 'http://x').searchParams.get('debug') === '1';
+    if (debug && k) return send(res, 200, { status: k.status, error: k.error, events: k.events, raw: k.raw }, 0);
     send(res, 200, { source: 'kvv', updated: Date.now(), events: k ? k.events : 0, matched: Object.keys(d).length, error: k ? k.error : null, d, c, bay }, 25);
   } catch (e) {
     send(res, 502, { error: String(e.message || e) }, 15);
