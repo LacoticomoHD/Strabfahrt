@@ -76,26 +76,34 @@ export function parseStopEvents(xml) {
   return { error: events.length ? null : err, events };
 }
 
+// Die KVV-Mail nennt zwei Adressen (oftrias im Text, langtrias im Link): die erste mit Inhalt gewinnt und wird gemerkt
+const URLS = () => [process.env.KVV_TRIAS_URL, DEFAULT_URL, 'https://projekte.kvv-efa.de/langtrias/trias'].filter((u, i, a) => u && a.indexOf(u) === i);
+let goodUrl = null;
+
 export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000 } = {}) {
   const ref = process.env.KVV_TRIAS_REF;
   if (!ref) throw new Error('KVV_TRIAS_REF fehlt');
-  const url = process.env.KVV_TRIAS_URL || DEFAULT_URL;
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' },
-      body: stopEventRequest(ref, stopRef, new Date().toISOString().replace(/\.\d+Z$/, 'Z'), count),
-      signal: ctrl.signal,
-    });
-    const xml = await res.text();
-    const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
-    if (!res.ok) return { error: `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status };
-    return { ...parseStopEvents(xml), raw, status: res.status };
-  } finally {
-    clearTimeout(timer);
+  const body = stopEventRequest(ref, stopRef, new Date().toISOString().replace(/\.\d+Z$/, 'Z'), count);
+  let last = null;
+  for (const url of goodUrl ? [goodUrl] : URLS()) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' }, body, signal: ctrl.signal });
+      const xml = await res.text();
+      const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
+      last = { error: res.ok ? (xml.trim() ? '' : 'leere Antwort (Zugang noch nicht freigeschaltet?)') : `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status, url };
+      if (!res.ok || !xml.trim()) continue;
+      const parsed = parseStopEvents(xml);
+      goodUrl = url;
+      return { ...parsed, raw, status: res.status, url };
+    } catch (e) {
+      last = { error: String(e.message || e), events: [], raw: '', status: 0, url };
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return last;
 }
 
 const normLine = (s) => String(s || '').toUpperCase().replace(/^(STR|STRASSENBAHN|TRAM|BUS|LINIE)\s*/, '').replace(/\s+/g, '');
