@@ -12,12 +12,12 @@ export function stopEventRequest(ref, stopRef, whenIso, count = 40) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Trias version="1.1" xmlns="http://www.vdv.de/trias" xmlns:siri="http://www.siri.org.uk/siri" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ServiceRequest>
-    <siri:RequestTimestamp>${esc(whenIso)}</siri:RequestTimestamp>
+    <siri:RequestTimeStamp>${esc(whenIso)}</siri:RequestTimeStamp>
     <siri:RequestorRef>${esc(ref)}</siri:RequestorRef>
     <RequestPayload>
       <StopEventRequest>
         <Location>
-          <LocationRef><StopPointRef>${esc(stopRef)}</StopPointRef></LocationRef>
+          <LocationRef>${/^de:\d{5}:\d+$/.test(stopRef) ? `<StopPlaceRef>${esc(stopRef)}</StopPlaceRef>` : `<StopPointRef>${esc(stopRef)}</StopPointRef>`}</LocationRef>
           <DepArrTime>${esc(whenIso)}</DepArrTime>
         </Location>
         <Params>
@@ -89,7 +89,7 @@ export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000 } 
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' }, body, signal: ctrl.signal });
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' }, body, signal: ctrl.signal });
       const xml = await res.text();
       const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
       last = { error: res.ok ? (xml.trim() ? '' : 'leere Antwort (Zugang noch nicht freigeschaltet?)') : `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status, url };

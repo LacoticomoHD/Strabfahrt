@@ -50,5 +50,6 @@ test('TRIAS: Zuordnung zu Modellfahrten über Linie und Planzeit', () => {
 test('TRIAS: Anfrage enthält Kennung und Halt, maskiert Sonderzeichen', () => {
   const x = stopEventRequest('ab<c', 'de:08212:802', '2026-11-04T13:00:00Z', 5);
   assert.match(x, /<siri:RequestorRef>ab&lt;c<\/siri:RequestorRef>/);
-  assert.match(x, /<StopPointRef>de:08212:802<\/StopPointRef>/);
+  assert.match(x, /<StopPlaceRef>de:08212:802<\/StopPlaceRef>/);
+  assert.match(x, /<siri:RequestTimeStamp>/);
 });
