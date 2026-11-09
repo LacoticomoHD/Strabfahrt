@@ -205,6 +205,7 @@ body.board-open #bar, body.board-open #top, body.board-open #panel, body.board-o
 /* Echtzeit */
 .live { font-size: 12px; font-weight: 700; color: #2e7d32; white-space: nowrap; }
 .live.stale { color: #b26a00; }
+#options .group.wide #when { flex: 1 1 180px; min-width: 0; }
 .dly { display: inline-block; border-radius: 4px; padding: 0 4px; font-size: 11px; font-weight: 700; line-height: 1.5; }
 .canc { text-decoration: line-through; color: #d32f2f; }
 tr:has(.canc) td, .brow:has(.canc) { color: var(--muted); }

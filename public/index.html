@@ -46,30 +46,31 @@
   <footer id="bar">
     <p id="notice" role="status" hidden></p>
     <div class="row">
-      <button id="play" type="button" aria-label="Pause">❚❚</button>
-      <label class="sr" for="speed">Geschwindigkeit</label>
-      <select id="speed">
-        <option value="1">1×</option>
-        <option value="5">5×</option>
-        <option value="10">10×</option>
-        <option value="30">30×</option>
-        <option value="60">60×</option>
-        <option value="120">120×</option>
-      </select>
       <span id="clock" aria-label="Simulierte Uhrzeit">--:--:--</span>
-      <label class="sr" for="when">Datum und Uhrzeit</label>
-      <input id="when" type="datetime-local">
-      <button id="now" type="button">Jetzt</button>
-      <button id="night" type="button" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">☾ Nacht</button>
+      <button id="now" type="button" title="Zurück zur aktuellen Uhrzeit">Jetzt</button>
       <span id="count" aria-live="off"></span>
       <span id="live" class="live" hidden></span>
       <button id="collapse" type="button" aria-label="Optionen ein- oder ausklappen" aria-expanded="true">Optionen ▾</button>
     </div>
-    <div class="row">
-      <label class="sr" for="tl">Uhrzeit des Tages</label>
-      <input id="tl" type="range" min="0" max="1439" step="1" value="720">
-    </div>
     <div id="options">
+      <div class="group wide">
+        <span class="gt">Zeitreise: andere Uhrzeit oder Zeitraffer</span>
+        <button id="play" type="button" aria-label="Pause">❚❚</button>
+        <label class="sr" for="speed">Geschwindigkeit</label>
+        <select id="speed">
+          <option value="1">1×</option>
+          <option value="5">5×</option>
+          <option value="10">10×</option>
+          <option value="30">30×</option>
+          <option value="60">60×</option>
+          <option value="120">120×</option>
+        </select>
+        <label class="sr" for="when">Datum und Uhrzeit</label>
+        <input id="when" type="datetime-local">
+        <button id="night" type="button" class="chip" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">Nachtnetz (01:30)</button>
+        <label class="sr" for="tl">Uhrzeit des Tages</label>
+        <input id="tl" type="range" min="0" max="1439" step="1" value="720">
+      </div>
       <div class="group">
         <span class="gt">Verkehrsmittel</span>
         <label><input type="checkbox" data-type="tram" checked> Tram</label>
@@ -90,7 +91,7 @@
         <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>
         <label class="ovl"><input type="checkbox" id="ovl-signals"> Signale</label>
         <label class="ovl"><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
-        <label title="Zeigt erfundene Werte, um die Darstellung zu sehen. Echte Verspätungen gibt es noch nicht."><input type="checkbox" id="demo"> Demo-Verspätung (erfunden, überdeckt Live)</label>
+        <label hidden><input type="checkbox" id="demo"> Demo-Verspätung (erfunden, überdeckt Live)</label>
       </div>
       <div class="group">
         <span class="gt">Weiteres</span>

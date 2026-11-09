@@ -7,7 +7,7 @@ import { Realtime, RT_ATTRIBUTION } from '../server/realtime.mjs';
 
 const DATA_URL = (process.env.STRAB_DATA_URL || 'https://lacoticomohd.github.io/Strabfahrt/').replace(/\/?$/, '/');
 const DATA_TTL = 6 * 3600 * 1000; // Fahrplan alle 6 Stunden neu pruefen
-const LIVE_TTL = 50 * 1000; // Live-Daten hoechstens alle 50 Sekunden neu holen
+const LIVE_TTL = 75 * 1000; // Live-Daten hoechstens alle 75 Sekunden neu holen (jeder Abruf kostet CPU-Kontingent)
 const STATS_PATH = 'stats/strabfahrt.json';
 const STATS_SAVE_EVERY = 25 * 60 * 1000; // Blob-Schreibzugriffe sparsam halten (Hobby-Kontingent)
 
@@ -107,11 +107,17 @@ export async function getLive() {
   return rt;
 }
 
-export function send(res, status, body, maxAge = 30) {
+/** Live-Daten mit Zeitgrenze: nach einer Pause dauert der erste Abruf mehrere Sekunden, so lange soll niemand warten. */
+export function getLiveSoon(ms = 1200) {
+  const p = getLive().catch(() => null);
+  return Promise.race([p, new Promise((r) => setTimeout(() => r(data && data.realtime.updated ? data.realtime : null), ms))]);
+}
+
+export function send(res, status, body, maxAge = 30, swr = 60) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   // CDN-Cache: alle Nutzer teilen sich einen Abruf pro Minute
-  res.setHeader('Cache-Control', `public, max-age=10, s-maxage=${maxAge}, stale-while-revalidate=60`);
+  res.setHeader('Cache-Control', `public, max-age=10, s-maxage=${maxAge}, stale-while-revalidate=${swr}`);
   res.statusCode = status;
   res.end(JSON.stringify(body));
 }

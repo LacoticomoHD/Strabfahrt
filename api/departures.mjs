@@ -1,4 +1,4 @@
-import { getLive, getModel, send } from './_live.mjs';
+import { getLiveSoon, getModel, send } from './_live.mjs';
 import { kvvForStation } from './_kvv.mjs';
 
 // Nächste Abfahrten einer Station mit Live-Verspätung, für das Android-Widget.
@@ -18,12 +18,13 @@ export default async function handler(req, res) {
     let idx = idIndex.get(stopId);
     if (idx === undefined) return send(res, 404, { error: 'Haltestelle unbekannt' }, 60);
     if (model.stops[idx][4] >= 0) idx = model.stops[idx][4];
-    const rt = await getLive().catch(() => null);
+    const rtSoon = getLiveSoon(); // läuft parallel zur KVV-Abfrage
     const p = Object.fromEntries(berlinParts.formatToParts(new Date()).map((x) => [x.type, x.value]));
     const ymd = `${p.year}${p.month}${p.day}`;
     const now = Number(p.hour) * 3600 + Number(p.minute) * 60 + Number(p.second);
     const list = model.departures(idx, ymd, now - 30 * 60, now + 3 * 3600, 200);
     const kvv = await kvvForStation(model, idx, list).catch(() => null);
+    const rt = await rtSoon;
     const out = [];
     for (const d of list) {
       const k = kvv && kvv.map.get(d.trip);

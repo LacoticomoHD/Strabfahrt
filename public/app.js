@@ -2389,8 +2389,8 @@ function updateLive() {
   const age = r.feedTime ? Math.round(Date.now() / 1000 - r.feedTime) : null;
   const stale = r.error || age === null || age > 300;
   box.className = stale ? 'live stale' : 'live';
-  box.textContent = r.error && !r.updated ? '● Live-Daten nicht erreichbar' : r.outdated ? `● Live-Quelle hängt (Stand ${hhmm(wallOf(r.feedTime))}), Fahrplan` : `● Live ${r.feedTime ? hhmmss(wallOf(r.feedTime)) : ''}`;
-  box.title = r.outdated ? 'Der Echtzeit-Stream von gtfs.de liefert gerade keine neuen Daten. Bis er wieder läuft, zeigt die App den Fahrplan (KVV-Daten an Haltestellen gehen weiter).' : `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
+  box.textContent = (r.error && !r.updated) || r.down ? '● Live nicht erreichbar, Anzeige nach Fahrplan' : r.outdated ? `● Live-Quelle hängt (Stand ${hhmm(wallOf(r.feedTime))}), Fahrplan` : `● Live ${r.feedTime ? hhmmss(wallOf(r.feedTime)) : ''}`;
+  box.title = r.down ? `Der Live-Server antwortet gerade nicht (${r.error || 'unbekannter Fehler'}). Alle Zeiten sind Fahrplanzeiten ohne Verspätung.` : r.outdated ? 'Der Echtzeit-Stream von gtfs.de liefert gerade keine neuen Daten. Bis er wieder läuft, zeigt die App den Fahrplan (KVV-Daten an Haltestellen gehen weiter).' : `Echtzeit von gtfs.de. ${state.delays.size} Fahrten mit Verspätungsangabe, ${state.canceled.size} Ausfälle.${r.error ? ` Letzter Fehler: ${r.error}` : ''}`;
 }
 
 window.strabOpenAlerts = () => openAlerts();
@@ -2621,9 +2621,14 @@ async function init() {
         state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
         state.canceled = old ? new Set() : new Set(j.c || []);
         state.reasons = old ? new Map() : new Map(Object.entries(j.r || {}));
-        state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error };
+        state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error, okAt: Date.now() };
       } catch (e) {
         state.rt = { ...state.rt, error: e.message };
+        // Live-Server länger als 3 Minuten nicht erreichbar (z. B. Kontingent aufgebraucht): alte Verspätungen nicht weiter zeigen
+        if (Date.now() - (state.rt.okAt || 0) > 180000) {
+          state.delays = new Map(); state.canceled = new Set(); state.reasons = new Map();
+          state.rt = { ...state.rt, active: false, down: true };
+        }
       }
       updateLive();
       scheduleWebAlarms();
@@ -2631,8 +2636,9 @@ async function init() {
     };
     state.rtBase = rtBase;
     syncNative();
-    poll();
-    setInterval(poll, 20000);
+    // Erster Abruf kann ein älterer Zwischenstand sein (schnelle Antwort nach einer Pause): kurz darauf frisch nachladen
+    poll().then(() => { if (state.rt.feedTime && Date.now() / 1000 - state.rt.feedTime > 100) setTimeout(poll, 5000); });
+    setInterval(poll, 30000);
     // Zurück aus dem Hintergrund oder nach der Tastensperre: sofort frische Live-Daten holen statt auf den nächsten Takt zu warten
     let lastWake = 0;
     const wake = () => {
