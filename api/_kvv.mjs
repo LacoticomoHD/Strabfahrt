@@ -29,22 +29,43 @@ const cached = (source, ref) => {
   return c.promise;
 };
 
+// Regional- und Fernzüge der Bahn: hier liefert MobiData BW (EFA-BW mit DB-Prognosen) die bessere Echtzeit
+const RAIL = /^(RE|RB|IRE|MEX|IC|ICE|EC|ECE|EN|NJ|RJ|RJX|TGV|FLX|FEX|ECM)\s*\d*[a-z]?$/i;
+export const isMainlineRail = (d) => d.type === 100 || RAIL.test(String(d.line || '').trim());
+
 /**
  * Echtzeit für die Abfahrten einer Station: Map trip -> { delay, canceled, bay }, oder null.
- * Reihenfolge: KVV, bei Fehler oder ohne Treffer MobiData BW. only: eine Quelle erzwingen.
+ * KVV ist Hauptquelle. MobiData BW gewinnt bei Regional-/Fernzügen und füllt sonst nur Lücken.
+ * only: genau eine Quelle verwenden (Fehlersuche).
  */
 export async function kvvForStation(model, idx, deps, { only } = {}) {
   if (!triasEnabled()) return null;
   const ref = triasStopRef(model, idx);
   if (!ref) return null;
   const { dayStartUnix } = berlinNow();
-  const order = only ? [only] : enabledSources();
-  let out = null;
-  for (const source of order) {
+  const run = async (source) => {
     const r = await cached(source, ref);
-    const map = matchEvents(deps, r.events, dayStartUnix);
-    out = { source, error: r.error, events: r.events.length, list: r.events, map, raw: r.raw, status: r.status, url: r.url, dayStartUnix };
-    if (!r.error && map.size) break;
+    return { source, error: r.error, events: r.events.length, list: r.events, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, status: r.status, url: r.url, dayStartUnix };
+  };
+  const have = enabledSources();
+  if (only) return have.includes(only) ? run(only) : null;
+  const kvv = have.includes('kvv') ? await run('kvv') : null;
+  const hasRail = deps.some(isMainlineRail);
+  const needMd = have.includes('mobidata') && (!kvv || kvv.error || !kvv.map.size || hasRail);
+  if (!needMd) return kvv;
+  const md = await run('mobidata');
+  if (!kvv || kvv.error || !kvv.map.size) return md.map.size || !kvv ? md : kvv;
+  // Zusammenführen
+  const byTrip = new Map(deps.map((d) => [d.trip, d]));
+  const map = new Map(kvv.map);
+  let used = 0;
+  for (const [trip, v] of md.map) {
+    const d = byTrip.get(trip);
+    const cur = map.get(trip);
+    if ((d && isMainlineRail(d) && v.delay !== null) || !cur || (cur.delay === null && v.delay !== null)) {
+      map.set(trip, { ...v, bay: v.bay || (cur && cur.bay) || '' });
+      used++;
+    }
   }
-  return out;
+  return { ...kvv, map, source: used ? 'kvv+mobidata' : 'kvv' };
 }

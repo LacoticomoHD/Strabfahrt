@@ -53,3 +53,10 @@ test('TRIAS: Anfrage enthält Kennung und Halt, maskiert Sonderzeichen', () => {
   assert.match(x, /<StopPlaceRef>de:08212:802<\/StopPlaceRef>/);
   assert.match(x, /<siri:RequestTimeStamp>/);
 });
+
+test('isMainlineRail erkennt Regional- und Fernzüge, nicht Tram/S-Bahn', async () => {
+  const { isMainlineRail } = await import('../api/_kvv.mjs');
+  for (const line of ['RE1', 'RE 45', 'RB 71', 'IC 61', 'ICE', 'MEX17', 'IRE 3']) assert.ok(isMainlineRail({ line, type: 2 }), line);
+  for (const line of ['1', 'S31', 'S5', '42', 'E', 'SEV S4']) assert.ok(!isMainlineRail({ line, type: 0 }), line);
+  assert.ok(isMainlineRail({ line: 'XYZ', type: 100 }));
+});

@@ -1205,7 +1205,7 @@ async function renderStation() {
         const at = Date.now();
         for (const [t, v] of Object.entries(k.d)) state.kvv.set(t, { delay: v, canceled: false, at });
         for (const t of k.c || []) state.kvv.set(t, { ...(state.kvv.get(t) || {}), canceled: true, at });
-        kvvUsed = k.matched > 0 ? (k.source === 'mobidata' ? 'MobiData BW' : 'KVV') : false;
+        kvvUsed = k.matched > 0 ? ({ mobidata: 'MobiData BW', 'kvv+mobidata': 'KVV + MobiData BW' }[k.source] || 'KVV') : false;
       }
     } catch { /* nur gtfs.de */ }
     if (state.station !== index) return;
