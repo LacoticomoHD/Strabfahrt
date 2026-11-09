@@ -74,7 +74,7 @@ public class AlarmReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context c, Intent intent) {
-        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) { rescheduleAll(c); StrabStore.schedule(c); return; }
+        if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) { rescheduleAll(c); StrabStore.schedule(c); StrabStore.scheduleTick(c); return; }
         String key = intent.getStringExtra("key");
         if (key == null) return;
         PendingResult result = goAsync();

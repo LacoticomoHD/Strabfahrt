@@ -38,6 +38,7 @@ public class MainActivity extends BridgeActivity {
         web.addJavascriptInterface(new Bridge(), "StrabInsets");
         web.addJavascriptInterface(new NativeBridge(), "StrabNative");
         StrabStore.schedule(this);
+        StrabStore.scheduleTick(this);
         openAlertsFrom(getIntent());
 
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {

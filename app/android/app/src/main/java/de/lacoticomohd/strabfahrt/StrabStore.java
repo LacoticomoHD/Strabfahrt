@@ -54,10 +54,55 @@ final class StrabStore {
         WorkManager.getInstance(c).enqueueUniquePeriodicWork("strab-periodic", ExistingPeriodicWorkPolicy.KEEP, periodic);
     }
 
-    /** Sofort einmal aktualisieren (Widget-Knopf, App-Start, neue Favoriten). */
+    private static final java.util.concurrent.ExecutorService EXEC = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+    /** Sofort einmal aktualisieren (App-Start, neue Favoriten). */
     static void refreshNow(Context c) {
-        Constraints net = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
-        OneTimeWorkRequest once = new OneTimeWorkRequest.Builder(StrabWorker.class).setConstraints(net).build();
-        WorkManager.getInstance(c).enqueueUniqueWork("strab-now", ExistingWorkPolicy.REPLACE, once);
+        refreshAsync(c.getApplicationContext(), null, false);
+    }
+
+    /**
+     * Widget direkt neu laden, ohne Umweg über die Hintergrund-Planung von Android (die verzögert oft um Minuten).
+     * pr: laufende Rundsendung, wird am Ende freigegeben. loading: "lädt …" anzeigen.
+     */
+    static void refreshAsync(Context app, android.content.BroadcastReceiver.PendingResult pr, boolean loading) {
+        EXEC.execute(() -> {
+            try {
+                if (loading) StrabWorker.showLoading(app);
+                else StrabWorker.renderCached(app, null);
+                StrabWorker.updateWidgets(app, 4000, 5500);
+            } catch (Exception e) {
+                // Zweiter Versuch über die Hintergrund-Planung, sobald wieder Netz da ist
+                try {
+                    Constraints net = new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build();
+                    WorkManager.getInstance(app).enqueueUniqueWork("strab-now", ExistingWorkPolicy.KEEP,
+                        new OneTimeWorkRequest.Builder(StrabWorker.class).setConstraints(net).build());
+                } catch (Exception ignored) { }
+            } finally {
+                if (pr != null) pr.finish();
+            }
+        });
+    }
+
+    private static final long TICK_MS = 2 * 60 * 1000;
+
+    /**
+     * Nächste Widget-Aktualisierung vormerken. Der Wecker weckt das Handy nicht auf (schont den Akku):
+     * Bei gesperrtem, schlafendem Gerät wartet er und läuft beim Aufwecken sofort, danach alle zwei Minuten.
+     */
+    static void scheduleTick(Context c) {
+        android.app.AlarmManager am = (android.app.AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        int[] ids = android.appwidget.AppWidgetManager.getInstance(c).getAppWidgetIds(new android.content.ComponentName(c, DepartureWidget.class));
+        android.app.PendingIntent pi = tickIntent(c);
+        if (ids.length == 0) { am.cancel(pi); return; }
+        long at = android.os.SystemClock.elapsedRealtime() + TICK_MS;
+        if (android.os.Build.VERSION.SDK_INT >= 23) am.setAndAllowWhileIdle(android.app.AlarmManager.ELAPSED_REALTIME, at, pi);
+        else am.set(android.app.AlarmManager.ELAPSED_REALTIME, at, pi);
+    }
+
+    static android.app.PendingIntent tickIntent(Context c) {
+        android.content.Intent i = new android.content.Intent(c, DepartureWidget.class).setAction(DepartureWidget.ACTION_TICK);
+        return android.app.PendingIntent.getBroadcast(c, 2, i, android.app.PendingIntent.FLAG_UPDATE_CURRENT | android.app.PendingIntent.FLAG_IMMUTABLE);
     }
 }

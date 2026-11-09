@@ -61,14 +61,47 @@ public class StrabWorker extends Worker {
 
     // ---------- Widget ----------
 
-    static void updateWidgets(Context c) throws Exception {
+    private static final int FETCH = 10; // Reserve, damit abgefahrene Zeilen ohne neuen Abruf nachrücken können
+
+    /** Abfahrten holen und anzeigen. Ohne Netz bleibt der letzte Stand stehen, abgefahrene Zeilen fallen weg. */
+    static void updateWidgets(Context c) throws Exception { updateWidgets(c, 15000, 30000); }
+
+    static void updateWidgets(Context c, int connectMs, int readMs) throws Exception {
         AppWidgetManager mgr = AppWidgetManager.getInstance(c);
         int[] ids = mgr.getAppWidgetIds(new ComponentName(c, DepartureWidget.class));
         if (ids.length == 0) return;
-        JSONArray favs = new JSONArray(StrabStore.prefs(c).getString("favorites", "[]"));
+        SharedPreferences p = StrabStore.prefs(c);
+        JSONArray favs = new JSONArray(p.getString("favorites", "[]"));
+        if (favs.length() == 0) { renderCached(c, null); return; }
+        JSONObject fav = favs.getJSONObject(0);
+        String stopId = fav.getString("id");
+        try {
+            String body = get(StrabStore.base(c) + "/api/departures?limit=" + FETCH + "&stop=" + URLEncoder.encode(stopId, "UTF-8"), connectMs, readMs);
+            new JSONObject(body); // nur gültige Antworten merken
+            p.edit().putString("widgetData", body).putString("widgetStop", stopId).putLong("widgetAt", System.currentTimeMillis()).apply();
+            renderCached(c, null);
+        } catch (Exception e) {
+            renderCached(c, "offline");
+            throw e;
+        }
+    }
+
+    /** Sofortige Rückmeldung beim Antippen des Pfeils. */
+    static void showLoading(Context c) {
+        try { renderCached(c, "lädt …"); } catch (Exception ignored) { }
+    }
+
+    /** Widget aus dem gemerkten Stand zeichnen. note: Hinweis statt Uhrzeit (z. B. "lädt …", "offline"). */
+    static void renderCached(Context c, String note) throws Exception {
+        AppWidgetManager mgr = AppWidgetManager.getInstance(c);
+        int[] ids = mgr.getAppWidgetIds(new ComponentName(c, DepartureWidget.class));
+        if (ids.length == 0) return;
+        SharedPreferences p = StrabStore.prefs(c);
+        JSONArray favs = new JSONArray(p.getString("favorites", "[]"));
         RemoteViews v = baseViews(c);
         if (favs.length() == 0) {
             v.setTextViewText(R.id.title, "STRABFAHRT");
+            v.setTextViewText(R.id.stand, "");
             v.setViewVisibility(R.id.empty, View.VISIBLE);
             v.setTextViewText(R.id.empty, "Lege in der App eine Haltestelle als Favorit (★) an.");
             for (int i = 0; i < ROWS; i++) v.setViewVisibility(rowId(i), View.GONE);
@@ -77,22 +110,20 @@ public class StrabWorker extends Worker {
         }
         JSONObject fav = favs.getJSONObject(0);
         v.setTextViewText(R.id.title, fav.optString("name", "Abfahrten"));
-        JSONObject res;
-        try {
-            res = new JSONObject(get(StrabStore.base(c) + "/api/departures?limit=" + ROWS + "&stop=" + URLEncoder.encode(fav.getString("id"), "UTF-8")));
-        } catch (Exception e) {
-            v.setTextViewText(R.id.stand, "offline");
-            mgr.partiallyUpdateAppWidget(ids, v);
-            throw e;
-        }
+        long at = p.getLong("widgetAt", 0);
+        boolean have = at > 0 && fav.optString("id").equals(p.getString("widgetStop", ""));
+        JSONObject res = have ? new JSONObject(p.getString("widgetData", "{}")) : new JSONObject();
         JSONArray deps = res.optJSONArray("departures");
-        int n = deps == null ? 0 : deps.length();
-        v.setViewVisibility(R.id.empty, n == 0 ? View.VISIBLE : View.GONE);
-        if (n == 0) v.setTextViewText(R.id.empty, "Keine Abfahrten in den nächsten Stunden.");
-        v.setTextViewText(R.id.stand, (res.optBoolean("live") ? "● " : "") + new SimpleDateFormat("HH:mm", Locale.GERMANY).format(new Date()));
-        for (int i = 0; i < ROWS; i++) {
-            if (i >= n) { v.setViewVisibility(rowId(i), View.GONE); continue; }
-            JSONObject d = deps.getJSONObject(i);
+        long now = System.currentTimeMillis();
+        String time = have ? new SimpleDateFormat("HH:mm", Locale.GERMANY).format(new Date(at)) : "";
+        String stand = note != null ? (have ? note + " · " + time : note) : (res.optBoolean("live") ? "● " : "") + time;
+        v.setTextViewText(R.id.stand, stand);
+        int shown = 0;
+        for (int k = 0; deps != null && k < deps.length() && shown < ROWS; k++) {
+            JSONObject d = deps.getJSONObject(k);
+            // Seit dem Abruf abgefahren? Dann überspringen (eine Minute Kulanz)
+            if (at + (d.optInt("min") + 1) * 60000L < now) continue;
+            int i = shown++;
             v.setViewVisibility(rowId(i), View.VISIBLE);
             String line = d.optString("line");
             int bg = lineColor(d.optString("color"), d.optInt("type"), line);
@@ -111,6 +142,9 @@ public class StrabWorker extends Worker {
             v.setTextViewText(id(c, "time", i), t);
             v.setTextColor(id(c, "time", i), tc);
         }
+        for (int i = shown; i < ROWS; i++) v.setViewVisibility(rowId(i), View.GONE);
+        v.setViewVisibility(R.id.empty, shown == 0 ? View.VISIBLE : View.GONE);
+        if (shown == 0) v.setTextViewText(R.id.empty, !have ? "Abfahrten werden geladen …" : "Keine Abfahrten in den nächsten Stunden.");
         mgr.updateAppWidget(ids, v);
     }
 
@@ -217,10 +251,12 @@ public class StrabWorker extends Worker {
 
     // ---------- Netz ----------
 
-    static String get(String url) throws Exception {
+    static String get(String url) throws Exception { return get(url, 15000, 30000); }
+
+    static String get(String url, int connectMs, int readMs) throws Exception {
         HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
-        con.setConnectTimeout(15000);
-        con.setReadTimeout(30000);
+        con.setConnectTimeout(connectMs);
+        con.setReadTimeout(readMs);
         con.setRequestProperty("User-Agent", "STRABFAHRT-App");
         try {
             if (con.getResponseCode() != 200) throw new Exception("HTTP " + con.getResponseCode());
