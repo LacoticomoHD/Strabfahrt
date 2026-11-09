@@ -39,7 +39,7 @@ export default async function handler(req, res) {
       });
       if (out.length >= limit) break;
     }
-    send(res, 200, { name: model.stops[idx][1], updated: Date.now(), live: Boolean(rt && rt.updated), source: kvv && kvv.map.size ? 'kvv' : 'gtfs.de', departures: out }, 30);
+    send(res, 200, { name: model.stops[idx][1], updated: Date.now(), live: Boolean(rt && rt.updated), source: kvv && kvv.map.size ? kvv.source : 'gtfs.de', departures: out }, 30);
   } catch (e) {
     send(res, 502, { error: String(e.message || e) }, 15);
   }

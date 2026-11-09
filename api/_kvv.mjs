@@ -1,6 +1,6 @@
-// KVV-Echtzeit (TRIAS) je Station, kurz zwischengespeichert. Ohne KVV_TRIAS_REF bleibt alles aus.
+// TRIAS-Echtzeit je Station (KVV, sonst MobiData BW), kurz zwischengespeichert. Ohne Zugangsdaten bleibt alles aus.
 import { berlinOffset } from '../server/model.mjs';
-import { triasEnabled, fetchStopEvents, matchEvents, triasStopRef } from '../server/trias.mjs';
+import { triasEnabled, enabledSources, fetchStopEvents, matchEvents, triasStopRef } from '../server/trias.mjs';
 
 const TTL = 25 * 1000;
 const cache = new Map(); // stopRef -> { at, promise }
@@ -18,18 +18,33 @@ export function berlinNow() {
 
 export { triasEnabled };
 
-/** Map trip -> { delay, canceled, bay } für die Abfahrten einer Station, oder null. */
-export async function kvvForStation(model, idx, deps) {
+const cached = (source, ref) => {
+  const key = `${source}|${ref}`;
+  let c = cache.get(key);
+  if (!c || Date.now() - c.at > TTL) {
+    c = { at: Date.now(), promise: fetchStopEvents(ref, { count: 60, source }).catch((e) => ({ error: String(e.message || e), events: [], source })) };
+    cache.set(key, c);
+    if (cache.size > 800) cache.delete(cache.keys().next().value);
+  }
+  return c.promise;
+};
+
+/**
+ * Echtzeit für die Abfahrten einer Station: Map trip -> { delay, canceled, bay }, oder null.
+ * Reihenfolge: KVV, bei Fehler oder ohne Treffer MobiData BW. only: eine Quelle erzwingen.
+ */
+export async function kvvForStation(model, idx, deps, { only } = {}) {
   if (!triasEnabled()) return null;
   const ref = triasStopRef(model, idx);
   if (!ref) return null;
-  let c = cache.get(ref);
-  if (!c || Date.now() - c.at > TTL) {
-    c = { at: Date.now(), promise: fetchStopEvents(ref, { count: 60 }).catch((e) => ({ error: String(e.message || e), events: [] })) };
-    cache.set(ref, c);
-    if (cache.size > 500) cache.delete(cache.keys().next().value);
-  }
-  const r = await c.promise;
   const { dayStartUnix } = berlinNow();
-  return { error: r.error, events: r.events.length, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, status: r.status, url: r.url };
+  const order = only ? [only] : enabledSources();
+  let out = null;
+  for (const source of order) {
+    const r = await cached(source, ref);
+    const map = matchEvents(deps, r.events, dayStartUnix);
+    out = { source, error: r.error, events: r.events.length, list: r.events, map, raw: r.raw, status: r.status, url: r.url, dayStartUnix };
+    if (!r.error && map.size) break;
+  }
+  return out;
 }

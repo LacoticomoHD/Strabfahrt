@@ -1205,7 +1205,7 @@ async function renderStation() {
         const at = Date.now();
         for (const [t, v] of Object.entries(k.d)) state.kvv.set(t, { delay: v, canceled: false, at });
         for (const t of k.c || []) state.kvv.set(t, { ...(state.kvv.get(t) || {}), canceled: true, at });
-        kvvUsed = k.matched > 0;
+        kvvUsed = k.matched > 0 ? (k.source === 'mobidata' ? 'MobiData BW' : 'KVV') : false;
       }
     } catch { /* nur gtfs.de */ }
     if (state.station !== index) return;
@@ -1239,7 +1239,7 @@ async function renderStation() {
   const members = [index, ...(state.children.get(index) || [])];
   const yes = members.filter((m) => state.stops[m][7] === 1).length;
   const no = members.filter((m) => state.stops[m][7] === 2).length;
-  body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}${kvvUsed ? ' · Live-Quelle: KVV' : ''}`));
+  body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}${kvvUsed ? ` · Live-Quelle: ${kvvUsed}` : ''}`));
   body.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();

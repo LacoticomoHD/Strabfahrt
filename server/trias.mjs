@@ -1,10 +1,16 @@
-// Echtzeit-Abfahrten über die TRIAS-Schnittstelle (VDV 431) des KVV.
-// Zugang: Umgebungsvariable KVV_TRIAS_REF (RequestorRef, vertraulich), optional KVV_TRIAS_URL.
+// Echtzeit-Abfahrten über TRIAS (VDV 431): KVV als Hauptquelle, MobiData BW (EFA-BW) als Ausweichquelle.
+// Zugang je Quelle über Umgebungsvariablen (RequestorRef vertraulich):
+//   KVV_TRIAS_REF [KVV_TRIAS_URL], MOBIDATA_TRIAS_REF [MOBIDATA_TRIAS_URL]
 // Ergebnis wird auf die Fahrten des eigenen Modells abgebildet: gleiche Linie, gleiche Planabfahrt (± 60 s).
 
-const DEFAULT_URL = 'https://projekte.kvv-efa.de/oftrias/trias';
+export const SOURCES = {
+  kvv: { refEnv: 'KVV_TRIAS_REF', urlEnv: 'KVV_TRIAS_URL', url: 'https://projekte.kvv-efa.de/oftrias/trias' },
+  mobidata: { refEnv: 'MOBIDATA_TRIAS_REF', urlEnv: 'MOBIDATA_TRIAS_URL', url: 'https://efa-bw.de/trias' },
+};
 
-export const triasEnabled = () => Boolean(process.env.KVV_TRIAS_REF);
+export const sourceEnabled = (name) => Boolean(SOURCES[name] && process.env[SOURCES[name].refEnv]);
+export const enabledSources = () => Object.keys(SOURCES).filter(sourceEnabled);
+export const triasEnabled = () => enabledSources().length > 0;
 
 const esc = (s) => String(s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 
@@ -76,34 +82,26 @@ export function parseStopEvents(xml) {
   return { error: events.length ? null : err, events };
 }
 
-// Die KVV-Mail nennt zwei Adressen (oftrias im Text, langtrias im Link): die erste mit Inhalt gewinnt und wird gemerkt
-const URLS = () => [process.env.KVV_TRIAS_URL, DEFAULT_URL, 'https://projekte.kvv-efa.de/langtrias/trias'].filter((u, i, a) => u && a.indexOf(u) === i);
-let goodUrl = null;
-
-export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000 } = {}) {
-  const ref = process.env.KVV_TRIAS_REF;
-  if (!ref) throw new Error('KVV_TRIAS_REF fehlt');
+export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000, source = 'kvv' } = {}) {
+  const src = SOURCES[source];
+  const ref = src && process.env[src.refEnv];
+  if (!ref) throw new Error(`${src ? src.refEnv : source} fehlt`);
+  const url = process.env[src.urlEnv] || src.url;
   const body = stopEventRequest(ref, stopRef, new Date().toISOString().replace(/\.\d+Z$/, 'Z'), count);
-  let last = null;
-  for (const url of goodUrl ? [goodUrl] : URLS()) {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' }, body, signal: ctrl.signal });
-      const xml = await res.text();
-      const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
-      last = { error: res.ok ? (xml.trim() ? '' : 'leere Antwort (Zugang noch nicht freigeschaltet?)') : `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status, url };
-      if (!res.ok || !xml.trim()) continue;
-      const parsed = parseStopEvents(xml);
-      goodUrl = url;
-      return { ...parsed, raw, status: res.status, url };
-    } catch (e) {
-      last = { error: String(e.message || e), events: [], raw: '', status: 0, url };
-    } finally {
-      clearTimeout(timer);
-    }
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/xml; charset=utf-8', 'User-Agent': 'STRABFAHRT' }, body, signal: ctrl.signal });
+    const xml = await res.text();
+    const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
+    if (!res.ok) return { error: `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status, url, source };
+    if (!xml.trim()) return { error: 'leere Antwort', events: [], raw, status: res.status, url, source };
+    return { ...parseStopEvents(xml), raw, status: res.status, url, source };
+  } catch (e) {
+    return { error: String(e.message || e), events: [], raw: '', status: 0, url, source };
+  } finally {
+    clearTimeout(timer);
   }
-  return last;
 }
 
 const normLine = (s) => String(s || '').toUpperCase().replace(/^(STR|STRASSENBAHN|TRAM|BUS|LINIE)\s*/, '').replace(/\s+/g, '');

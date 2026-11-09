@@ -21,7 +21,7 @@ export default async function handler(req, res) {
         const { ymd, sec } = berlinNow();
         const k = await kvvForStation(model, idx, model.departures(idx, ymd, sec - 30 * 60, sec + 4 * 3600, 400)).catch(() => null);
         const v = k && k.map.get(id);
-        if (v) { if (v.delay !== null) delay = v.delay; canceled = canceled || v.canceled; source = 'kvv'; }
+        if (v) { if (v.delay !== null) delay = v.delay; canceled = canceled || v.canceled; source = k.source; }
       }
     }
     send(res, 200, { id, delay, canceled, source, updated: rt.updated }, 30);
