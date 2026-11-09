@@ -844,11 +844,17 @@ function updateNotice() {
 // ---------- Uhr ----------
 
 let last = performance.now();
+let lastWall = Date.now();
 let lastClockText = '';
 function tick(now) {
   const dt = (now - last) / 1000;
   last = now;
-  if (state.playing) state.sim += dt * state.speed;
+  // Nach einer Pause (Bildschirm aus, App im Hintergrund) steht die Uhr: lief sie vorher in Echtzeit, auf "jetzt" springen
+  const gap = (Date.now() - lastWall) / 1000;
+  const wasLive = state.playing && state.speed === 1 && Math.abs(state.sim - wallOf(lastWall / 1000)) < 5;
+  lastWall = Date.now();
+  if (gap > 3 && wasLive) state.sim = wallNow();
+  else if (state.playing) state.sim += dt * state.speed;
   const text = hhmmss(state.sim);
   if (text !== lastClockText) {
     $('clock').textContent = text;
@@ -960,6 +966,25 @@ function closePanel() {
   document.body.classList.remove('panel-open');
 }
 $('panel-close').addEventListener('click', closePanel);
+// Android-Zurücktaste: erst Tafel, dann Fenster schließen. true = erledigt, false = App darf in den Hintergrund
+window.strabBack = () => {
+  if (document.body.classList.contains('board-open')) { closeBoard(); return true; }
+  if (!$('panel').hidden) { closePanel(); return true; }
+  return false;
+};
+// Tastatur: Höhe als CSS-Variable (App meldet sie selbst, im Browser über visualViewport), Eingabefeld sichtbar halten
+if (window.visualViewport && !window.StrabInsets) {
+  const kb = () => {
+    const h = Math.max(0, Math.round(window.innerHeight - visualViewport.height - visualViewport.offsetTop));
+    document.documentElement.style.setProperty('--kb', `${h}px`);
+    document.body.classList.toggle('kb-open', h > 80);
+  };
+  visualViewport.addEventListener('resize', kb);
+  visualViewport.addEventListener('scroll', kb);
+}
+$('panel').addEventListener('focusin', (e) => {
+  if (e.target.matches && e.target.matches('input, select, textarea')) setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350);
+});
 
 function selectVehicle(trip) {
   clearInterval(stationTimer);
@@ -2608,6 +2633,17 @@ async function init() {
     syncNative();
     poll();
     setInterval(poll, 20000);
+    // Zurück aus dem Hintergrund oder nach der Tastensperre: sofort frische Live-Daten holen statt auf den nächsten Takt zu warten
+    let lastWake = 0;
+    const wake = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - lastWake < 4000) return;
+      lastWake = Date.now();
+      poll();
+      if (!$('panel').hidden) refreshPanel();
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('pageshow', wake);
+    window.strabResume = wake;
     if (!state.attribution.includes('Echtzeit')) state.attribution += `; ${meta.rtAttribution || 'Echtzeit: gtfs.de (CC BY-SA 4.0)'}`;
     $('btn-alerts').hidden = false;
     $('btn-stats').hidden = false;

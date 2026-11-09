@@ -230,6 +230,8 @@ body::after { bottom: 0; height: var(--sab); }
 }
 @media (max-width: 700px) {
   #panel { padding-bottom: calc(18px + var(--sab)); max-height: calc(55vh + var(--sab)); }
+  /* Tastatur offen: Fenster direkt über die Tastatur setzen, damit Eingabefelder sichtbar bleiben */
+  body.kb-open #panel { bottom: var(--kb, 0px); padding-bottom: 14px; max-height: calc(100vh - var(--kb, 0px) - var(--sat) - 130px); }
 }
 
 /* Standort-Knopf */
@@ -240,6 +242,8 @@ body::after { bottom: 0; height: var(--sab); }
 #toast.show { opacity: 1; }
 .leaflet-control-attribution .owner { font-weight: 600; color: #012f57; }
 :root[data-theme="dark"] .leaflet-control-attribution .owner { color: #f2c14e; }
+:root[data-theme="dark"] .leaflet-control-attribution { background: rgba(16, 22, 29, .85); color: #c9d3dd; }
+:root[data-theme="dark"] .leaflet-control-attribution a { color: #7cc0ff; }
 a.chip { text-decoration: none; display: inline-block; }
 #update { position: fixed; left: 50%; transform: translateX(-50%); top: calc(118px + var(--sat)); z-index: 1100; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: 92vw; padding: 8px 12px; border-radius: 10px; background: #012f57; color: #fff; box-shadow: var(--shadow); }
 #update .chip { background: #f2c14e; color: #012f57; border-color: #f2c14e; font-weight: 600; }

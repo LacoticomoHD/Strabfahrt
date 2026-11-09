@@ -43,12 +43,27 @@ public class MainActivity extends BridgeActivity {
         ViewCompat.setOnApplyWindowInsetsListener(web, (v, insets) -> {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             float d = getResources().getDisplayMetrics().density;
+            // Tastatur: Höhe mitgeben, damit die Oberfläche Eingabefelder darüber schieben kann
+            int ime = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom;
             insetsJson = "{\"t\":" + Math.round(bars.top / d) + ",\"b\":" + Math.round(bars.bottom / d)
-                + ",\"l\":" + Math.round(bars.left / d) + ",\"r\":" + Math.round(bars.right / d) + "}";
+                + ",\"l\":" + Math.round(bars.left / d) + ",\"r\":" + Math.round(bars.right / d)
+                + ",\"k\":" + Math.round(ime / d) + "}";
             v.post(() -> web.evaluateJavascript("window.strabApplyInsets && window.strabApplyInsets(" + insetsJson + ")", null));
             return insets;
         });
         ViewCompat.requestApplyInsets(web);
+
+        // Zurücktaste: erst die Oberfläche fragen (Fenster schließen, Info-Seite verlassen), dann Verlauf, sonst App in den Hintergrund
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                web.evaluateJavascript("(window.strabBack && window.strabBack()) ? 1 : 0", v -> {
+                    if ("1".equals(v)) return;
+                    if (web.canGoBack()) web.goBack();
+                    else moveTaskToBack(true);
+                });
+            }
+        });
     }
 
     private volatile String pendingUpdate = "";
@@ -58,6 +73,8 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
+        WebView w = getBridge().getWebView();
+        w.postDelayed(() -> w.evaluateJavascript("window.strabResume && window.strabResume()", null), 300);
         if (System.currentTimeMillis() - lastUpdateCheck > 30 * 60 * 1000) checkForUpdate(false);
     }
 
