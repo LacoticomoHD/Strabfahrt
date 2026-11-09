@@ -178,7 +178,7 @@ const state = {
 const map = L.map('map', { zoomControl: false, preferCanvas: true, attributionControl: TILES, minZoom: STATIC ? 9 : undefined, maxZoom: STATIC ? 18 : undefined });
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 // Eigener Hinweis neben den Pflichtangaben (OpenStreetMap, Daten), deutlich als App-Urheber getrennt
-if (map.attributionControl) map.attributionControl.addAttribution('<span class="owner">App © 2026 Sebastian Of</span>');
+if (map.attributionControl) map.attributionControl.addAttribution('<span class="owner">App © 2026 Sebastian Of</span> · <a href="info.html">Info & Datenschutz</a>');
 
 // Live-Standort: Knopf über dem Zoom. 1. Tipp: Standort zeigen und mitfahren, Karte verschieben: Mitfahren aus,
 // erneuter Tipp: wieder mitfahren, Tipp während des Mitfahrens: Standort aus.

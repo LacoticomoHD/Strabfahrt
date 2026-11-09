@@ -24,7 +24,7 @@ const copy = (from, to) => fs.copyFileSync(need(from), path.join(OUT, to));
 copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
 // .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
 copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
-for (const f of ['app.js', 'style.css', 'insets.js']) copy(path.join(ROOT, 'public', f), f);
+for (const f of ['app.js', 'style.css', 'insets.js', 'info.html']) copy(path.join(ROOT, 'public', f), f);
 for (const f of ['manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png']) copy(path.join(ROOT, 'public', f), f);
 // Gleisgeometrie nur mitnehmen, wenn sie zu genau diesem Modell passt
 const shapesFile = path.join(ROOT, 'data', 'shapes.json');
