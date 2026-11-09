@@ -218,6 +218,8 @@ tr:has(.canc) td, .brow:has(.canc) { color: var(--muted); }
 #bar { bottom: calc(10px + var(--sab)); left: calc(10px + var(--sal)); max-width: calc(100vw - 20px - var(--sal) - var(--sar)); }
 .leaflet-top { top: var(--sat); }
 .leaflet-bottom { bottom: var(--sab); }
+/* Schmale Bildschirme: die Leiste unten reicht über die ganze Breite, Kartenhinweise darüber setzen */
+@media (max-width: 700px) { .leaflet-bottom { bottom: calc(var(--sab) + var(--bar-h, 0px) + 14px); } }
 .leaflet-left { left: var(--sal); }
 .leaflet-right { right: var(--sar); }
 body::before, body::after { content: ""; position: fixed; left: 0; right: 0; z-index: 1003; pointer-events: none; background: var(--bg); opacity: .92; }

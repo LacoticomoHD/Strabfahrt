@@ -180,7 +180,7 @@ export class Model {
 
   search(q, limit = 12) {
     // Abkuerzungen: Wort passt entweder direkt oder ueber die Langform
-    const ALIASES = { hbf: 'hauptbahnhof', bf: 'bahnhof', str: 'straße' };
+    const ALIASES = { hbf: 'hauptbahnhof', bf: 'bahnhof', str: 'straße', karlsruhe: 'ka ', ka: 'karlsruhe' };
     const needle = q.trim().toLowerCase();
     const tokens = needle.split(/\s+/).filter(Boolean);
     if (needle.length < 2) return [];
@@ -191,8 +191,11 @@ export class Model {
       else if (tokens.every((t) => s.lower.includes(t) || (ALIASES[t] && s.lower.includes(ALIASES[t])))) contains.push(s);
     }
     // Exakte Treffer zuerst, dann Bahnhöfe, sonst Reihenfolge wie bisher
+    // Bei gleichem Rang: näher an der Karlsruher Innenstadt zuerst ("Marktplatz" meint meist den in Karlsruhe)
     const rank = (s) => (s.lower === needle ? 0 : /bahnhof|hbf|\bbf\b/.test(s.lower) ? 1 : 2);
-    starts.sort((a, b) => rank(a) - rank(b));
+    const far = (s) => { const st = this.stops[s.index]; return Math.hypot(st[2] - 49.0094, (st[3] - 8.4037) * 0.656); };
+    starts.sort((a, b) => rank(a) - rank(b) || far(a) - far(b));
+    contains.sort((a, b) => far(a) - far(b));
     return [...starts, ...contains].slice(0, limit).map((s) => {
       const st = this.stops[s.index];
       return { index: s.index, name: st[1], lat: st[2], lon: st[3] };

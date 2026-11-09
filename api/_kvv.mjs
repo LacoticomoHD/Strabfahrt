@@ -18,10 +18,22 @@ export function berlinNow() {
 
 export { triasEnabled };
 
+// Schutz der Schnittstellen: je Quelle höchstens so viele Abrufe pro Minute und Instanz.
+// Darüber gibt es keine TRIAS-Daten, die App fällt dann auf gtfs.de zurück.
+const MAX_PER_MIN = Number(process.env.TRIAS_MAX_PER_MIN) || 90;
+const budget = new Map(); // source -> { start, n }
+const allow = (source) => {
+  const now = Date.now();
+  let b = budget.get(source);
+  if (!b || now - b.start > 60000) { b = { start: now, n: 0 }; budget.set(source, b); }
+  return ++b.n <= MAX_PER_MIN;
+};
+
 const cached = (source, ref) => {
   const key = `${source}|${ref}`;
   let c = cache.get(key);
   if (!c || Date.now() - c.at > TTL) {
+    if (!allow(source)) return c ? c.promise : Promise.resolve({ error: 'Abruflimit erreicht', events: [], source });
     c = { at: Date.now(), promise: fetchStopEvents(ref, { count: 60, source }).catch((e) => ({ error: String(e.message || e), events: [], source })) };
     cache.set(key, c);
     if (cache.size > 800) cache.delete(cache.keys().next().value);
@@ -49,11 +61,13 @@ export async function kvvForStation(model, idx, deps, { only } = {}) {
   };
   const have = enabledSources();
   if (only) return have.includes(only) ? run(only) : null;
-  const kvv = have.includes('kvv') ? await run('kvv') : null;
   const hasRail = deps.some(isMainlineRail);
+  // Mit Zügen im Fahrplan werden beide Quellen gebraucht: gleichzeitig abrufen, das halbiert die Wartezeit
+  const mdEarly = hasRail && have.includes('mobidata') ? run('mobidata') : null;
+  const kvv = have.includes('kvv') ? await run('kvv') : null;
   const needMd = have.includes('mobidata') && (!kvv || kvv.error || !kvv.map.size || hasRail);
   if (!needMd) return kvv;
-  const md = await run('mobidata');
+  const md = await (mdEarly || run('mobidata'));
   if (!kvv || kvv.error || !kvv.map.size) return md.map.size || !kvv ? md : kvv;
   // Zusammenführen
   const byTrip = new Map(deps.map((d) => [d.trip, d]));

@@ -69,3 +69,13 @@ test('normLine gleicht Fernzug-Nummern und Leerzeichen an', async () => {
   assert.equal(normLine('STR 1'), '1');
   assert.notEqual(normLine('S1'), normLine('S11'));
 });
+
+test('matchEvents bevorzugt bei doppelten Einträgen den mit Prognose', () => {
+  const deps = [{ trip: 'T1', line: 'S31', t: 3600 }];
+  const events = [
+    { line: 'S31', planned: 1000 + 3600, estimated: null, canceled: false, bay: '' },
+    { line: 'S31', planned: 1000 + 3600, estimated: 1000 + 3600 + 120, canceled: false, bay: '2' },
+  ];
+  const m = matchEvents(deps, events, 1000);
+  assert.equal(m.get('T1').delay, 120);
+});

@@ -174,7 +174,17 @@ Einmalig einrichten:
 3. Die Adresse `https://strabfahrt.vercel.app` ist im Workflow als Standard eingetragen. Eine andere Adresse geht über die Repository-Variable `STRAB_RT_URL` (Settings, Secrets and variables, Actions, Reiter Variables).
 4. Unter Actions den Workflow "Seite bauen und veröffentlichen" einmal starten. Danach zeigen Webseite und App Live-Daten.
 
-Grenzen des Gratis-Plans: 4 CPU-Stunden im Monat. Ein Abruf kostet rund eine halbe Sekunde, das reicht für mehrere hundert Stunden Nutzung. Wird die Grenze erreicht, pausiert Vercel bis zum nächsten Monat, es entstehen keine Kosten. Die Pünktlichkeits-Statistik gibt es dort nicht (kein dauerhafter Speicher).
+Grenzen des Gratis-Plans: 4 CPU-Stunden im Monat. Ein Abruf kostet rund eine halbe Sekunde, das reicht für mehrere hundert Stunden Nutzung. Wird die Grenze erreicht, pausiert Vercel bis zum nächsten Monat, es entstehen keine Kosten. Die Pünktlichkeits-Statistik liegt als eine JSON-Datei in Vercel Blob (Umgebungsvariable `BLOB_READ_WRITE_TOKEN`), ohne Blob-Speicher entfällt sie.
+
+### Genauere Echtzeit über TRIAS (optional)
+
+Mit persönlichen Zugangsdaten fragen die Funktionen zusätzlich die TRIAS-Schnittstellen (VDV 431) ab, sobald jemand eine Haltestelle öffnet:
+
+- `KVV_TRIAS_REF`: RequestorRef des KVV (Nutzungsvereinbarung über fahrplan@kvv.karlsruhe.de). Hauptquelle für Tram, Bus und S-Bahn.
+- `MOBIDATA_TRIAS_REF`: Requestor-Key von MobiData BW. Liefert die Prognosen für Regional- und Fernzüge und springt ein, wenn der KVV nichts liefert.
+- Beide als geschützte Umgebungsvariablen in Vercel anlegen, niemals ins Repo schreiben. Ohne sie bleibt es bei gtfs.de.
+- Schonung der Schnittstellen: Antworten werden 25 Sekunden je Haltestelle gehalten, dazu gilt eine Obergrenze je Quelle und Minute (`TRIAS_MAX_PER_MIN`, Standard 90).
+- Fehlersuche: `/api/stopevents?stop=<ID>&debug=1` zeigt, welche Abfahrten nicht zugeordnet wurden, `&src=kvv` oder `&src=mobidata` erzwingt eine Quelle.
 
 ## Android-App
 
@@ -197,6 +207,5 @@ Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den W
 
 ## Mögliche nächste Schritte
 
-- Echtzeit über die offizielle TRIAS-Schnittstelle des KVV für die Abfahrtsanzeige, sobald Zugangsdaten nach der KVV-Nutzungsvereinbarung vorliegen
 - Verbindungssuche: Fußwege zu weiter entfernten Haltestellen, spätere und frühere Abfahrten blättern
 - Eigene Kachelquelle

@@ -127,7 +127,9 @@ export function triasStopRef(model, idx) {
 export function matchEvents(deps, events, dayStartUnix) {
   const out = new Map();
   const used = new Set();
-  for (const e of events) {
+  // Manche Quellen liefern dieselbe Abfahrt doppelt (mit und ohne Prognose): Einträge mit Prognose zuerst zuordnen
+  const ordered = [...events].sort((a, b) => (a.estimated === null) - (b.estimated === null) || a.planned - b.planned);
+  for (const e of ordered) {
     const want = normLine(e.line);
     let best = null;
     let bestD = 61;

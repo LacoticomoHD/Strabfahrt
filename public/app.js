@@ -2477,6 +2477,8 @@ $('btn-theme').addEventListener('click', () => {
 if (window.innerWidth < 900) $('bar').classList.add('collapsed');
 $('collapse').setAttribute('aria-expanded', String(!$('bar').classList.contains('collapsed')));
 $('collapse').textContent = $('bar').classList.contains('collapsed') ? 'Optionen ▸' : 'Optionen ▾';
+// Höhe der unteren Leiste als CSS-Variable, damit Kartenhinweise (OSM, Info & Datenschutz) nicht verdeckt werden
+if (window.ResizeObserver) new ResizeObserver(() => document.documentElement.style.setProperty('--bar-h', `${$('bar').offsetHeight}px`)).observe($('bar'));
 $('collapse').addEventListener('click', () => {
   const c = $('bar').classList.toggle('collapsed');
   $('collapse').setAttribute('aria-expanded', String(!c));
