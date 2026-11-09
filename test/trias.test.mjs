@@ -60,3 +60,12 @@ test('isMainlineRail erkennt Regional- und Fernzüge, nicht Tram/S-Bahn', async 
   for (const line of ['1', 'S31', 'S5', '42', 'E', 'SEV S4']) assert.ok(!isMainlineRail({ line, type: 0 }), line);
   assert.ok(isMainlineRail({ line: 'XYZ', type: 100 }));
 });
+
+test('normLine gleicht Fernzug-Nummern und Leerzeichen an', async () => {
+  const { normLine } = await import('../server/trias.mjs');
+  assert.equal(normLine('ICE 203 InterCityExpress'), normLine('ICE 43'));
+  assert.equal(normLine('IC 2263'), normLine('IC 61'));
+  assert.equal(normLine('RE 1'), normLine('RE1'));
+  assert.equal(normLine('STR 1'), '1');
+  assert.notEqual(normLine('S1'), normLine('S11'));
+});

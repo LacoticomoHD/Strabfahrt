@@ -1,5 +1,6 @@
 import { getModel, send } from './_live.mjs';
 import { kvvForStation, berlinNow, triasEnabled } from './_kvv.mjs';
+import { normLine } from '../server/trias.mjs';
 
 // KVV-Echtzeit für eine Station, auf die Fahrten des Modells abgebildet.
 // GET /api/stopevents?stop=<Haltestellen-ID>  ->  { source, updated, d: {trip: Sekunden}, c: [trip], bay: {trip: Steig} }
@@ -24,8 +25,8 @@ export default async function handler(req, res) {
     if (k) for (const [trip, v] of k.map) { if (v.delay !== null) d[trip] = v.delay; if (v.canceled) c.push(trip); if (v.bay) bay[trip] = v.bay; }
     if (q.get('debug') === '1' && k) {
       const fmt = (u) => new Date(u * 1000).toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin' });
-      const hit = new Set([...k.map.keys()].map((t) => { const x = deps.find((y) => y.trip === t); return `${x.line}@${k.dayStartUnix + x.t}`; }));
-      const unmatched = k.list.filter((e) => !hit.has(`${e.line}@${e.planned}`)).map((e) => ({
+      const hit = new Set([...k.map.keys()].map((t) => { const x = deps.find((y) => y.trip === t); return `${normLine(x.line)}@${k.dayStartUnix + x.t}`; }));
+      const unmatched = k.list.filter((e) => !hit.has(`${normLine(e.line)}@${e.planned}`)).map((e) => ({
         line: e.line, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null,
         near: deps.filter((d) => Math.abs(k.dayStartUnix + d.t - e.planned) < 300).slice(0, 4).map((d) => `${d.line}@${fmt(k.dayStartUnix + d.t)}`),
       }));

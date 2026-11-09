@@ -104,7 +104,12 @@ export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000, s
   }
 }
 
-const normLine = (s) => String(s || '').toUpperCase().replace(/^(STR|STRASSENBAHN|TRAM|BUS|LINIE)\s*/, '').replace(/\s+/g, '');
+// Liniennamen vergleichbar machen. Fernzüge: TRIAS nennt die Zugnummer, das Modell die Linie, daher nur die Gattung vergleichen.
+export const normLine = (s) => {
+  const t = String(s || '').toUpperCase().replace(/&GT;|&LT;|&AMP;/g, ' ').replace(/^(STR|STRASSENBAHN|TRAM|BUS|LINIE)\s*/, '').replace(/\s+(INTERCITY\w*|EUROCITY\w*|NIGHTJET|RAILJET\w*)$/, '').trim();
+  const fv = t.match(/^(ICE|ICE-?S|IC|EC|ECE|EN|NJ|RJ|RJX|TGV|FLX)\b/);
+  return fv ? fv[1] : t.replace(/\s+/g, '');
+};
 
 // TRIAS-Halt zu einer Station des Modells: KVV-IDs wie "de:08212:802" (Station) bzw. "Pde:08212:802" im Modell
 export function triasStopRef(model, idx) {
