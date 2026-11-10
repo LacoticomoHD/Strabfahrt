@@ -30,6 +30,19 @@ export function tripDelay(tu, nowSec) {
   return Number(d);
 }
 
+/** Ist-Zeiten je Halt aus einer Fahrt-Meldung: flache Liste [Plan-Ankunft, Abweichung, Plan-Abfahrt, Abweichung, ...] (Unix-Sekunden, 0/null = fehlt). */
+export function stopTimesOf(tu) {
+  const out = [];
+  for (const u of tu.stopTimeUpdate || []) {
+    const a = u.arrival; const d = u.departure;
+    const at = a && a.time && a.delay != null ? Number(a.time) - Number(a.delay) : 0;
+    const dt = d && d.time && d.delay != null ? Number(d.time) - Number(d.delay) : 0;
+    if (!at && !dt) continue;
+    out.push(at, at ? Number(a.delay) : null, dt, dt ? Number(d.delay) : null);
+  }
+  return out;
+}
+
 const pick = (ts) => {
   if (!ts || !ts.translation || !ts.translation.length) return '';
   const de = ts.translation.find((t) => (t.language || '').toLowerCase().startsWith('de'));
@@ -51,6 +64,7 @@ export class Realtime {
     this.canceled = new Set();
     this.alerts = [];
     this.reasons = new Map(); // Fahrt-ID -> Grund der Verspaetung
+    this.stopTimes = new Map(); // Fahrt-ID -> Ist-Zeiten je Halt (siehe stopTimesOf)
     this.updated = 0;
     this.feedTime = 0;
     this.error = null;
@@ -141,6 +155,7 @@ export class Realtime {
     const canceled = new Set();
     const alerts = [];
     const reasons = new Map();
+    const stopTimes = new Map();
     for (const e of feed.entity) {
       const tu = e.tripUpdate;
       if (tu && tu.trip && tu.trip.tripId) {
@@ -148,7 +163,9 @@ export class Realtime {
         if (!ids.length) continue;
         const isCanceled = tu.trip.scheduleRelationship === CANCELED;
         const d = isCanceled ? null : tripDelay(tu, nowSec);
+        const st = isCanceled ? [] : stopTimesOf(tu);
         for (const id of ids) {
+          if (st.length) stopTimes.set(id, st);
           if (isCanceled) canceled.add(id);
           else if (d !== null && Number.isFinite(d)) delays.set(id, d);
           this.record(tu.trip.startDate, id, isCanceled ? 'X' : d);
@@ -180,6 +197,7 @@ export class Realtime {
     this.canceled = canceled;
     this.alerts = alerts.sort((x, y) => Number(y.local) - Number(x.local)).slice(0, 100);
     this.reasons = reasons;
+    this.stopTimes = stopTimes;
     this.updated = Date.now();
     this.feedTime = Number(feed.header && feed.header.timestamp) || 0;
     this.flushStats();

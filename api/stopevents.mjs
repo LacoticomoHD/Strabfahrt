@@ -30,7 +30,7 @@ export default async function handler(req, res) {
         line: e.line, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null,
         near: deps.filter((d) => Math.abs(k.dayStartUnix + d.t - e.planned) < 300).slice(0, 4).map((d) => `${d.line}@${fmt(k.dayStartUnix + d.t)}`),
       }));
-      return send(res, 200, { source: k.source, status: k.status, url: k.url, error: k.error, events: k.events, mapped: k.map.size, withRt: k.list.filter((e) => e.estimated !== null).length, unmatched }, 25);
+      return send(res, 200, { source: k.source, status: k.status, url: k.url, error: k.error, events: k.events, mapped: k.map.size, withRt: k.list.filter((e) => e.estimated !== null).length, unmatched, tags: k.tags }, 25);
     }
     send(res, 200, { source: k ? k.source : null, updated: Date.now(), events: k ? k.events : 0, matched: Object.keys(d).length, error: k ? k.error : null, d, c, bay }, 25);
   } catch (e) {

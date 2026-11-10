@@ -96,7 +96,9 @@ export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000, s
     const raw = xml.slice(0, 1500).split(ref).join('***'); // zur Fehlersuche, Kennung geschwärzt
     if (!res.ok) return { error: `TRIAS HTTP ${res.status}`, events: [], raw, status: res.status, url, source };
     if (!xml.trim()) return { error: 'leere Antwort', events: [], raw, status: res.status, url, source };
-    return { ...parseStopEvents(xml), raw, status: res.status, url, source };
+    const first = (xml.match(/<(?:\w+:)?StopEventResult\b[\s\S]*?<\/(?:\w+:)?StopEventResult>/) || [''])[0];
+    const tags = [...new Set((first.match(/<(?:\w+:)?[A-Za-z]+/g) || []).map((t) => t.replace(/^<(?:\w+:)?/, '')))];
+    return { ...parseStopEvents(xml), raw, tags, status: res.status, url, source };
   } catch (e) {
     return { error: String(e.message || e), events: [], raw: '', status: 0, url, source };
   } finally {

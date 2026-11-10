@@ -40,7 +40,7 @@ export class Model {
     this.patterns = m.patterns.map(([route, headsign, stops]) => ({ route, headsign, stops }));
     this.profiles = m.profiles;
     this.services = m.services;
-    this.trips = m.trips.map(([service, pattern, profile, start, id, flags]) => ({ service, pattern, profile, start, id, flags: flags || 0 }));
+    this.trips = m.trips.map(([service, pattern, profile, start, id, flags, num]) => ({ service, pattern, profile, start, id, flags: flags || 0, num: num || '' }));
 
     // Dauer je Zeitprofil (letzte Ankunft)
     this.profileEnd = this.profiles.map((p) => p[p.length - 2]);
@@ -173,7 +173,28 @@ export class Model {
       }
       if (!patterns[trip.pattern]) patterns[trip.pattern] = { r: p.route, h: p.headsign, s: p.stops };
       if (!profiles[trip.profile]) profiles[trip.profile] = this.profiles[trip.profile];
-      trips.push([trip.pattern, trip.id, start, trip.profile, trip.flags]);
+      trips.push(trip.num ? [trip.pattern, trip.id, start, trip.profile, trip.flags, trip.num] : [trip.pattern, trip.id, start, trip.profile, trip.flags]);
+    }
+    return { patterns, profiles, trips };
+  }
+
+  // Fahrten eines Tages mit dieser Zug- oder Kursnummer. now: Sekunden seit Tagesbeginn, laufende Fahrten zuerst.
+  tripsByNumber(q, ymd, now, limit = 6) {
+    const want = String(q).replace(/\D/g, '');
+    if (want.length < 2) return { patterns: {}, profiles: {}, trips: [] };
+    const hits = [];
+    for (const { trip, start } of this.activeTrips(ymd, 0, 30 * 3600)) {
+      if (!trip.num || trip.num.slice(1) !== want) continue;
+      const end = start + this.profileEnd[trip.profile];
+      hits.push({ trip, start, rank: now >= start && now <= end ? 0 : start > now ? 1 : 2, dist: Math.abs(start - now) });
+    }
+    hits.sort((a, b) => a.rank - b.rank || a.dist - b.dist);
+    const patterns = {}; const profiles = {}; const trips = [];
+    for (const { trip, start } of hits.slice(0, limit)) {
+      const p = this.patterns[trip.pattern];
+      patterns[trip.pattern] = { r: p.route, h: p.headsign, s: p.stops };
+      profiles[trip.profile] = this.profiles[trip.profile];
+      trips.push([trip.pattern, trip.id, start, trip.profile, trip.flags, trip.num]);
     }
     return { patterns, profiles, trips };
   }

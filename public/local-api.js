@@ -74,6 +74,8 @@ export async function handle(path, params = {}) {
       return model.frequency(String(params.date), Number(params.t0), Number(params.t1));
     case '/api/search':
       return model.search(String(params.q || ''));
+    case '/api/tripnum':
+      return model.tripsByNumber(String(params.q || ''), String(params.date), Number(params.t) || 0);
     case '/api/departures': {
       const from = Number(params.from);
       return model.departures(Number(params.station), String(params.date), from, from + 4 * 3600, Math.min(Number(params.limit) || 60, 200));

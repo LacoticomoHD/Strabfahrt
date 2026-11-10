@@ -250,7 +250,11 @@ async function processFeed(feed, raw) {
     const wc = Number(g('wheelchair_accessible')) || 0; // 0 unbekannt, 1 ja, 2 nein
     const bk = Number(g('bikes_allowed')) || 0;
     if (!routeIdx.has(g('route_id')) && !matchRoutes.has(g('route_id'))) return;
-    trips.set(g('trip_id'), { route: g('route_id'), service: px + g('service_id'), headsign: g('trip_headsign'), flags: (wc & 3) | ((bk & 3) << 2) });
+    // Zugnummer (trip_short_name) oder Kurs/Umlauf (block_id), soweit der Feed sie nennt: "Z85012" bzw. "K1060"
+    const zn = (g('trip_short_name') || '').trim();
+    const kn = (g('block_id') || '').trim();
+    const num = zn ? `Z${zn}` : kn ? `K${kn}` : '';
+    trips.set(g('trip_id'), { route: g('route_id'), service: px + g('service_id'), headsign: g('trip_headsign'), flags: (wc & 3) | ((bk & 3) << 2), num });
   });
   console.log(`[${feed.id}] Linien: ${stats.routes}${stats.skippedRoutes ? ` (${stats.skippedRoutes} uebersprungen, schon im KVV-Feed)` : ''}, Fahrten im Feed: ${trips.size}`);
 
@@ -337,7 +341,7 @@ async function processFeed(feed, raw) {
       sIdx = shared.services.size;
       shared.services.set(trip.service, sIdx);
     }
-    shared.tripOut.push([sIdx, pIdx, tIdx, start, px + id, trip.flags]);
+    shared.tripOut.push(trip.num ? [sIdx, pIdx, tIdx, start, px + id, trip.flags, trip.num] : [sIdx, pIdx, tIdx, start, px + id, trip.flags]);
     stats.kept++;
   }
 

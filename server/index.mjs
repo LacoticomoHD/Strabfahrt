@@ -187,6 +187,10 @@ function handleApi(url, req, res) {
       realtime.touch();
       return sendJson(res, 200, realtime.snapshot(), CORS, req);
 
+    case '/api/tripstops':
+      realtime.touch();
+      return sendJson(res, 200, { id: q.get('id') || '', feedTime: realtime.feedTime, s: realtime.stopTimes.get(q.get('id') || '') || [] }, CORS, req);
+
     case '/api/alerts':
       realtime.touch();
       return sendJson(res, 200, { updated: realtime.updated, alerts: realtime.alerts }, CORS, req);
@@ -219,6 +223,10 @@ function handleApi(url, req, res) {
 
     case '/api/search':
       return sendJson(res, 200, model.search(q.get('q') || ''));
+
+    case '/api/tripnum':
+      if (!parseYmd(q.get('date') || '')) return sendJson(res, 400, { error: 'date ungueltig' });
+      return sendJson(res, 200, model.tripsByNumber(q.get('q') || '', q.get('date'), Number(q.get('t')) || 0));
 
     case '/api/departures': {
       const station = num(q.get('station'), 0, model.stops.length - 1);

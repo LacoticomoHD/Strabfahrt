@@ -69,6 +69,15 @@ label { white-space: nowrap; }
 #panel table { width: 100%; border-collapse: collapse; }
 #panel td { padding: 4px 4px; border-top: 1px solid var(--line); vertical-align: baseline; }
 #panel td.t { white-space: nowrap; font-variant-numeric: tabular-nums; width: 3.4em; }
+#panel td.ist { white-space: nowrap; font-variant-numeric: tabular-nums; font-size: 12.5px; font-weight: 600; padding-right: 6px; }
+#panel td.ist.late { color: #d32f2f; }
+#panel td.ist.early { color: #1976d2; }
+#panel td.ist.ok { color: #2e7d32; }
+:root[data-theme="dark"] #panel td.ist.late { color: #ff7b72; }
+:root[data-theme="dark"] #panel td.ist.early { color: #8fd3ff; }
+:root[data-theme="dark"] #panel td.ist.ok { color: #7ddc84; }
+#panel tr.passed td.ist { opacity: 1; }
+#panel td.ist.est { font-weight: 400; opacity: .75; }
 #panel td.r { text-align: right; white-space: nowrap; color: var(--muted); font-size: 12.5px; }
 #panel tr.passed { color: var(--muted); opacity: .6; }
 #panel tr.current { background: var(--hl); font-weight: 600; }

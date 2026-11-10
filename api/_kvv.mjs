@@ -57,7 +57,7 @@ export async function kvvForStation(model, idx, deps, { only } = {}) {
   const { dayStartUnix } = berlinNow();
   const run = async (source) => {
     const r = await cached(source, ref);
-    return { source, error: r.error, events: r.events.length, list: r.events, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, status: r.status, url: r.url, dayStartUnix };
+    return { source, error: r.error, events: r.events.length, list: r.events, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, tags: r.tags, status: r.status, url: r.url, dayStartUnix };
   };
   const have = enabledSources();
   if (only) return have.includes(only) ? run(only) : null;

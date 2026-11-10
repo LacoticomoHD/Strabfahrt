@@ -343,10 +343,10 @@ async function loadWindow(force = false) {
     const data = await api('/api/vehicles', { date: ymd, t0, t1, bbox: bbox.map((x) => x.toFixed(5)).join(','), types: typesKey });
     for (const [k, v] of Object.entries(data.patterns)) state.patterns.set(Number(k), v);
     for (const [k, v] of Object.entries(data.profiles)) state.profiles.set(Number(k), v);
-    state.trips = data.trips.map(([pid, id, start, prof, flags]) => {
+    state.trips = data.trips.map(([pid, id, start, prof, flags, num]) => {
       const profile = state.profiles.get(prof);
       const t = base + start;
-      return { pid, id, flags: flags || 0, t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
+      return { pid, id, flags: flags || 0, num: num || '', t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
     });
     state.window = { from: base + t0, to: base + t1, bbox, types: typesKey };
     if (state.list === 'lines') renderLines();
@@ -1093,6 +1093,7 @@ function renderVehiclePanel() {
   body.append(sub);
 
   const facts = [];
+  if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
   const wc = (trip.flags || 0) & 3;
   facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
@@ -1126,14 +1127,57 @@ function renderVehiclePanel() {
     link.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') open(); });
     const goal = i > 0 ? el('button', { class: 'goal', type: 'button', title: 'Als Ziel verfolgen', 'aria-label': `Ankunft in ${s2[1]} verfolgen` }, '🎯') : '';
     if (goal) goal.addEventListener('click', () => { state.target = state.target && state.target.idx === i ? null : { trip: trip.id, idx: i }; renderVehiclePanel(); });
-    const tr = el('tr', { class: '' }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]} ` : '', goal));
-    rows.push({ tr, dep, arr });
+    const ist = el('td', { class: 'ist' }, '');
+    const tr = el('tr', { class: '' }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), ist, el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]} ` : '', goal));
+    rows.push({ tr, dep, arr, ist });
     table.append(tr);
   });
   body.append(table);
-  vehicleView = { trip, sub, rows, targetBox, pat };
+  const legend = el('div', { class: 'sub istnote', hidden: '' }, 'Links Fahrplan, daneben tatsächliche Zeit mit Abweichung (Messpunkte auf volle Minuten). ≈ zwischen zwei Messpunkten geschätzt, ~ Prognose.');
+  body.append(legend);
+  vehicleView = { trip, sub, rows, targetBox, pat, legend };
+  loadTripStops(trip);
   updateVehiclePanel();
   showPanel();
+}
+
+const numLabel = (num) => `${num[0] === 'Z' ? 'Zug' : 'Kurs'} ${num.slice(1)}`;
+
+// Ist-Zeiten je Halt (gtfs.de) für die gewählte Fahrt, alle 45 Sekunden frisch
+let tripStops = { id: null, at: 0, s: [], busy: false };
+async function loadTripStops(trip) {
+  if (!state.rtBase && !(state.meta && state.meta.realtime)) return;
+  if (tripStops.busy || (tripStops.id === trip.id && Date.now() - tripStops.at < 45000)) return;
+  if (tripStops.id !== trip.id) tripStops = { id: trip.id, at: 0, s: [], busy: false };
+  tripStops.busy = true;
+  try {
+    const j = await rtGet(`/api/tripstops?id=${encodeURIComponent(trip.id)}`);
+    if (tripStops.id === trip.id) tripStops = { id: trip.id, at: Date.now(), s: (j && j.s) || [], busy: false };
+  } catch { tripStops.busy = false; tripStops.at = Date.now() - 30000; }
+}
+
+// Gemessene Abweichung je Halt: jeder Messpunkt aus gtfs.de geht an den Halt mit der nächstgelegenen Planzeit.
+// Der Stream nennt nicht jeden Halt und nur volle Minuten, daher bleiben Lücken.
+function measuredDelays(rows) {
+  const out = new Map();
+  const s = tripStops.s;
+  const best = new Map(); // Zeile -> kleinster Abstand
+  for (let k = 0; k + 3 < s.length; k += 4) {
+    let hit = -1; let dist = 60;
+    rows.forEach((r, i) => {
+      const da = s[k] ? Math.abs(s[k] - toUnix(r.arr)) : 99;
+      const dd = s[k + 2] ? Math.abs(s[k + 2] - toUnix(r.dep)) : 99;
+      const d = Math.min(da, dd);
+      if (d < dist) { dist = d; hit = i; }
+    });
+    if (hit < 0 || (best.has(hit) && best.get(hit) <= dist)) continue;
+    const a = s[k + 1]; const d = s[k + 3];
+    const v = hit === 0 ? (d ?? a) : (a ?? d);
+    if (v === null || v === undefined) continue;
+    best.set(hit, dist);
+    out.set(hit, v);
+  }
+  return out;
 }
 
 // Sekuendlich: nur Klassen und Text anpassen, damit Tippen auf Knoepfe nicht ins Leere geht
@@ -1141,6 +1185,41 @@ function updateVehiclePanel() {
   if (!vehicleView || vehicleView.trip !== state.selected) return;
   const { trip, sub, rows } = vehicleView;
   const delay = delayOf(trip);
+  if (!state.demo) loadTripStops(trip);
+  const measured = !state.demo && tripStops.id === trip.id && tripStops.s.length ? measuredDelays(rows) : new Map();
+  const known = [...measured.keys()].sort((x, y) => x - y);
+  let any = false;
+  rows.forEach((r, i) => {
+    const plan = i === 0 ? r.dep : r.arr;
+    const passed = state.sim > r.dep + (delay || 0);
+    let d = measured.has(i) ? measured.get(i) : null;
+    let mark = '';
+    if (d === null && passed) {
+      // Zwischen zwei Messpunkten: gleichmäßig geschätzt
+      const before = known.filter((k) => k < i).pop();
+      const after = known.find((k) => k > i);
+      if (before !== undefined && after !== undefined) {
+        const f = (plan - rows[before].arr) / Math.max(1, rows[after].arr - rows[before].arr);
+        d = Math.round(measured.get(before) + (measured.get(after) - measured.get(before)) * f);
+        mark = '≈';
+      } else if (before !== undefined) {
+        d = measured.get(before); // nach dem letzten Messpunkt: dessen Wert weiterführen
+        mark = '≈';
+      }
+    } else if (d === null && !passed && delay !== undefined && !state.demo) {
+      d = delay; // kommende Halte: aktuelle Verspätung als Prognose
+      mark = '~';
+    } else if (d !== null && !passed) mark = '~';
+    let txt = ''; let cls = 'ist';
+    if (d !== null && d !== undefined) {
+      any = true;
+      txt = `${mark}${hhmm(plan + d)}${Math.abs(d) >= 30 ? ` ${fmtDelayExact(d)}` : ''}`;
+      cls += (d >= 60 ? ' late' : d <= -60 ? ' early' : ' ok') + (mark === '≈' ? ' est' : '');
+    }
+    if (r.ist.textContent !== txt) r.ist.textContent = txt;
+    if (r.ist.className !== cls) r.ist.className = cls;
+  });
+  if (vehicleView.legend.hidden === any) vehicleView.legend.hidden = !any;
   const pos = locate(trip, state.sim - (delay || 0));
   const why = !state.demo && state.reasons.get(trip.id);
   let text = delay === undefined ? (state.rt.active ? 'Fahrplanposition (keine Echtzeit für diese Fahrt)' : 'Fahrplanposition (Soll)') : `${fmtDelay(delay) === '0' ? 'Pünktlich' : `${fmtDelay(delay)} gegenüber Fahrplan`}${state.demo ? ' (Demo, erfundene Werte)' : ' (Echtzeit)'}${why ? ` · ${why}` : ''}`;
@@ -2536,8 +2615,38 @@ async function runSearch() {
   if (q.length < 2) { resultsEl.hidden = true; return; }
   let res = [];
   try { res = await api('/api/search', { q }); } catch (e) { console.error(e); }
+  // Zug- oder Kursnummer (z. B. "85012", "Kurs 1060"): passende Fahrten von heute, laufende zuerst
+  let nums = { trips: [] };
+  const digits = q.replace(/^(zug|kurs|nr\.?|nummer)\s*/i, '');
+  if (/^\d{2,6}$/.test(digits)) {
+    const ymd = ymdOf(state.sim);
+    try { nums = await api('/api/tripnum', { q: digits, date: ymd, t: Math.floor(state.sim - dayStart(ymd)) }); } catch (e) { console.error(e); }
+  }
   if (seq !== searchSeq) return;
   resultsEl.replaceChildren();
+  for (const [pid, id, start, prof, flags, num] of nums.trips || []) {
+    const ymd = ymdOf(state.sim);
+    state.patterns.set(Number(pid), nums.patterns[pid]);
+    state.profiles.set(Number(prof), nums.profiles[prof]);
+    const profile = nums.profiles[prof];
+    const t = dayStart(ymd) + start;
+    const trip = { pid, id, flags: flags || 0, num: num || '', t0: t, end: t + profile[profile.length - 2], prof: profile, k: 0 };
+    const pat = nums.patterns[pid];
+    const route = state.meta.routes[pat.r];
+    const running = state.sim >= trip.t0 && state.sim <= trip.end;
+    const li = el('li', { role: 'option' }, `🚆 ${numLabel(trip.num)} · ${route[0]} ${cleanHeadsign(route[0], pat.h) || ''} · ${running ? 'fährt gerade' : state.sim < trip.t0 ? `ab ${hhmm(trip.t0)}` : `beendet ${hhmm(trip.end)}`}`);
+    li.addEventListener('click', () => {
+      resultsEl.hidden = true;
+      searchInput.value = numLabel(trip.num);
+      const known = state.trips.find((x) => x.id === trip.id) || trip;
+      selectVehicle(known);
+      const pos = locate(known, state.sim - (delayOf(known) || 0), true);
+      const st = state.stops[pat.s[0]];
+      if (pos && Number.isFinite(pos.lat)) map.setView([pos.lat, pos.lon], Math.max(map.getZoom(), 15));
+      else map.setView([st[2], st[3]], Math.max(map.getZoom(), 14));
+    });
+    resultsEl.append(li);
+  }
   for (const r of res) {
     const li = el('li', { role: 'option' }, r.name);
     li.addEventListener('click', () => {
@@ -2548,7 +2657,7 @@ async function runSearch() {
     });
     resultsEl.append(li);
   }
-  if (!res.length) resultsEl.append(el('li', {}, 'Nichts gefunden'));
+  if (!res.length && !(nums.trips || []).length) resultsEl.append(el('li', {}, 'Nichts gefunden'));
   resultsEl.hidden = false;
 }
 
