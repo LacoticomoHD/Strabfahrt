@@ -48,9 +48,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            data/osm-rail.json
+            data/osm-rail2.json
             data/osm-bus.json
-          key: osm-${{ steps.week.outputs.w }}
+            data/osm-road.json
+          key: osm-v2-${{ steps.week.outputs.w }}
 
       - name: Fahrzeuge auf OpenStreetMap-Gleise und -Straßen legen
         continue-on-error: true # ohne OSM-Daten fahren die Fahrzeuge in Luftlinie weiter

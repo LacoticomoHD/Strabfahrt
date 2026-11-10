@@ -13,7 +13,8 @@ export function distance(a, b) {
 const CELL = 0.002; // Grad, rund 200 m
 const cellKey = (lat, lon) => `${Math.floor(lat / CELL)},${Math.floor(lon / CELL)}`;
 
-// ways: Liste von Linienzuegen, jeder eine Liste von [lat, lon]. Gemeinsame Koordinaten verbinden Wege.
+// ways: Liste von Linienzuegen, jeder eine Liste von [lat, lon] oder { pts, f } mit Kostenfaktor f
+// (z. B. Abstellgleise teurer, damit der Weg nur im Notfall darueber fuehrt). Gemeinsame Koordinaten verbinden Wege.
 export function buildGraph(ways) {
   const ids = new Map();
   const coords = [];
@@ -33,12 +34,14 @@ export function buildGraph(ways) {
     }
     return id;
   };
-  for (const way of ways) {
+  for (const item of ways) {
+    const way = Array.isArray(item) ? item : item.pts;
+    const f = Array.isArray(item) ? 1 : item.f || 1;
     for (let i = 1; i < way.length; i++) {
       const a = nodeId(way[i - 1]);
       const b = nodeId(way[i]);
       if (a === b) continue;
-      const w = distance(coords[a], coords[b]);
+      const w = distance(coords[a], coords[b]) * f;
       adj[a].push([b, w]);
       adj[b].push([a, w]);
     }
@@ -63,6 +66,33 @@ export function nearestNode(graph, lat, lon, maxMeters) {
     }
   }
   return best;
+}
+
+// Alle Knoten im Umkreis, nach Entfernung, hoechstens k und untereinander mindestens 6 m auseinander
+// (mehrere parallele Gleise oder Fahrbahnen als Kandidaten)
+export function nearestNodes(graph, lat, lon, maxMeters, k = 6) {
+  const cy = Math.floor(lat / CELL);
+  const cx = Math.floor(lon / CELL);
+  const reach = Math.ceil(maxMeters / 200) + 1;
+  const found = [];
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      const list = graph.grid.get(`${cy + dy},${cx + dx}`);
+      if (!list) continue;
+      for (const id of list) {
+        const d = distance([lat, lon], graph.coords[id]);
+        if (d <= maxMeters) found.push([d, id]);
+      }
+    }
+  }
+  found.sort((x, y) => x[0] - y[0]);
+  const out = [];
+  for (const [d, id] of found) {
+    if (out.some(([, o]) => distance(graph.coords[o], graph.coords[id]) < 6)) continue;
+    out.push([d, id]);
+    if (out.length >= k) break;
+  }
+  return out;
 }
 
 class MinHeap {
@@ -130,6 +160,37 @@ export function shortestPath(graph, from, to, maxCost = Infinity) {
   return null;
 }
 
+// Kuerzester Weg von mehreren Startknoten zu mehreren Zielknoten (je mit Anlaufkosten).
+// Gibt { path, cost } oder null zurueck.
+export function shortestPathMulti(graph, sources, targets, maxCost = Infinity) {
+  const dist = new Map();
+  const prev = new Map();
+  const heap = new MinHeap();
+  const goal = new Map(targets);
+  for (const [id, c] of sources) { if (c < (dist.get(id) ?? Infinity)) { dist.set(id, c); heap.push([c, id]); } }
+  let best = null;
+  let bestCost = maxCost;
+  while (heap.size) {
+    const [d, u] = heap.pop();
+    if (d > (dist.get(u) ?? Infinity)) continue;
+    if (d >= bestCost) break;
+    if (goal.has(u) && d + goal.get(u) < bestCost) { best = u; bestCost = d + goal.get(u); }
+    for (const [v, w] of graph.adj[u]) {
+      const nd = d + w;
+      if (nd < (dist.get(v) ?? Infinity) && nd < bestCost) {
+        dist.set(v, nd);
+        prev.set(v, u);
+        heap.push([nd, v]);
+      }
+    }
+  }
+  if (best === null) return null;
+  const path = [best];
+  let c = best;
+  while (prev.has(c)) { c = prev.get(c); path.push(c); }
+  return { path: path.reverse(), cost: bestCost };
+}
+
 // Douglas-Peucker, Toleranz in Metern (lokale Naeherung)
 export function simplify(points, epsMeters) {
   if (points.length < 3) return points;
@@ -161,13 +222,14 @@ export function simplify(points, epsMeters) {
 // Verbindet zwei Haltepunkte ueber das Netz. Gibt Punktliste oder null zurueck.
 export function matchSegment(graph, a, b, { snapMeters = 150, detour = 3, slack = 400 } = {}) {
   const straight = distance(a, b);
-  const na = nearestNode(graph, a[0], a[1], snapMeters);
-  const nb = nearestNode(graph, b[0], b[1], snapMeters);
-  if (na < 0 || nb < 0) return null;
+  // Mehrere Kandidaten je Halt: an Bahnhoefen liegen viele parallele Gleise, das naechste ist oft nicht das befahrene
+  const na = nearestNodes(graph, a[0], a[1], snapMeters);
+  const nb = nearestNodes(graph, b[0], b[1], snapMeters);
+  if (!na.length || !nb.length) return null;
   const maxCost = Math.max(straight * detour, straight + slack);
-  const path = shortestPath(graph, na, nb, maxCost);
-  if (!path) return null;
-  return simplify([a, ...path.map((id) => graph.coords[id]), b], 2);
+  const r = shortestPathMulti(graph, na.map(([d, id]) => [id, d]), nb.map(([d, id]) => [id, d]), maxCost);
+  if (!r) return null;
+  return simplify([a, ...r.path.map((id) => graph.coords[id]), b], 2);
 }
 
 // Overpass-Antwort mit Linienrelationen (out geom) -> Wege je Liniennummer (ref).

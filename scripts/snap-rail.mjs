@@ -62,10 +62,15 @@ const flat = (pts) => pts.flatMap((p) => [round5(p[0]), round5(p[1])]);
 
 // ---------- Tram und Bahn ----------
 {
+  // Mit Rand ums Gebiet, damit Strecken am Rand verbunden bleiben. Weichen und Nebengleise gehoeren dazu
+  // (sonst fehlt an Bahnhoefen oft die Verbindung zwischen Bahnsteig- und Streckengleis), sind aber teurer.
+  const M = 0.12;
   const osm = await overpass(
-    `[out:json][timeout:120];way["railway"~"^(rail|tram|light_rail)$"]["service"!~"yard|siding|spur|crossover"](${S},${W},${N},${E});out geom;`,
-    'osm-rail.json', '--osm');
-  const ways = (osm.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry)).map((el) => el.geometry.map((g) => [g.lat, g.lon]));
+    `[out:json][timeout:180];way["railway"~"^(rail|tram|light_rail)$"](${S - M},${W - M},${N + M},${E + M});out tags geom;`,
+    'osm-rail2.json', '--osm');
+  const SIDE = /^(yard|siding|spur|crossover)$/;
+  const ways = (osm.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry))
+    .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: el.tags && SIDE.test(el.tags.service || '') ? 4 : 1 }));
   console.log('Gleisabschnitte:', ways.length);
   if (!ways.length) throw new Error('Keine Gleisdaten erhalten');
   const graph = buildGraph(ways);
@@ -80,12 +85,20 @@ const flat = (pts) => pts.flatMap((p) => [round5(p[0]), round5(p[1])]);
   console.log('Haltepaare Schiene:', pairs.size);
   for (const key of pairs) {
     const [a, b] = key.split(',').map(Number);
-    const pts = matchSegment(graph, [model.stops[a][2], model.stops[a][3]], [model.stops[b][2], model.stops[b][3]]);
+    const pts = matchSegment(graph, [model.stops[a][2], model.stops[a][3]], [model.stops[b][2], model.stops[b][3]], { snapMeters: 200, detour: 2, slack: 600 });
     if (pts) { segs[key] = flat(pts); stats.matched++; } else stats.missed++;
   }
 }
 
 // ---------- Busse ----------
+const overpassSync = {};
+try {
+  overpassSync.road = await overpass(
+    `[out:json][timeout:240];way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"](${S - 0.02},${W - 0.02},${N + 0.02},${E + 0.02});out tags geom;`,
+    'osm-road.json', '--osm-road');
+} catch (e) {
+  console.warn('Strassennetz uebersprungen:', e.message);
+}
 try {
   const osm = await overpass(`[out:json][timeout:240];rel["route"="bus"](${S},${W},${N},${E});out geom;`, 'osm-bus.json', '--osm-bus');
   const byRef = waysByRef(osm.elements);
@@ -100,6 +113,22 @@ try {
   const unionGraph = () => {
     if (!allGraph) allGraph = buildGraph([...byRef.values()].flat());
     return allGraph;
+  };
+  // Letzter Rueckgriff: das Strassennetz (Linie ohne passende Relation in OSM)
+  let roadGraph;
+  const roads = () => {
+    if (roadGraph !== undefined) return roadGraph;
+    roadGraph = null;
+    try {
+      const osmRoad = overpassSync.road || null;
+      if (osmRoad) {
+        const SLOW = /^(residential|living_street|unclassified|service)$/;
+        roadGraph = buildGraph((osmRoad.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry))
+          .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: SLOW.test(el.tags && el.tags.highway) ? 1.4 : 1 })));
+        console.log('Strassengraph:', roadGraph.coords.length, 'Knoten');
+      }
+    } catch (e) { console.warn('Strassennetz nicht nutzbar:', e.message); }
+    return roadGraph;
   };
   const done = new Set();
   for (const [route, , stops] of model.patterns) {
@@ -118,6 +147,10 @@ try {
         pts = matchSegment(unionGraph(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 80, detour: 2.5, slack: 300 });
         viaUnion = !!pts;
       }
+      if (!pts && roads()) {
+        pts = matchSegment(roads(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 120, detour: 2.2, slack: 500 });
+        if (pts) stats.busViaRoad = (stats.busViaRoad || 0) + 1;
+      }
       if (pts) {
         segs[key] = flat(pts);
         stats.busMatched++;
@@ -132,4 +165,4 @@ try {
 const out = { meta: { modelBuilt: model.meta.built, ...stats }, segs };
 const file = path.join(DATA, 'shapes.json');
 fs.writeFileSync(file, JSON.stringify(out));
-console.log(`Fertig: Schiene ${stats.matched} auf Gleisen (${stats.missed} Luftlinie), Busse ${stats.busMatched} auf Strassen, davon ${stats.busViaUnion || 0} ueber das gesamte Busnetz (${stats.busMissed} Luftlinie), ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);
+console.log(`Fertig: Schiene ${stats.matched} auf Gleisen (${stats.missed} Luftlinie), Busse ${stats.busMatched} auf Strassen, davon ${stats.busViaUnion || 0} ueber das gesamte Busnetz und ${stats.busViaRoad || 0} ueber das Strassennetz (${stats.busMissed} Luftlinie), ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);

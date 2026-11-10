@@ -71,3 +71,20 @@ test('waysByRef sammelt Wege je Liniennummer und ignoriert Unbrauchbares', () =>
   assert.equal(m.size, 1);
   assert.equal(m.get('30').length, 2);
 });
+
+test('matchSegment nimmt das befahrene Gleis, auch wenn ein anderes näher am Halt liegt', () => {
+  // Gleis 1 (nah, endet), Gleis 2 (10 m daneben, führt bis B)
+  const g = buildGraph([
+    [[49.0000, 8.4000], [49.0000, 8.4010]],
+    [[49.0001, 8.4000], [49.0001, 8.4100]],
+  ]);
+  const pts = matchSegment(g, [49.00001, 8.4000], [49.0001, 8.4100]);
+  assert.ok(pts, 'Weg gefunden');
+  assert.ok(pts.length >= 2);
+});
+
+test('buildGraph: Kostenfaktor macht Nebengleise teurer', () => {
+  const g = buildGraph([{ pts: [[49, 8.4], [49, 8.401]], f: 4 }]);
+  const w = g.adj[0][0][1];
+  assert.ok(w > 4 * 70 && w < 4 * 80);
+});
