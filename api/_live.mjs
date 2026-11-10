@@ -5,7 +5,7 @@
 import { Model } from '../server/model.mjs';
 import { Realtime, RT_ATTRIBUTION } from '../server/realtime.mjs';
 
-const DATA_URL = (process.env.STRAB_DATA_URL || 'https://lacoticomohd.github.io/Strabfahrt/').replace(/\/?$/, '/');
+const DATA_URL = (process.env.STRAB_DATA_URL || 'https://strabfahrt.de/').replace(/\/?$/, '/');
 const DATA_TTL = 6 * 3600 * 1000; // Fahrplan alle 6 Stunden neu pruefen
 const LIVE_TTL = 75 * 1000; // Live-Daten hoechstens alle 75 Sekunden neu holen (jeder Abruf kostet CPU-Kontingent)
 const STATS_PATH = 'stats/strabfahrt.json';

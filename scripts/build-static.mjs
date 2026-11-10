@@ -44,7 +44,7 @@ for (const f of ['leaflet.js', 'leaflet.css']) copy(path.join(ROOT, 'node_module
 const tiles = process.argv.includes('--tiles');
 copy(path.join(ROOT, 'node_modules', 'qrcode-generator', 'dist', 'qrcode.js'), path.join('vendor', 'qrcode', 'qrcode.js'));
 const nativeApp = process.argv.includes('--native'); // fuer die Android-App: frische Daten von GitHub Pages
-const dataUrl = process.env.STRAB_DATA_URL || 'https://lacoticomohd.github.io/Strabfahrt/';
+const dataUrl = process.env.STRAB_DATA_URL || 'https://strabfahrt.de/';
 const rtArg = process.argv.indexOf('--rt-url');
 const rtUrl = rtArg >= 0 ? process.argv[rtArg + 1] : process.env.STRAB_RT_URL || '';
 if (rtUrl && !/^(https:\/\/[^\s"']+|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/.test(rtUrl)) throw new Error('--rt-url muss eine https-Adresse sein');
