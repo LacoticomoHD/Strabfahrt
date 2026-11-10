@@ -150,9 +150,18 @@ try {
 } catch (e) {
   console.warn('Strassennetz uebersprungen:', e.message);
 }
+// Buslinien-Relationen sind nur eine Verfeinerung und fuer Overpass sehr teuer: hoechstens 8 Minuten, sonst ohne
+let busRel = { elements: [] };
 try {
-  const osm = await overpass('rel["route"="bus"]', areaClause(new Set([3, 11]), 0), 'out geom;', 'osm-bus2.json', '--osm-bus');
-  const byRef = waysByRef(osm.elements);
+  busRel = await Promise.race([
+    overpass('rel["route"="bus"]', areaClause(new Set([3, 11]), 0), 'out geom;', 'osm-bus2.json', '--osm-bus'),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Zeitlimit')), 8 * 60 * 1000).unref()),
+  ]);
+} catch (e) {
+  console.warn('Buslinien-Relationen uebersprungen, Busse nur ueber das Strassennetz:', e.message);
+}
+try {
+  const byRef = waysByRef(busRel.elements);
   console.log('Buslinien mit Wegen:', byRef.size);
   const graphs = new Map();
   const graphFor = (ref) => {
@@ -217,3 +226,4 @@ const out = { meta: { modelBuilt: model.meta.built, ...stats }, segs };
 const file = path.join(DATA, 'shapes.json');
 fs.writeFileSync(file, JSON.stringify(out));
 console.log(`Fertig: Schiene ${stats.matched} auf Gleisen (${stats.missed} Luftlinie), Busse ${stats.busMatched} auf Strassen, davon ${stats.busViaUnion || 0} ueber das gesamte Busnetz und ${stats.busViaRoad || 0} ueber das Strassennetz (${stats.busMissed} Luftlinie), ${(fs.statSync(file).size / 1048576).toFixed(1)} MB`);
+process.exit(0); // offene Overpass-Abfragen nach Zeitlimit nicht abwarten
