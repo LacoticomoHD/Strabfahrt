@@ -53,7 +53,10 @@ jobs:
             data/osm-bus2.json
             data/osm-road2.json
           key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
-          restore-keys: osm-v3-${{ steps.week.outputs.w }}-
+          # Erst diese Woche, sonst der letzte ältere Stand: lieber alte Gleisdaten als Luftlinie, falls Overpass ausfällt
+          restore-keys: |
+            osm-v3-${{ steps.week.outputs.w }}-
+            osm-v3-
 
       - name: Fahrzeuge auf OpenStreetMap-Gleise und -Straßen legen
         continue-on-error: true # ohne OSM-Daten fahren die Fahrzeuge in Luftlinie weiter
