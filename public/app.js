@@ -542,6 +542,26 @@ function locate(trip, now, noCursor = false) {
   return { lat, lon, k, f, atStop: false, heading: angleBetween(along(g, Math.max(0, f - 0.03)), along(g, Math.min(1, f + 0.03))) };
 }
 
+// Wohin das verfolgte Fahrzeug kommt: Mitte des freien Kartenbereichs, nicht unter Fenster, Kopfzeile oder Leiste
+function followTarget(size) {
+  const m = map.getContainer().getBoundingClientRect();
+  let x0 = 0; let x1 = size.x; let y0 = 0; let y1 = size.y;
+  const box = (id) => { const e = $(id); if (!e || e.hidden) return null; const r = e.getBoundingClientRect(); return r.height > 0 && r.width > 0 ? r : null; };
+  const top = box('top');
+  if (top) y0 = Math.max(y0, top.bottom - m.top);
+  const bar = box('bar');
+  if (bar) y1 = Math.min(y1, bar.top - m.top);
+  const r = box('panel');
+  if (r) {
+    if (r.width > size.x * 0.6) y1 = Math.min(y1, r.top - m.top); // Handy: Fenster unten über die ganze Breite
+    else if (r.left - m.left > size.x / 2) x1 = Math.min(x1, r.left - m.left); // Fenster rechts
+    else x0 = Math.max(x0, r.right - m.left); // Fenster links
+  }
+  if (x1 - x0 < 80) { x0 = 0; x1 = size.x; }
+  if (y1 - y0 < 80) { y0 = 0; y1 = size.y; }
+  return { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+}
+
 // ---------- Zeichnen ----------
 
 function drawFrame() {
@@ -585,7 +605,7 @@ function drawFrame() {
     const r = zoom >= 17 ? 7 : zoom >= 16 ? 6 : zoom >= 15 ? 5 : zoom >= 14 ? 4.2 : 3.2;
     const ring = dark ? '#f2c14e' : '#012f57';
     const halo = dark ? 'rgba(10,14,22,.85)' : 'rgba(255,255,255,.95)';
-    const labels = zoom >= 15;
+    const labels = zoom >= 15 && state.stopLabels;
     ctx.font = `700 ${zoom >= 17 ? 13 : 12}px system-ui, sans-serif`;
     ctx.lineJoin = 'round';
     const b = map.getBounds();
@@ -643,8 +663,9 @@ function drawFrame() {
   state.vehicles = out;
   if (followPos) {
     const c = map.latLngToContainerPoint([followPos.lat, followPos.lon]);
-    const dx = c.x - size.x / 2;
-    const dy = c.y - size.y / 2;
+    const t = followTarget(size);
+    const dx = c.x - t.x;
+    const dy = c.y - t.y;
     if (Math.hypot(dx, dy) > 1.5) map.panBy([dx, dy], { animate: false });
   }
 
@@ -925,6 +946,9 @@ $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if 
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
 $('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
+state.stopLabels = load('strab.stopLabels', true);
+$('stoplabels').checked = state.stopLabels;
+$('stoplabels').addEventListener('change', (e) => { state.stopLabels = e.target.checked; save('strab.stopLabels', state.stopLabels); needsDraw = true; });
 state.nums = load('strab.nums', false);
 $('nums').checked = state.nums;
 $('nums').addEventListener('change', (e) => { state.nums = e.target.checked; save('strab.nums', state.nums); needsDraw = true; });
