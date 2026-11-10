@@ -2552,7 +2552,8 @@ window.strabShowUpdate = (info) => {
   window.__strabUpdateShown = info.versionCode;
   const box = el('div', { id: 'update', role: 'status' },
     el('span', {}, `Neue App-Version ${info.versionName || ''} verfügbar.`),
-    el('a', { class: 'chip', href: info.url, target: '_blank', rel: 'noopener' }, 'Herunterladen'));
+    // ?v= je Version: sonst liefert der Browser beim Herunterladen teils eine ältere, zwischengespeicherte APK
+    el('a', { class: 'chip', href: info.url.includes('?') ? info.url : `${info.url}?v=${info.versionCode}`, target: '_blank', rel: 'noopener' }, 'Herunterladen'));
   const later = el('button', { class: 'chip', type: 'button' }, 'Später');
   later.addEventListener('click', () => box.remove());
   box.append(later);

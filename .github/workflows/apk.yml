@@ -101,7 +101,7 @@ jobs:
         run: |
           gh release view app >/dev/null 2>&1 || gh release create app --title "STRABFAHRT Android-App" --notes "Immer die neueste APK. Download: strabfahrt.apk"
           CODE=$(( ${{ github.run_number }} + 100 ))
-          printf '{"versionCode": %s, "versionName": "2.%s", "fp": "%s", "built": "%s", "url": "https://github.com/%s/releases/download/app/strabfahrt.apk"}\n' \
-            "$CODE" "${{ github.run_number }}" "$FP" "$(date -u +%Y-%m-%dT%H:%MZ)" "${{ github.repository }}" > "$RUNNER_TEMP/version.json"
+          printf '{"versionCode": %s, "versionName": "2.%s", "fp": "%s", "built": "%s", "url": "https://github.com/%s/releases/download/app/strabfahrt.apk?v=%s"}\n' \
+            "$CODE" "${{ github.run_number }}" "$FP" "$(date -u +%Y-%m-%dT%H:%MZ)" "${{ github.repository }}" "$CODE" > "$RUNNER_TEMP/version.json"
           gh release upload app "$RUNNER_TEMP/strabfahrt.apk" --clobber
           gh release upload app "$RUNNER_TEMP/version.json" --clobber
