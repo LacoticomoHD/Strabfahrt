@@ -67,9 +67,13 @@ jobs:
           for f in index.html app.js model.json model.js local-api.js sw.js; do test -s "dist-static/$f" || { echo "fehlt: $f"; exit 1; }; done
 
       - name: Auf gh-pages veröffentlichen
+        env:
+          # Eigene Domain (z. B. strabfahrt.de): Repository-Variable STRAB_DOMAIN setzen, dann bleibt sie bei jedem Bau erhalten
+          STRAB_DOMAIN: ${{ vars.STRAB_DOMAIN }}
         run: |
           cd dist-static
           touch .nojekyll
+          if [ -n "$STRAB_DOMAIN" ]; then echo "$STRAB_DOMAIN" > CNAME; fi
           git init -q -b gh-pages
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

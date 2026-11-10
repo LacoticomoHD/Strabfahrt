@@ -53,8 +53,8 @@ jobs:
           mkdir -p app/www
           git archive origin/gh-pages | tar -x -C app/www
           rm -f app/www/rt-map.json app/www/sw.js
-          printf 'window.STRAB_NATIVE = true;\nwindow.STRAB_DATA_URL = "https://%s.github.io/%s/";\n' \
-            "$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" "${{ github.event.repository.name }}" >> app/www/static-flag.js
+          if [ -n "${{ vars.STRAB_DOMAIN }}" ]; then DATA_URL="https://${{ vars.STRAB_DOMAIN }}/"; else DATA_URL="https://$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]').github.io/${{ github.event.repository.name }}/"; fi
+          printf 'window.STRAB_NATIVE = true;\nwindow.STRAB_DATA_URL = "%s";\n' "$DATA_URL" >> app/www/static-flag.js
 
       - name: Hat sich die App geändert?
         if: env.HAS_KEY == 'true'
