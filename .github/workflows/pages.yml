@@ -20,7 +20,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 70
     steps:
       - uses: actions/checkout@v4
 
@@ -45,17 +45,32 @@ jobs:
         run: echo "w=$(date +%G-%V)" >> "$GITHUB_OUTPUT"
 
       - name: OpenStreetMap-Daten aus dem Wochen-Cache holen
-        uses: actions/cache@v4
+        id: osmcache
+        uses: actions/cache/restore@v4
         with:
           path: |
             data/osm-rail3.json
             data/osm-bus2.json
             data/osm-road2.json
-          key: osm-v3-${{ steps.week.outputs.w }}
+          key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
+          restore-keys: osm-v3-${{ steps.week.outputs.w }}-
 
       - name: Fahrzeuge auf OpenStreetMap-Gleise und -Straßen legen
         continue-on-error: true # ohne OSM-Daten fahren die Fahrzeuge in Luftlinie weiter
+        timeout-minutes: 50
         run: npm run snap:rail
+
+      # Auch nach Teilerfolg sichern: jede fertig geladene Datei spart beim nächsten Lauf die Abfrage
+      - name: OpenStreetMap-Daten im Cache sichern
+        if: always() && steps.osmcache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/osm-rail3.json
+            data/osm-bus2.json
+            data/osm-road2.json
+          key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
 
       - name: Statische Variante mit Karte bauen
         run: npm run build:static -- --tiles
