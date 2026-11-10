@@ -24,7 +24,32 @@ function arg(name) {
 }
 const refresh = process.argv.includes('--refresh');
 
-async function overpass(query, cacheName, argName) {
+// Mehrere Server: overpass-api.de lehnt grosse Abfragen nachts oft mit 502/504 ab
+const SERVERS = [OVERPASS, 'https://overpass.private.coffee/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
+
+async function fetchOverpass(query) {
+  let last;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const url = SERVERS[attempt % SERVERS.length];
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'User-Agent': 'STRABFAHRT/0.1 (Fahrplankarte Karlsruhe)' },
+        body: new URLSearchParams({ data: query }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (e) {
+      last = e;
+      console.warn(`Overpass ${new URL(url).host}, Versuch ${attempt + 1}: ${e.message}`);
+      await new Promise((r) => setTimeout(r, 5000 + attempt * 10000));
+    }
+  }
+  throw last;
+}
+
+// sel: Overpass-Auswahl ohne Gebiet, boxes: Liste "s,w,n,e". Abfrage in kleinen Paketen, Ergebnis zusammengefuehrt.
+async function overpass(sel, boxes, out, cacheName, argName) {
   const given = arg(argName);
   if (given) return JSON.parse(fs.readFileSync(path.resolve(given), 'utf8'));
   const cache = path.join(DATA, cacheName);
@@ -32,23 +57,15 @@ async function overpass(query, cacheName, argName) {
     console.log('Nutze vorhandene Datei', cacheName);
     return JSON.parse(fs.readFileSync(cache, 'utf8'));
   }
-  console.log('Lade von', OVERPASS, '->', cacheName);
-  let json = null;
-  for (let attempt = 1; attempt <= 3 && !json; attempt++) {
-    try {
-      const res = await fetch(OVERPASS, {
-        method: 'POST',
-        headers: { 'User-Agent': 'STRABFAHRT/0.1 (Fahrplankarte Karlsruhe)' },
-        body: new URLSearchParams({ data: query }),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      json = await res.json();
-    } catch (e) {
-      console.warn(`Overpass, Versuch ${attempt}: ${e.message}`);
-      if (attempt === 3) throw e;
-      await new Promise((r) => setTimeout(r, attempt * 20000));
-    }
+  const PACK = 3;
+  const seen = new Map();
+  for (let i = 0; i < boxes.length; i += PACK) {
+    const part = boxes.slice(i, i + PACK);
+    console.log(`Lade ${cacheName}: Paket ${i / PACK + 1} von ${Math.ceil(boxes.length / PACK)}`);
+    const json = await fetchOverpass(`[out:json][timeout:180];(${part.map((b) => `${sel}(${b});`).join('')});${out}`);
+    for (const el of json.elements || []) seen.set(`${el.type}${el.id}`, el);
   }
+  const json = { elements: [...seen.values()] };
   fs.writeFileSync(cache, JSON.stringify(json));
   return json;
 }
@@ -96,16 +113,13 @@ function areaClause(types, pad = 1) {
   console.log('Abfrage-Kacheln:', cells.size, 'in', boxes.length, 'Rechtecken');
   return boxes;
 }
-const union = (sel, boxes) => `(${boxes.map((b) => `${sel}(${b});`).join('')})`;
 
 // ---------- Tram und Bahn ----------
 {
   // Mit Rand ums Gebiet, damit Strecken am Rand verbunden bleiben. Weichen und Nebengleise gehoeren dazu
   // (sonst fehlt an Bahnhoefen oft die Verbindung zwischen Bahnsteig- und Streckengleis), sind aber teurer.
   const railBoxes = areaClause(new Set([0, 1, 2, 100]));
-  const osm = await overpass(
-    `[out:json][timeout:240];${union('way["railway"~"^(rail|tram|light_rail)$"]', railBoxes)};out tags geom;`,
-    'osm-rail3.json', '--osm');
+  const osm = await overpass('way["railway"~"^(rail|tram|light_rail)$"]', railBoxes, 'out tags geom;', 'osm-rail3.json', '--osm');
   const SIDE = /^(yard|siding|spur|crossover)$/;
   const ways = (osm.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry))
     .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: el.tags && SIDE.test(el.tags.service || '') ? 4 : 1 }));
@@ -131,14 +145,13 @@ const union = (sel, boxes) => `(${boxes.map((b) => `${sel}(${b});`).join('')})`;
 // ---------- Busse ----------
 const overpassSync = {};
 try {
-  overpassSync.road = await overpass(
-    `[out:json][timeout:300];${union('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"]', areaClause(new Set([3, 11]), 0))};out tags geom;`,
-    'osm-road2.json', '--osm-road');
+  overpassSync.road = await overpass('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"]',
+    areaClause(new Set([3, 11]), 0), 'out tags geom;', 'osm-road2.json', '--osm-road');
 } catch (e) {
   console.warn('Strassennetz uebersprungen:', e.message);
 }
 try {
-  const osm = await overpass(`[out:json][timeout:300];${union('rel["route"="bus"]', areaClause(new Set([3, 11]), 0))};out geom;`, 'osm-bus2.json', '--osm-bus');
+  const osm = await overpass('rel["route"="bus"]', areaClause(new Set([3, 11]), 0), 'out geom;', 'osm-bus2.json', '--osm-bus');
   const byRef = waysByRef(osm.elements);
   console.log('Buslinien mit Wegen:', byRef.size);
   const graphs = new Map();
