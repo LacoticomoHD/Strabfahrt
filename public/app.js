@@ -392,9 +392,30 @@ function segGeom(si, sj) {
 }
 
 // Gebiet der Daten (Rechteck um Karlsruhe). Außerhalb gibt es keine Gleisdaten, dort wäre nur Luftlinie möglich.
+let areaSet = null;
 function inArea(lat, lon) {
-  const b = state.meta && state.meta.bbox;
-  return !b || (lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]);
+  const m = state.meta;
+  const b = m && m.bbox;
+  if (!b) return true;
+  if (!(lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3])) return false;
+  if (!m.area || !m.areaCell) return true;
+  if (!areaSet) areaSet = new Set(m.area);
+  return areaSet.has(`${Math.floor(lat / m.areaCell)},${Math.floor(lon / m.areaCell)}`);
+}
+// Umriss des Gebiets: Kanten der Kacheln, an die keine Nachbarkachel grenzt
+function areaOutline(m) {
+  const set = new Set(m.area);
+  const c = m.areaCell;
+  const lines = [];
+  for (const key of m.area) {
+    const [y, x] = key.split(',').map(Number);
+    const s = y * c; const n = (y + 1) * c; const w = x * c; const e = (x + 1) * c;
+    if (!set.has(`${y - 1},${x}`)) lines.push([[s, w], [s, e]]);
+    if (!set.has(`${y + 1},${x}`)) lines.push([[n, w], [n, e]]);
+    if (!set.has(`${y},${x - 1}`)) lines.push([[s, w], [n, w]]);
+    if (!set.has(`${y},${x + 1}`)) lines.push([[s, e], [n, e]]);
+  }
+  return lines;
 }
 // Abschnitt ohne echten Streckenverlauf, der aus dem Gebiet hinausführt (z. B. ICE nach Mannheim): nicht zeichnen
 function offAreaSeg(si, sj) {
@@ -2518,7 +2539,7 @@ function rtGet(pathName) {
 
 function setNote() {
   if (STATIC && !TILES) return;
-  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Gebiet: Rechteck um Karlsruhe (gestrichelter Rahmen). Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
+  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Gebiet: KVV-Netz (gestrichelter Rahmen). Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
 }
 
 function updateLive() {
@@ -2829,11 +2850,13 @@ async function init() {
   const h = readHash();
   const [s, w, n, e] = meta.bbox;
   if (h && h.z !== null) map.setView([h.lat, h.lon], h.z);
-  else map.fitBounds([[s, w], [n, e]]);
+  else map.setView([49.009, 8.404], 12); // Start in Karlsruhe, das ganze Gebiet wäre zu weit herausgezoomt
   if (h) for (const k of h.ol) if (overlays[k]) { overlays[k].addTo(map); $(`ovl-${k}`).checked = true; }
   map.setMaxBounds([[s - 0.3, w - 0.4], [n + 0.3, e + 0.4]]);
   // Gebietsgrenze: dünner gestrichelter Rahmen
-  L.rectangle([[s, w], [n, e]], { color: '#8a94a6', weight: 1.5, dashArray: '6 6', fill: false, interactive: false }).addTo(map);
+  const frame = { color: '#8a94a6', weight: 1.5, dashArray: '6 6', interactive: false };
+  if (meta.area && meta.areaCell) L.polyline(areaOutline(meta), frame).addTo(map);
+  else L.rectangle([[s, w], [n, e]], { ...frame, fill: false }).addTo(map);
 
   resizeCanvas();
   writeHash();

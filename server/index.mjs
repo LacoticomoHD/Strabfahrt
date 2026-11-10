@@ -123,7 +123,7 @@ function handleApi(url, req, res) {
   const q = url.searchParams;
   switch (url.pathname) {
     case '/api/meta':
-      return sendJson(res, 200, { realtime: realtime.enabled, rtAttribution: RT_ATTRIBUTION, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes });
+      return sendJson(res, 200, { realtime: realtime.enabled, rtAttribution: RT_ATTRIBUTION, bbox: model.meta.bbox, area: model.meta.area || null, areaCell: model.meta.areaCell || 0, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes });
 
     case '/api/stops':
       return sendJson(res, 200, model.stops, { 'Cache-Control': 'public, max-age=3600' }, req);

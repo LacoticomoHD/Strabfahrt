@@ -51,12 +51,30 @@ const FEEDS = [
 ];
 const FV_TYPE = 100; // interner Typ fuer Fernverkehr
 
-const BBOX = (process.env.BBOX || '48.90,8.20,49.15,8.65').split(',').map(Number);
+// Ganzes KVV-Netz (Freudenstadt bis Heilbronn, Pfalz bis Bretten). Bahn anderer Feeds nur nahe KVV-Halten (nearKvv).
+const BBOX = (process.env.BBOX || '48.44,7.92,49.36,9.54').split(',').map(Number);
 if (BBOX.length !== 4 || BBOX.some(Number.isNaN)) {
   throw new Error('BBOX muss "sued,west,nord,ost" sein');
 }
 const [S, W, N, E] = BBOX;
 const inBox = (lat, lon) => lat >= S && lat <= N && lon >= W && lon <= E;
+// Andere Feeds (Bahn bundesweit) nur in der Nähe von KVV-Haltestellen: Raster mit rund 4 km Kantenlänge,
+// Nachbarzellen zählen mit. So kommt z. B. Heilbronn (S4) mit, Stuttgart aber nicht.
+const KVV_CELL = 0.04;
+const kvvCells = new Set();
+const cellOf = (lat, lon) => `${Math.floor(lat / KVV_CELL)},${Math.floor(lon / KVV_CELL)}`;
+// Gebiet als Kachelliste (KVV-Kacheln plus Nachbarn), für App und Gleisabgleich
+const areaCells = () => {
+  const out = new Set();
+  for (const c of kvvCells) { const [y, x] = c.split(',').map(Number); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) out.add(`${y + dy},${x + dx}`); }
+  return [...out].sort();
+};
+const nearKvv = (lat, lon) => {
+  if (!kvvCells.size) return true;
+  const y = Math.floor(lat / KVV_CELL); const x = Math.floor(lon / KVV_CELL);
+  for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (kvvCells.has(`${y + dy},${x + dx}`)) return true;
+  return false;
+};
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -234,7 +252,8 @@ async function processFeed(feed, raw) {
     const parent = g('parent_station');
     const lat = Number(g('stop_lat'));
     const lon = Number(g('stop_lon'));
-    if (inBox(lat, lon)) { areaStops.add(g('stop_id')); if (gtfsde) shared.rtStops.add(g('stop_id')); }
+    if (!gtfsde && inBox(lat, lon)) kvvCells.add(cellOf(lat, lon));
+    if (inBox(lat, lon) && (!gtfsde || nearKvv(lat, lon))) { areaStops.add(g('stop_id')); if (gtfsde) shared.rtStops.add(g('stop_id')); }
     if (feed.matchOnly) return;
     if (shared.stopRows.has(sp + g('stop_id'))) return; // gleiche gtfs.de-Haltestelle aus anderem Feed
     shared.stopRows.set(sp + g('stop_id'), {
@@ -303,7 +322,7 @@ async function processFeed(feed, raw) {
     let last = -1;
     list.forEach((r, i) => {
       const s = shared.stopRows.get(sp + r.stop);
-      if (s && inBox(s.lat, s.lon)) {
+      if (s && inBox(s.lat, s.lon) && (!gtfsde || nearKvv(s.lat, s.lon))) {
         if (first < 0) first = i;
         last = i;
       }
@@ -506,7 +525,7 @@ async function main() {
   const primaryMeta = shared.feedMeta.find((m) => m.id === 'kvv') || {};
   const model = {
     meta: {
-      bbox: BBOX, feedVersion: primaryMeta.version || '', feedStart: primaryMeta.start || '', feedEnd: primaryMeta.end || '',
+      bbox: BBOX, areaCell: KVV_CELL, area: areaCells(), feedVersion: primaryMeta.version || '', feedStart: primaryMeta.start || '', feedEnd: primaryMeta.end || '',
       feeds: shared.feedMeta, built: new Date().toISOString(), source: FEEDS[0].url,
     },
     routes: shared.routes, stops: outStops, patterns: shared.patternList, profiles: shared.profileList, services: svcOut, trips: shared.tripOut,

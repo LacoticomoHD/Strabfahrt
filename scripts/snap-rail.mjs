@@ -60,14 +60,52 @@ const stats = { matched: 0, missed: 0, busMatched: 0, busMissed: 0 };
 const round5 = (v) => Math.round(v * 1e5) / 1e5;
 const flat = (pts) => pts.flatMap((p) => [round5(p[0]), round5(p[1])]);
 
+// Abfrage-Gebiet: Kacheln (rund 5 km) um die tatsaechlich befahrenen Abschnitte statt des ganzen Rechtecks.
+// Das Rechteck reicht bis Heilbronn und Freudenstadt und schliesst Stuttgart ein, dessen Netz wir nicht brauchen.
+const CELL = 0.05;
+const areaSet = new Set(model.meta.area || []);
+const AC = model.meta.areaCell || 0;
+const inArea = (st) => st[2] >= S && st[2] <= N && st[3] >= W && st[3] <= E
+  && (!AC || areaSet.has(`${Math.floor(st[2] / AC)},${Math.floor(st[3] / AC)}`));
+function areaClause(types, pad = 1) {
+  const cells = new Set();
+  for (const [route, , stops] of model.patterns) {
+    if (!types.has(model.routes[route][1])) continue;
+    for (let i = 1; i < stops.length; i++) {
+      const a = model.stops[stops[i - 1]];
+      const b = model.stops[stops[i]];
+      if (!inArea(a) || !inArea(b)) continue; // Abschnitte ueber den Rand werden in der App nicht gezeigt
+      const y0 = Math.floor(Math.min(a[2], b[2]) / CELL) - pad; const y1 = Math.floor(Math.max(a[2], b[2]) / CELL) + pad;
+      const x0 = Math.floor(Math.min(a[3], b[3]) / CELL) - pad; const x1 = Math.floor(Math.max(a[3], b[3]) / CELL) + pad;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cells.add(`${y},${x}`);
+    }
+  }
+  // Je Zeile zusammenhaengende Kacheln zu einem Rechteck zusammenfassen
+  const rows = new Map();
+  for (const c of cells) { const [y, x] = c.split(',').map(Number); if (!rows.has(y)) rows.set(y, []); rows.get(y).push(x); }
+  const boxes = [];
+  for (const [y, xs] of rows) {
+    xs.sort((p, q) => p - q);
+    let start = xs[0]; let prev = xs[0];
+    for (const x of [...xs.slice(1), Infinity]) {
+      if (x === prev + 1) { prev = x; continue; }
+      boxes.push([y * CELL, start * CELL, (y + 1) * CELL, (prev + 1) * CELL].map((v) => v.toFixed(3)).join(','));
+      start = x; prev = x;
+    }
+  }
+  console.log('Abfrage-Kacheln:', cells.size, 'in', boxes.length, 'Rechtecken');
+  return boxes;
+}
+const union = (sel, boxes) => `(${boxes.map((b) => `${sel}(${b});`).join('')})`;
+
 // ---------- Tram und Bahn ----------
 {
   // Mit Rand ums Gebiet, damit Strecken am Rand verbunden bleiben. Weichen und Nebengleise gehoeren dazu
   // (sonst fehlt an Bahnhoefen oft die Verbindung zwischen Bahnsteig- und Streckengleis), sind aber teurer.
-  const M = 0.12;
+  const railBoxes = areaClause(new Set([0, 1, 2, 100]));
   const osm = await overpass(
-    `[out:json][timeout:180];way["railway"~"^(rail|tram|light_rail)$"](${S - M},${W - M},${N + M},${E + M});out tags geom;`,
-    'osm-rail2.json', '--osm');
+    `[out:json][timeout:240];${union('way["railway"~"^(rail|tram|light_rail)$"]', railBoxes)};out tags geom;`,
+    'osm-rail3.json', '--osm');
   const SIDE = /^(yard|siding|spur|crossover)$/;
   const ways = (osm.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry))
     .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: el.tags && SIDE.test(el.tags.service || '') ? 4 : 1 }));
@@ -94,13 +132,13 @@ const flat = (pts) => pts.flatMap((p) => [round5(p[0]), round5(p[1])]);
 const overpassSync = {};
 try {
   overpassSync.road = await overpass(
-    `[out:json][timeout:240];way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"](${S - 0.02},${W - 0.02},${N + 0.02},${E + 0.02});out tags geom;`,
-    'osm-road.json', '--osm-road');
+    `[out:json][timeout:300];${union('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"]', areaClause(new Set([3, 11]), 0))};out tags geom;`,
+    'osm-road2.json', '--osm-road');
 } catch (e) {
   console.warn('Strassennetz uebersprungen:', e.message);
 }
 try {
-  const osm = await overpass(`[out:json][timeout:240];rel["route"="bus"](${S},${W},${N},${E});out geom;`, 'osm-bus.json', '--osm-bus');
+  const osm = await overpass(`[out:json][timeout:300];${union('rel["route"="bus"]', areaClause(new Set([3, 11]), 0))};out geom;`, 'osm-bus2.json', '--osm-bus');
   const byRef = waysByRef(osm.elements);
   console.log('Buslinien mit Wegen:', byRef.size);
   const graphs = new Map();

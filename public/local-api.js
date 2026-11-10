@@ -38,7 +38,7 @@ export async function handle(path, params = {}) {
   const model = await getModel();
   switch (path) {
     case '/api/meta':
-      return { realtime: false, bbox: model.meta.bbox, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes };
+      return { realtime: false, bbox: model.meta.bbox, area: model.meta.area || null, areaCell: model.meta.areaCell || 0, feedVersion: model.meta.feedVersion, feedStart: model.meta.feedStart || '', feedEnd: model.meta.feedEnd || '', feeds: model.meta.feeds || [], built: model.meta.built, routes: model.routes };
     case '/api/stops':
       return model.stops;
     case '/api/network':
