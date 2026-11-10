@@ -391,6 +391,19 @@ function segGeom(si, sj) {
   return g;
 }
 
+// Gebiet der Daten (Rechteck um Karlsruhe). Außerhalb gibt es keine Gleisdaten, dort wäre nur Luftlinie möglich.
+function inArea(lat, lon) {
+  const b = state.meta && state.meta.bbox;
+  return !b || (lat >= b[0] && lat <= b[2] && lon >= b[1] && lon <= b[3]);
+}
+// Abschnitt ohne echten Streckenverlauf, der aus dem Gebiet hinausführt (z. B. ICE nach Mannheim): nicht zeichnen
+function offAreaSeg(si, sj) {
+  if (shapeData.has(`${si},${sj}`)) return false;
+  const a = state.stops[si];
+  const b = state.stops[sj];
+  return !inArea(a[2], a[3]) || !inArea(b[2], b[3]);
+}
+
 function along(g, f) {
   const last = g.pts[g.pts.length - 1];
   if (f <= 0 || g.total === 0) return g.pts[0];
@@ -549,6 +562,7 @@ function drawFrame() {
       for (const [a, c] of state.networkGroups[g]) {
         const sa = state.stops[a];
         const sc = state.stops[c];
+        if (!inArea(sa[2], sa[3]) || !inArea(sc[2], sc[3])) continue;
         if ((sa[2] < b.getSouth() && sc[2] < b.getSouth()) || (sa[2] > b.getNorth() && sc[2] > b.getNorth())
           || (sa[3] < b.getWest() && sc[3] < b.getWest()) || (sa[3] > b.getEast() && sc[3] > b.getEast())) continue;
         const p1 = map.latLngToContainerPoint([sa[2], sa[3]]);
@@ -620,6 +634,7 @@ function drawFrame() {
     const delay = delayOf(trip);
     const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
+    if (!inArea(pos.lat, pos.lon)) continue; // außerhalb des Gebiets nur Luftlinie: ausblenden
     if (state.follow === trip.id) followPos = pos;
     const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
     if (p.x < -40 || p.y < -40 || p.x > size.x + 40 || p.y > size.y + 40) continue;
@@ -768,6 +783,7 @@ function drawPath(stopIdxs, color, width = 4, alpha = 0.65) {
   ctx.beginPath();
   let first = true;
   for (let i = 1; i < stopIdxs.length; i++) {
+    if (offAreaSeg(stopIdxs[i - 1], stopIdxs[i])) { first = true; continue; }
     for (const pt of segGeom(stopIdxs[i - 1], stopIdxs[i]).pts) {
       const p = map.latLngToContainerPoint(pt);
       if (first) { ctx.moveTo(p.x, p.y); first = false; } else ctx.lineTo(p.x, p.y);
@@ -2478,7 +2494,7 @@ function rtGet(pathName) {
 
 function setNote() {
   if (STATIC && !TILES) return;
-  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
+  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Gebiet: Rechteck um Karlsruhe (gestrichelter Rahmen). Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
 }
 
 function updateLive() {
@@ -2791,6 +2807,8 @@ async function init() {
   else map.fitBounds([[s, w], [n, e]]);
   if (h) for (const k of h.ol) if (overlays[k]) { overlays[k].addTo(map); $(`ovl-${k}`).checked = true; }
   map.setMaxBounds([[s - 0.3, w - 0.4], [n + 0.3, e + 0.4]]);
+  // Gebietsgrenze: dünner gestrichelter Rahmen
+  L.rectangle([[s, w], [n, e]], { color: '#8a94a6', weight: 1.5, dashArray: '6 6', fill: false, interactive: false }).addTo(map);
 
   resizeCanvas();
   writeHash();
