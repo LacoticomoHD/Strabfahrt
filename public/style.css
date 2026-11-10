@@ -279,3 +279,4 @@ tr.goalrow .goal { opacity: 1; }
 :root[data-theme="dark"] .xfer.bad { background: #44201f; color: #f5a3a3; }
 .punct .prow { margin: 3px 0; font-size: 13px; }
 .xfer.fc { font-size: 13.5px; margin: 6px 0 4px; }
+.units { font-size: .8em; font-weight: 700; opacity: .75; white-space: nowrap; }

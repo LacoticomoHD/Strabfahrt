@@ -420,6 +420,13 @@ function kvvOf(tripId) {
   return k && Date.now() - k.at < 90000 ? k : null;
 }
 
+// Gekoppelte Einheiten laut KVV (Doppel- oder Dreifachtraktion)
+function unitsBadge(tripId) {
+  const k = kvvOf(tripId);
+  if (!k || !(k.units > 1)) return '';
+  return el('span', { class: 'units', title: `${k.units} gekoppelte Fahrzeuge` }, ` ${k.units}×`);
+}
+
 function delayOf(trip) {
   if (state.demo) return demoDelay(trip.id);
   const k = kvvOf(trip.id);
@@ -1323,6 +1330,7 @@ async function renderStation() {
         const at = Date.now();
         for (const [t, v] of Object.entries(k.d)) state.kvv.set(t, { delay: v, canceled: false, at });
         for (const t of k.c || []) state.kvv.set(t, { ...(state.kvv.get(t) || {}), canceled: true, at });
+        for (const [t, n] of Object.entries(k.u || {})) state.kvv.set(t, { ...(state.kvv.get(t) || {}), units: n, at });
         kvvUsed = k.matched > 0 ? ({ mobidata: 'MobiData BW', 'kvv+mobidata': 'KVV + MobiData BW' }[k.source] || 'KVV') : false;
       }
     } catch { /* nur gtfs.de */ }
@@ -1382,7 +1390,7 @@ async function renderStation() {
       const style = routeStyle([d.line, d.type, d.color, d.textColor]);
       table.append(el('tr', {},
         el('td', { class: 't' }, depTime(d)),
-        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
+        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), unitsBadge(d.trip), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', depWhen(d, base, state.sim), ' ',
           bellButton({ key: alarmKey('dep', d.trip, index), kind: 'dep', trip: d.trip, stopId: s[0], stopName: s[1], line: d.line, dest: cleanHeadsign(d.line, d.headsign), planned: toUnix(base + d.t) }))));
     }
@@ -1508,7 +1516,7 @@ function stationBlock(index, allDeps, extra) {
     const base = dayStart(ymdOf(state.sim));
     for (const d of deps) {
       table.append(el('tr', {}, el('td', { class: 't' }, depTime(d)),
-        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
+        el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), unitsBadge(d.trip), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('td', { class: 'r' }, depWhen(d, base, state.sim))));
     }
     block.append(table);
@@ -1579,7 +1587,7 @@ async function renderFavs() {
       const table = el('table');
       for (const d of merged.slice(0, 6)) {
           table.append(el('tr', {}, el('td', { class: 't' }, depTime(d)),
-          el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : '', el('div', { class: 'sub' }, d.station)),
+          el('td', {}, pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor]), () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), unitsBadge(d.trip), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : '', el('div', { class: 'sub' }, d.station)),
           el('td', { class: 'r' }, depWhen(d, base, state.sim))));
       }
       blk.append(table);
@@ -1939,7 +1947,7 @@ async function renderBoard() {
       rows.append(el('div', { class: 'brow' },
         el('span', { class: 'bt' }, depTime(d)),
         pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
-        el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
+        el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), unitsBadge(d.trip), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
         el('span', { class: 'bm' }, depWhen(d, base, now, ''))));
     }

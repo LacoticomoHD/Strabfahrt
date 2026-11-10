@@ -21,8 +21,8 @@ export default async function handler(req, res) {
     const q = new URL(req.url, 'http://x').searchParams;
     const only = ['kvv', 'mobidata'].includes(q.get('src')) ? q.get('src') : undefined;
     const k = await kvvForStation(model, idx, deps, { only });
-    const d = {}; const c = []; const bay = {};
-    if (k) for (const [trip, v] of k.map) { if (v.delay !== null) d[trip] = v.delay; if (v.canceled) c.push(trip); if (v.bay) bay[trip] = v.bay; }
+    const d = {}; const c = []; const bay = {}; const u = {};
+    if (k) for (const [trip, v] of k.map) { if (v.delay !== null) d[trip] = v.delay; if (v.canceled) c.push(trip); if (v.bay) bay[trip] = v.bay; if (v.units > 1) u[trip] = v.units; }
     if (q.get('debug') === '1' && k) {
       const fmt = (u) => new Date(u * 1000).toLocaleTimeString('de-DE', { timeZone: 'Europe/Berlin' });
       const hit = new Set([...k.map.keys()].map((t) => { const x = deps.find((y) => y.trip === t); return `${normLine(x.line)}@${k.dayStartUnix + x.t}`; }));
@@ -30,9 +30,10 @@ export default async function handler(req, res) {
         line: e.line, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null,
         near: deps.filter((d) => Math.abs(k.dayStartUnix + d.t - e.planned) < 300).slice(0, 4).map((d) => `${d.line}@${fmt(k.dayStartUnix + d.t)}`),
       }));
-      return send(res, 200, { source: k.source, status: k.status, url: k.url, error: k.error, events: k.events, mapped: k.map.size, withRt: k.list.filter((e) => e.estimated !== null).length, unmatched, tags: k.tags }, 25);
+      return send(res, 200, { source: k.source, status: k.status, url: k.url, error: k.error, events: k.events, mapped: k.map.size, withRt: k.list.filter((e) => e.estimated !== null).length, unmatched, units: u, tags: k.tags,
+        list: q.get('list') === '1' ? k.list.map((e) => ({ line: e.line, ref: e.ref, origin: e.origin, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null, bay: e.bay, journey: e.journey })) : undefined }, 25);
     }
-    send(res, 200, { source: k ? k.source : null, updated: Date.now(), events: k ? k.events : 0, matched: Object.keys(d).length, error: k ? k.error : null, d, c, bay }, 25);
+    send(res, 200, { source: k ? k.source : null, updated: Date.now(), events: k ? k.events : 0, matched: Object.keys(d).length, error: k ? k.error : null, d, c, bay, u }, 25);
   } catch (e) {
     send(res, 502, { error: String(e.message || e) }, 15);
   }

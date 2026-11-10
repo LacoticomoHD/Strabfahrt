@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseStopEvents, matchEvents, stopEventRequest } from '../server/trias.mjs';
+import { parseStopEvents, matchEvents, stopEventRequest, dedupeEvents, normBay } from '../server/trias.mjs';
 
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
 <trias:Trias xmlns:trias="http://www.vdv.de/trias" xmlns:siri="http://www.siri.org.uk/siri" version="1.1">
@@ -78,4 +78,47 @@ test('matchEvents bevorzugt bei doppelten Einträgen den mit Prognose', () => {
   ];
   const m = matchEvents(deps, events, 1000);
   assert.equal(m.get('T1').delay, 120);
+});
+
+test('normBay vereinheitlicht KVV- und DB-Schreibweisen', () => {
+  assert.equal(normBay('Gleis 1b'), '1B');
+  assert.equal(normBay('1B'), '1B');
+  assert.equal(normBay('Gleis 1(U)'), '1(U)');
+  assert.equal(normBay('1U.'), '1(U)');
+  assert.equal(normBay('Bstg. 3'), '3');
+  assert.equal(normBay(''), '');
+});
+
+const ev = (o) => ({ line: '2', ref: 'kvv:21002:E:H', origin: 'Wolfartsweier', dest: 'Siemensallee', planned: 5000, estimated: null, canceled: false, bay: '1', journey: '', ...o });
+
+test('dedupeEvents: gleicher Eintrag doppelt ergibt eine Einheit mit Prognose', () => {
+  const r = dedupeEvents([ev({ journey: 'j1' }), ev({ journey: 'j1', estimated: 5060 })]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].units, 1);
+  assert.equal(r[0].estimated, 5060);
+});
+
+test('dedupeEvents: gekoppelte Einheiten werden gezählt', () => {
+  const r = dedupeEvents([ev({ journey: 'j1' }), ev({ journey: 'j2', dest: 'Knielingen' })]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].units, 2);
+  assert.deepEqual(r[0].dests, ['Siemensallee', 'Knielingen']);
+});
+
+test('dedupeEvents: DB-Kopie fällt weg und reicht die Prognose weiter', () => {
+  const r = dedupeEvents([
+    ev({ line: 'S5', ref: 'kvv:22305:E:H', origin: 'Pforzheim Hbf', dest: 'Wörth Badepark', bay: '' }),
+    ev({ line: 'S5', ref: 'ddb:920S5:D:H', origin: 'Pforzheim Hbf', dest: 'Wörth Badepark', planned: 5060, estimated: 5180, bay: '4' }),
+  ]);
+  assert.equal(r.length, 1);
+  assert.equal(r[0].estimated, 5120);
+  assert.equal(r[0].bay, '4');
+});
+
+test('dedupeEvents: DB-Kurzläufer mit anderem Ziel bleibt erhalten', () => {
+  const r = dedupeEvents([
+    ev({ line: 'S5', ref: 'kvv:22305:E:H', origin: 'Pforzheim Hbf', dest: 'Wörth Badepark' }),
+    ev({ line: 'S5', ref: 'ddb:920S5:D:H', origin: 'Pforzheim Hbf', dest: 'Söllingen' }),
+  ]);
+  assert.equal(r.length, 2);
 });

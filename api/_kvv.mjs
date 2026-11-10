@@ -77,7 +77,7 @@ export async function kvvForStation(model, idx, deps, { only } = {}) {
     const d = byTrip.get(trip);
     const cur = map.get(trip);
     if ((d && isMainlineRail(d) && v.delay !== null) || !cur || (cur.delay === null && v.delay !== null)) {
-      map.set(trip, { ...v, bay: v.bay || (cur && cur.bay) || '' });
+      map.set(trip, { ...v, bay: v.bay || (cur && cur.bay) || '', units: Math.max(v.units || 1, (cur && cur.units) || 1) });
       used++;
     }
   }

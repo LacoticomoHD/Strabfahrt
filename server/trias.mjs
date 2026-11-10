@@ -58,6 +58,14 @@ const all = (xml, name) => {
   return out;
 };
 
+// Steig-Namen vereinheitlichen: KVV "Gleis 1b" / "Gleis 1(U)", DB "1B" / "1U.", Bus "Bstg. 3"
+export function normBay(s) {
+  let t = String(s || '').trim().replace(/^(Gleis|Bstg|Bussteig|Steig)\.?\s*/i, '').replace(/\s+/g, ' ').replace(/\.+$/, '');
+  let m = t.match(/^(\d+)\s*\(\s*([A-Za-z])\s*\)$/) || t.match(/^(\d+)\s*([A-Za-z])$/);
+  if (m) { const l = m[2].toUpperCase(); t = l === 'U' ? `${m[1]}(U)` : `${m[1]}${l}`; }
+  return t;
+}
+
 export function parseStopEvents(xml) {
   const err = text(xml, 'ErrorMessage') || text(xml, 'ErrorCondition');
   const events = [];
@@ -75,8 +83,10 @@ export function parseStopEvents(xml) {
       estimated: est ? Date.parse(est) / 1000 : null,
       canceled: /<(?:\w+:)?Cancelled>\s*true/i.test(r),
       journey: text(service, 'JourneyRef') || '',
+      ref: text(service, 'LineRef') || '',
+      origin: text(service, 'OriginText') || '',
       stop: text(call, 'StopPointRef') || '',
-      bay: text(call, 'EstimatedBay') || text(call, 'PlannedBay') || '',
+      bay: normBay(text(call, 'EstimatedBay') || text(call, 'PlannedBay') || ''),
     });
   }
   return { error: events.length ? null : err, events };
@@ -124,13 +134,69 @@ export function triasStopRef(model, idx) {
 /**
  * TRIAS-Abfahrten den Modell-Abfahrten zuordnen.
  * deps: model.departures(...) relativ zu ymd; dayStartUnix: Unix-Sekunden von 0:00 Berliner Zeit an ymd.
- * Rückgabe: Map trip -> { delay, canceled, bay }
+ * Rückgabe: Map trip -> { delay, canceled, bay, units } (units: gekoppelte Einheiten, 1 = einzeln)
  */
+const provider = (e) => String(e.ref || '').split(':')[0].toLowerCase();
+const normPlace = (s) => String(s || '').toLowerCase().replace(/\([^)]*\)/g, ' ').replace(/[^a-z0-9äöüß]+/g, ' ').trim();
+const samePlace = (a, b) => {
+  const x = normPlace(a); const y = normPlace(b);
+  return Boolean(x && y) && (x === y || x.startsWith(`${y} `) || y.startsWith(`${x} `));
+};
+
+/**
+ * Doppelte TRIAS-Einträge zusammenfassen.
+ * 1. Gleicher Eintrag mehrfach (mit und ohne Prognose): einer bleibt, Prognose gewinnt.
+ * 2. Gekoppelte Einheiten: gleiche Quelle, Linie, Planzeit und Steig, aber eigene Fahrt -> eine Abfahrt mit units = Anzahl.
+ * 3. DB-Kopie einer KVV-Fahrt (ddb:…): gleiche Linie, ±90 s, gleicher Start und gleiches Ziel -> fällt weg,
+ *    gibt aber fehlende Prognose oder Steig an den KVV-Eintrag ab.
+ */
+export function dedupeEvents(events) {
+  const sig = (e) => [provider(e), normLine(e.line), e.planned, e.bay, normPlace(e.origin), normPlace(e.dest)].join('|');
+  const uniq = [];
+  const bySig = new Map();
+  for (const e of events) {
+    const list = bySig.get(sig(e)) || [];
+    const hit = list.find((x) => !x.journey || !e.journey || x.journey === e.journey);
+    if (hit) { if (hit.estimated === null && e.estimated !== null) hit.estimated = e.estimated; hit.canceled = hit.canceled && e.canceled; continue; }
+    const c = { ...e, units: 1, dests: [e.dest] };
+    list.push(c); bySig.set(sig(e), list); uniq.push(c);
+  }
+  // Kopplung innerhalb einer Quelle
+  const groups = [];
+  for (const e of uniq) {
+    const g = groups.find((x) => provider(x) === provider(e) && normLine(x.line) === normLine(e.line) && x.planned === e.planned && x.bay && x.bay === e.bay);
+    if (!g) { groups.push(e); continue; }
+    g.units += 1;
+    if (!g.dests.some((d) => normPlace(d) === normPlace(e.dest))) g.dests.push(e.dest);
+    if (g.estimated === null && e.estimated !== null) g.estimated = e.estimated;
+    g.canceled = g.canceled && e.canceled;
+  }
+  // DB-Spiegelungen von KVV-Fahrten
+  const kvv = groups.filter((e) => provider(e) === 'kvv');
+  if (!kvv.length) return groups;
+  return groups.filter((e) => {
+    if (provider(e) !== 'ddb') return true;
+    let best = null; let bestD = 91;
+    for (const k of kvv) {
+      if (normLine(k.line) !== normLine(e.line)) continue;
+      const d = Math.abs(k.planned - e.planned);
+      if (d >= bestD) continue;
+      if (k.bay && e.bay && k.bay !== e.bay) continue;
+      if (!samePlace(k.origin, e.origin) || !samePlace(k.dest, e.dest)) continue;
+      best = k; bestD = d;
+    }
+    if (!best) return true;
+    if (best.estimated === null && e.estimated !== null) best.estimated = e.estimated + (best.planned - e.planned);
+    if (!best.bay && e.bay) best.bay = e.bay;
+    return false;
+  });
+}
+
 export function matchEvents(deps, events, dayStartUnix) {
   const out = new Map();
   const used = new Set();
-  // Manche Quellen liefern dieselbe Abfahrt doppelt (mit und ohne Prognose): Einträge mit Prognose zuerst zuordnen
-  const ordered = [...events].sort((a, b) => (a.estimated === null) - (b.estimated === null) || a.planned - b.planned);
+  // Doppelte zusammenfassen, dann Einträge mit Prognose zuerst zuordnen
+  const ordered = dedupeEvents(events).sort((a, b) => (a.estimated === null) - (b.estimated === null) || a.planned - b.planned);
   for (const e of ordered) {
     const want = normLine(e.line);
     let best = null;
@@ -142,7 +208,7 @@ export function matchEvents(deps, events, dayStartUnix) {
     }
     if (!best) continue;
     used.add(best.trip);
-    out.set(best.trip, { delay: e.estimated === null ? null : Math.round(e.estimated - e.planned), canceled: e.canceled, bay: e.bay });
+    out.set(best.trip, { delay: e.estimated === null ? null : Math.round(e.estimated - e.planned), canceled: e.canceled, bay: e.bay, units: e.units || 1 });
   }
   return out;
 }
