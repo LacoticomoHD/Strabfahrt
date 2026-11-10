@@ -707,6 +707,17 @@ function drawFrame() {
         ctx.fillStyle = c.fg;
         ctx.fillText(text, bx, v.y + 0.5);
       }
+      if (state.nums && v.trip.num) {
+        // Zug- oder Kursnummer unter dem Linienschild
+        const text = v.trip.num.slice(1);
+        ctx.font = 'bold 9.5px system-ui, sans-serif';
+        const nw = ctx.measureText(text).width + 7;
+        ctx.fillStyle = dark ? 'rgba(240,244,250,.92)' : 'rgba(20,26,36,.88)';
+        roundRect(v.x - nw / 2, v.y + 10, nw, 13, 4);
+        ctx.fill();
+        ctx.fillStyle = dark ? '#10161d' : '#ffffff';
+        ctx.fillText(text, v.x, v.y + 17);
+      }
     } else {
       ctx.beginPath();
       ctx.arc(v.x, v.y, zoom >= 12 ? 5 : 3.5, 0, Math.PI * 2);
@@ -891,6 +902,9 @@ $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if 
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
 $('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
+state.nums = load('strab.nums', false);
+$('nums').checked = state.nums;
+$('nums').addEventListener('change', (e) => { state.nums = e.target.checked; save('strab.nums', state.nums); needsDraw = true; });
 state.saver = load('strab.saver', typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 $('saver').checked = state.saver;
 $('saver').addEventListener('change', (e) => { state.saver = e.target.checked; save('strab.saver', state.saver); resizeCanvas(); needsDraw = true; });
