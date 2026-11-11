@@ -1,5 +1,20 @@
 [
   {
+    "id": "2026-11-12a",
+    "version": "3.2",
+    "date": "12.11.2026",
+    "title": "Abfahrtstafel aufgeräumt",
+    "neu": [],
+    "geaendert": [
+      "Tafel: erwartete Zeit groß, Abweichung und Planzeit klein darunter",
+      "Tafel: Knöpfe kompakter, Überschrift nicht mehr unter der Statusleiste des Handys"
+    ],
+    "behoben": [
+      "Tafel: Verspätung bzw. Verfrühung wurde vom Liniensymbol überdeckt"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-11b",
     "version": "3.1",
     "date": "11.11.2026",

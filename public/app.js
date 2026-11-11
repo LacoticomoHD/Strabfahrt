@@ -540,6 +540,20 @@ function depTime(d) {
   return el('span', { class: 'deptime' }, ...parts);
 }
 
+// Zeit für die Tafel: oben groß die erwartete Zeit, darunter klein Abweichung und Planzeit (passt in die schmale Spalte)
+function boardTime(d) {
+  const r = rtOf(d.trip);
+  if (r.canceled) return el('span', { class: 'btime' }, el('span', { class: 'big canc' }, hhmm(d.t)), el('span', { class: 'small' }, 'fällt aus'));
+  if (r.delay === undefined || r.delay === null) return el('span', { class: 'btime' }, el('span', { class: 'big' }, hhmm(d.t)));
+  const c = delayColors(r.delay);
+  const b = el('span', { class: 'dly' }, Math.abs(r.delay) < 30 ? `● ${fmtDelayExact(r.delay)}` : fmtDelayExact(r.delay));
+  b.style.background = c.bg;
+  b.style.color = c.fg;
+  const small = el('span', { class: 'small' }, b);
+  if (Math.abs(r.delay) >= 60) small.append(' ', el('s', {}, hhmm(d.t)));
+  return el('span', { class: 'btime' }, el('span', { class: 'big' }, hhmm(d.t + (Math.abs(r.delay) >= 60 ? r.delay : 0))), small);
+}
+
 // Restzeit-Text mit Echtzeit
 function depWhen(d, base, now, prefix = 'in ') {
   const r = rtOf(d.trip);
@@ -2098,7 +2112,7 @@ async function renderBoard() {
     if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
     for (const d of list) {
       rows.append(el('div', { class: 'brow' },
-        el('span', { class: 'bt' }, depTime(d)),
+        el('span', { class: 'bt' }, boardTime(d)),
         pill(d.line, routeStyle([d.line, d.type, d.color, d.textColor])),
         el('span', { class: 'bh2' }, cleanHeadsign(d.line, d.headsign), unitsBadge(d.trip), isDetour(d.headsign) ? ' ⚠' : '', accessible(d.flags) ? ' ♿' : ''),
         el('span', { class: 'bp' }, d.platform ? `Steig ${d.platform}` : ''),
