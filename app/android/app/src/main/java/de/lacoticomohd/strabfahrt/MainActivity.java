@@ -77,6 +77,9 @@ public class MainActivity extends BridgeActivity {
         WebView w = getBridge().getWebView();
         w.postDelayed(() -> w.evaluateJavascript("window.strabResume && window.strabResume()", null), 300);
         if (System.currentTimeMillis() - lastUpdateCheck > 30 * 60 * 1000) checkForUpdate(false);
+        // Widget bei jedem Öffnen der App direkt neu zeichnen und laden. Manche Hersteller (z. B. Xiaomi) stellen
+        // dem Widget sonst keine Rundsendungen zu, solange "Autostart" für die App aus ist.
+        StrabStore.refreshNow(this);
     }
 
     private int myVersionCode() {

@@ -1556,6 +1556,9 @@ async function syncNative() {
   if (!nat || !state.stops) return;
   const byId = new Map(state.stops.map((st, i) => [st[0], i]));
   const favs = state.favorites.filter((id) => byId.has(id)).map((id) => ({ id, name: state.stops[byId.get(id)][1] }));
+  // Favoriten sofort ans Widget geben, die Linien (für Störungsmeldungen) folgen, sobald berechnet
+  // '' = Linien unverändert lassen
+  try { nat.setFavorites(JSON.stringify(favs), '', state.rtBase || ''); } catch (e) { console.warn(e); }
   const lines = new Set();
   for (const f of favs.slice(0, 8)) for (const d of await departuresFor(byId.get(f.id), 120)) lines.add(d.line);
   try { nat.setFavorites(JSON.stringify(favs), JSON.stringify([...lines]), state.rtBase || ''); } catch (e) { console.warn(e); }

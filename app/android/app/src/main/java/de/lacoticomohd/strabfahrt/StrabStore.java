@@ -33,7 +33,7 @@ final class StrabStore {
     static void save(Context c, String favoritesJson, String linesJson, String base) {
         SharedPreferences.Editor e = prefs(c).edit();
         if (favoritesJson != null) e.putString("favorites", favoritesJson);
-        if (linesJson != null) e.putString("lines", linesJson);
+        if (linesJson != null && !linesJson.isEmpty()) e.putString("lines", linesJson); // "" = unverändert
         if (base != null && base.startsWith("https://")) e.putString("base", base);
         e.apply();
     }
