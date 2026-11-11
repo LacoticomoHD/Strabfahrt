@@ -334,3 +334,20 @@ tr.goalrow .goal { opacity: 1; }
   body.settings-open #tools { display: none; }
   #bar { right: auto; }
 }
+
+/* Fenster-Inhalte: Hauptsache groß, Nebenaktionen als leise Textknöpfe, Zusatzinfos eingeklappt */
+.actions { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 2px 0 8px; }
+.ghost { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 13px; color: var(--accent); cursor: pointer; text-decoration: none; }
+.ghost:hover { text-decoration: underline; }
+a.ghost { display: inline-block; }
+details.more { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.more > summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 600; list-style: none; }
+details.more > summary::before { content: "▸ "; }
+details.more[open] > summary::before { content: "▾ "; }
+details.more > summary::-webkit-details-marker { display: none; }
+.bigbtn { display: block; width: 100%; margin: 8px 0 6px; font: inherit; font-weight: 600; padding: 10px; border: 0; border-radius: 10px; background: var(--accent); color: var(--bg); cursor: pointer; }
+.bigbtn:hover { filter: brightness(1.08); }
+.paging { justify-content: space-between; }
+.rowbtns .chip { margin-left: 6px; }
+.paging[hidden], .actions[hidden] { display: none; }
+.target[hidden], .chips[hidden] { display: none; }

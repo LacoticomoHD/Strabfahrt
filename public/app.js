@@ -1069,8 +1069,12 @@ map.on('click', (e) => {
 
 // ---------- Panels ----------
 
+let panelKey = '';
 function showPanel() {
   closeSettings();
+  // Neuer Inhalt (anderes Fahrzeug, andere Haltestelle, andere Liste): oben anfangen statt an alter Scrollposition
+  const key = `${state.list}|${state.selected ? state.selected.id : ''}|${state.station}`;
+  if (key !== panelKey) { $('panel').scrollTop = 0; panelKey = key; }
   $('panel').hidden = false;
   document.body.classList.add('panel-open');
 }
@@ -1221,11 +1225,11 @@ function renderVehiclePanel() {
   const wc = (trip.flags || 0) & 3;
   facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
   const bk = ((trip.flags || 0) >> 2) & 3;
-  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : 'Fahrrad: keine Angabe');
+  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : '');
   const info = facts.filter(Boolean).join(' · ');
   if (info) body.append(el('div', { class: 'sub' }, info));
 
-  const follow = el('button', { class: 'chip', type: 'button', 'aria-pressed': String(state.follow === trip.id) }, state.follow === trip.id ? 'Folgen beenden' : 'Fahrzeug folgen');
+  const follow = el('button', { class: state.follow === trip.id ? 'chip' : 'chip go', type: 'button', 'aria-pressed': String(state.follow === trip.id) }, state.follow === trip.id ? 'Folgen beenden' : '➤ Fahrzeug folgen');
   follow.addEventListener('click', () => {
     state.follow = state.follow === trip.id ? null : trip.id;
     if (state.follow && map.getZoom() < 15) map.setZoom(15, { animate: false });
@@ -1453,7 +1457,14 @@ async function renderStation() {
   // Fußweg zur Haltestelle in Google Maps (Startpunkt wählt Google Maps selbst, die App schickt keinen Standort mit)
   const walk = el('a', { class: 'chip', href: `https://www.google.com/maps/dir/?api=1&destination=${s[2]},${s[3]}&travelmode=walking`, target: '_blank', rel: 'noopener' }, '🚶 Hinlaufen');
   walk.title = 'Fußweg in Google Maps öffnen';
-  body.append(el('div', { class: 'chips' }, share, board, walk));
+  // Nebenaktionen klein und unauffällig, die Abfahrten sind die Hauptsache
+  for (const b of [share, board]) b.className = 'ghost';
+  walk.className = 'ghost';
+  board.textContent = '▦ Tafel';
+  share.textContent = '🔗 Link';
+  body.append(el('div', { class: 'actions' }, board, walk, share));
+  // Zusatzinfos eingeklappt unter den Abfahrten
+  const more = el('details', { class: 'more' }, el('summary', {}, 'Mehr zur Haltestelle'));
   const near = nearbyStations(index);
   if (near.length) {
     const row = el('div', { class: 'chips' }, el('span', { class: 'sub' }, 'Umsteigen in der Nähe:'));
@@ -1462,13 +1473,13 @@ async function renderStation() {
       b.addEventListener('click', () => openStation(n.i));
       row.append(b);
     }
-    body.append(row);
+    more.append(row);
   }
   const members = [index, ...(state.children.get(index) || [])];
   const yes = members.filter((m) => state.stops[m][7] === 1).length;
   const no = members.filter((m) => state.stops[m][7] === 2).length;
   body.append(el('div', { class: 'sub' }, `Abfahrten ab ${hhmm(state.sim)}, ${liveNote()}${kvvUsed ? ` · Live-Quelle: ${kvvUsed}` : ''}`));
-  body.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
+  more.append(el('div', { class: 'sub' }, yes + no > 0 ? `♿ Stufenfreiheit laut Feed: ${yes} Steig${yes === 1 ? '' : 'e'} ja, ${no} nein, übrige ohne Angabe` : '♿ Stufenfreiheit: keine Angabe im Feed'));
 
   const platforms = [...new Set(list.map((d) => d.platform).filter(Boolean))].sort();
   if (platforms.length > 1) {
@@ -1500,7 +1511,7 @@ async function renderStation() {
     // Pünktlichkeit der Linien an dieser Haltestelle (aus der laufenden Statistik)
     const lines = [...new Set(shown.map((d) => d.line))];
     const punct = el('div', { class: 'block punct' });
-    body.append(punct);
+    more.append(punct);
     lineStats().then((st) => {
       if (!st || state.station !== index) return;
       const by = new Map(st.lines.map((l) => [l.line, l]));
@@ -1515,6 +1526,7 @@ async function renderStation() {
       }
     });
   }
+  body.append(more);
   showPanel();
 }
 
@@ -2327,8 +2339,23 @@ function renderRoutePanel(autorun = false) {
   link.addEventListener('click', () => copyCurrentLink(link));
   extras.append(link);
 
-  body.append(fromField, toField, el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput),
-    el('div', { class: 'chips' }, here, swap, go), el('div', { class: 'chips' }, earlier, later, profile), el('div', { class: 'chips' }, lastBtn, accBtn), status, results, chart, extras);
+  // Aufbau: Start/Ziel, Zeit, ein großer Suchknopf. Blättern unter den Ergebnissen, Selteneres eingeklappt.
+  here.textContent = '📍 Mein Standort';
+  here.className = 'ghost';
+  swap.textContent = '⇅ Tauschen';
+  swap.className = 'ghost';
+  accBtn.textContent = '♿ barrierefrei';
+  go.className = 'bigbtn';
+  go.textContent = 'Verbindungen suchen';
+  for (const b of [lastBtn, profile, ...extras.children]) b.className = 'chip';
+  const paging = el('div', { class: 'chips paging' }, earlier, later);
+  const moreR = el('details', { class: 'more' }, el('summary', {}, 'Mehr'), el('div', { class: 'chips' }, lastBtn, profile, ...extras.children), chart);
+  body.append(fromField, el('div', { class: 'actions' }, here, swap), toField,
+    el('div', { class: 'rowbtns' }, 'Abfahrt ab ', timeInput, ' ', accBtn), go, status, results, paging, moreR);
+  // Blättern erst zeigen, wenn es Ergebnisse gibt
+  const syncPaging = () => { paging.hidden = !state.journeys.length; };
+  syncPaging();
+  new MutationObserver(syncPaging).observe(results, { childList: true });
   if (state.journeys.length) renderJourneys(results);
   showPanel();
   if (autorun) search();
