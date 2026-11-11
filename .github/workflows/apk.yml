@@ -82,8 +82,9 @@ jobs:
         working-directory: app/android
         env:
           STRAB_VERSION_CODE: ${{ github.run_number }}
-          STRAB_VERSION_NAME: 2.${{ github.run_number }}
         run: |
+          # Versionsname: Version aus dem Changelog plus Baunummer, z. B. 3.1.62
+          export STRAB_VERSION_NAME="$(node -p "require('../../public/changelog.json')[0].version").${{ github.run_number }}"
           echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > "$RUNNER_TEMP/release.jks"
           printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=strabfahrt\nkeyPassword=%s\n' \
             "$RUNNER_TEMP/release.jks" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" > "$RUNNER_TEMP/keystore.properties"
@@ -101,7 +102,8 @@ jobs:
         run: |
           gh release view app >/dev/null 2>&1 || gh release create app --title "STRABFAHRT Android-App" --notes "Immer die neueste APK. Download: strabfahrt.apk"
           CODE=$(( ${{ github.run_number }} + 100 ))
-          printf '{"versionCode": %s, "versionName": "2.%s", "fp": "%s", "built": "%s", "url": "https://github.com/%s/releases/download/app/strabfahrt.apk?v=%s"}\n' \
-            "$CODE" "${{ github.run_number }}" "$FP" "$(date -u +%Y-%m-%dT%H:%MZ)" "${{ github.repository }}" "$CODE" > "$RUNNER_TEMP/version.json"
+          VER="$(node -p "require('./public/changelog.json')[0].version").${{ github.run_number }}"
+          printf '{"versionCode": %s, "versionName": "%s", "fp": "%s", "built": "%s", "url": "https://github.com/%s/releases/download/app/strabfahrt.apk?v=%s"}\n' \
+            "$CODE" "$VER" "$FP" "$(date -u +%Y-%m-%dT%H:%MZ)" "${{ github.repository }}" "$CODE" > "$RUNNER_TEMP/version.json"
           gh release upload app "$RUNNER_TEMP/strabfahrt.apk" --clobber
           gh release upload app "$RUNNER_TEMP/version.json" --clobber

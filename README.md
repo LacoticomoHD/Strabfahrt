@@ -212,6 +212,6 @@ Der Client fragt `GET /api/delays` alle 20 Sekunden ab, sobald `/api/meta` den W
 
 ## Was ist neu (Changelog)
 
-`public/changelog.json` enthält die Änderungen für die Nutzer, neueste zuerst. Jeder Eintrag hat eine eindeutige `id`, `date`, `title` und die Listen `neu`, `geaendert`, `behoben`, `entfernt` (leere Listen werden nicht angezeigt). Die App merkt sich die zuletzt gesehene `id` und zeigt nach einem Update beim ersten Öffnen alle neueren Einträge. Neue Nutzer sehen stattdessen die Anleitung. Über ⓘ → „Was ist neu?“ ist die ganze Liste jederzeit erreichbar.
+`public/changelog.json` enthält die Änderungen für die Nutzer, neueste zuerst. Jeder Eintrag hat eine eindeutige `id`, eine `version` (z. B. "3.1", steht oben im Fenster und im Android-Versionsnamen 3.1.<Baunummer>), `date`, `title` und die Listen `neu`, `geaendert`, `behoben`, `entfernt` (leere Listen werden nicht angezeigt). Die App merkt sich die zuletzt gesehene `id` und zeigt nach einem Update beim ersten Öffnen alle neueren Einträge. Neue Nutzer sehen stattdessen die Anleitung. Über ⓘ → „Was ist neu?“ ist die ganze Liste jederzeit erreichbar.
 
 Bei jeder sichtbaren Änderung einen neuen Eintrag oben anfügen (neue `id`), sonst sieht niemand den Hinweis.

@@ -1,6 +1,7 @@
 [
   {
     "id": "2026-11-11b",
+    "version": "3.1",
     "date": "11.11.2026",
     "title": "Neuer Aufbau und mehr Verbindungen",
     "neu": [
@@ -27,6 +28,7 @@
   },
   {
     "id": "2026-11-10",
+    "version": "3.0",
     "date": "10.11.2026",
     "title": "Ganzes KVV-Netz und eigene Adresse",
     "neu": [

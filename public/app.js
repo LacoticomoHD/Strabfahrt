@@ -1012,8 +1012,10 @@ const NEWS_SECTIONS = [['neu', '✨ Neu'], ['geaendert', '🔧 Geändert'], ['be
 function showNews(entries) {
   const body = $('news-body');
   body.replaceChildren();
+  // Überschrift mit der neuesten Version
+  $('news-h').textContent = changelog.length && changelog[0].version ? `Was ist neu? (Version ${changelog[0].version})` : 'Was ist neu?';
   for (const e of entries) {
-    body.append(el('h3', {}, e.title || 'Update', el('span', { class: 'ndate' }, e.date || '')));
+    body.append(el('h3', {}, e.version ? `Version ${e.version}: ` : '', e.title || 'Update', el('span', { class: 'ndate' }, e.date || '')));
     for (const [key, label] of NEWS_SECTIONS) {
       if (!e[key] || !e[key].length) continue;
       body.append(el('h4', {}, label), el('ul', {}, ...e[key].map((t) => el('li', {}, t))));
