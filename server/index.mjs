@@ -48,7 +48,7 @@ const SECURITY_HEADERS = {
   'X-Frame-Options': 'SAMEORIGIN',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "img-src 'self' data: https://*.tile.openstreetmap.org https://*.tiles.openrailwaymap.org",
+    "img-src 'self' data: https://*.tile.openstreetmap.org https://sgx.geodatenzentrum.de https://*.tiles.openrailwaymap.org",
     "style-src 'self' 'unsafe-inline'",
     "script-src 'self'",
     "connect-src 'self' https://nominatim.openstreetmap.org",

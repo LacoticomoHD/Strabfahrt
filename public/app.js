@@ -237,9 +237,26 @@ function toggleLocate() {
   }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
 }
 map.on('dragstart', () => { if (loc.follow) { loc.follow = false; locState('on'); } });
-if (TILES) L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
-}).addTo(map);
+// Hintergrundkarten: basemap.de (grau oder farbig) oder Standard-OpenStreetMap
+const OSM_ATTR = '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende';
+const BKG_ATTR = '© <a href="https://basemap.de">basemap.de</a> / BKG, Daten: © GeoBasis-DE';
+const bkg = (style) => () => L.tileLayer(`https://sgx.geodatenzentrum.de/wmts_basemapde/tile/1.0.0/de_basemapde_web_raster_${style}/default/GLOBAL_WEBMERCATOR/{z}/{y}/{x}.png`, {
+  maxZoom: 19, maxNativeZoom: 18, className: 'base-tiles', attribution: BKG_ATTR,
+});
+const BASEMAPS = {
+  light: bkg('grau'), // amtliche Grundkarte des BKG, schlicht in Grau, frei ohne Schlüssel
+  color: bkg('farbe'),
+  osm: () => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, subdomains: 'abc', className: 'base-tiles', attribution: OSM_ATTR }),
+};
+let baseLayer = null;
+function setBasemap(name) {
+  if (!TILES) return;
+  if (!BASEMAPS[name]) name = 'light';
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = BASEMAPS[name]().addTo(map);
+  baseLayer.bringToBack();
+}
+setBasemap(load('strab.basemap', 'light'));
 
 const overlays = {
   infra: L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', { maxZoom: 19, subdomains: 'abc', attribution: '© <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>' }),
@@ -970,6 +987,20 @@ $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if 
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
 $('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
+$('basemap').value = load('strab.basemap', 'light');
+$('basemap').closest('label').hidden = !TILES;
+$('basemap').addEventListener('change', (e) => { save('strab.basemap', e.target.value); setBasemap(e.target.value); });
+
+// Info-Fenster: beim ersten Besuch automatisch, sonst über ⓘ
+const about = $('about');
+const closeAbout = () => { if (about.open) about.close(); save('strab.seenIntro', true); };
+$('btn-info').addEventListener('click', () => { if (!about.open) about.showModal(); });
+$('about-close').addEventListener('click', closeAbout);
+$('about-ok').addEventListener('click', closeAbout);
+about.addEventListener('close', () => save('strab.seenIntro', true));
+about.addEventListener('click', (e) => { if (e.target === about) closeAbout(); }); // Klick neben das Fenster
+if (!load('strab.seenIntro', false) && !location.hash.includes('tafel')) setTimeout(() => { if (!about.open) about.showModal(); }, 600);
+
 state.stopLabels = load('strab.stopLabels', true);
 $('stoplabels').checked = state.stopLabels;
 $('stoplabels').addEventListener('change', (e) => { state.stopLabels = e.target.checked; save('strab.stopLabels', state.stopLabels); needsDraw = true; });
@@ -2545,7 +2576,7 @@ function rtGet(pathName) {
 
 function setNote() {
   if (STATIC && !TILES) return;
-  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Gebiet: KVV-Netz (gestrichelter Rahmen). Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
+  $('note').textContent = `Positionen nach Fahrplan${state.rt.active ? ', verschoben um Live-Verspätungen, wo verfügbar' : ' (Soll), keine Echtzeit'}. Gebiet: KVV-Netz (gestrichelter Rahmen). Daten: ${state.attribution}. Karte: basemap.de / BKG oder © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
 }
 
 function updateLive() {
@@ -2670,13 +2701,13 @@ $('btn-theme').addEventListener('click', () => {
 
 if (window.innerWidth < 900) $('bar').classList.add('collapsed');
 $('collapse').setAttribute('aria-expanded', String(!$('bar').classList.contains('collapsed')));
-$('collapse').textContent = $('bar').classList.contains('collapsed') ? 'Optionen ▸' : 'Optionen ▾';
+
 // Höhe der unteren Leiste als CSS-Variable, damit Kartenhinweise (OSM, Info & Datenschutz) nicht verdeckt werden
 if (window.ResizeObserver) new ResizeObserver(() => document.documentElement.style.setProperty('--bar-h', `${$('bar').offsetHeight}px`)).observe($('bar'));
 $('collapse').addEventListener('click', () => {
   const c = $('bar').classList.toggle('collapsed');
   $('collapse').setAttribute('aria-expanded', String(!c));
-  $('collapse').textContent = c ? 'Optionen ▸' : 'Optionen ▾';
+
 });
 
 // ---------- Suche ----------
@@ -2796,7 +2827,7 @@ async function init() {
   });
 
   state.attribution = (meta.feeds && meta.feeds.length ? meta.feeds.map((f) => f.attribution) : ['KVV (CC0)']).join('; ');
-  if (!(STATIC && !TILES)) $('note').textContent = `Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution}. Karte: © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
+  if (!(STATIC && !TILES)) $('note').textContent = `Positionen nach Fahrplan (Soll), keine Echtzeit. Daten: ${state.attribution}. Karte: basemap.de / BKG oder © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.`;
   if (STATIC && !TILES) {
     document.body.classList.add('static');
     const groups = [[], [], []];
