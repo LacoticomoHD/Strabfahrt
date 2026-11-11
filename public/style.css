@@ -29,6 +29,8 @@
 :root[data-theme="dark"] .base-tiles { filter: invert(1) hue-rotate(180deg) brightness(.95) contrast(.9); }
 :root[data-theme="dark"] #map { background: #1d232c; }
 * { box-sizing: border-box; }
+/* hidden gilt immer, auch wenn eine Klasse display setzt (sonst bleiben ausgeblendete Leisten sichtbar) */
+[hidden] { display: none !important; }
 html, body { height: 100%; margin: 0; font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--fg); }
 #map { position: fixed; inset: 0; background: #e8ecef; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
