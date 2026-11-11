@@ -23,17 +23,18 @@
       <input id="search" type="search" placeholder="Haltestelle oder Zugnummer suchen" autocomplete="off" spellcheck="false">
       <ul id="results" hidden></ul>
     </div>
-    <nav id="tools" aria-label="Werkzeuge">
-      <button id="btn-favs" type="button" aria-label="Favoriten">★<span>Favoriten</span></button>
-      <button id="btn-locate" type="button" aria-label="Mein Standort" aria-pressed="false" title="Mein Standort: 1× tippen zeigt und folgt, nochmal tippen beendet">➤<span>Standort</span></button>
-      <button id="btn-nearby" type="button" aria-label="In der Nähe">◎<span>Nähe</span></button>
-      <button id="btn-route" class="primary" type="button" aria-label="Verbindung suchen">⇄<span>Route</span></button>
-      <button id="btn-lines" class="minor" type="button" aria-label="Linien filtern" title="Linien filtern">☰</button>
-      <button id="btn-theme" class="minor" type="button" aria-label="Dunkelmodus" title="Dunkelmodus" aria-pressed="false">☾</button>
-      <button id="btn-info" class="minor" type="button" aria-label="Info zur App" title="Info zur App">ⓘ</button>
-      <button id="btn-install" type="button" aria-label="App installieren" hidden>⤓<span>Installieren</span></button>
-    </nav>
+    <button id="btn-route" class="primary" type="button" aria-label="Verbindung suchen">⇄<span>Route</span></button>
   </header>
+
+  <!-- Kartenwerkzeuge: einheitliche Symbol-Knöpfe am rechten Rand -->
+  <nav id="tools" aria-label="Werkzeuge">
+    <button id="btn-favs" type="button" aria-label="Favoriten" title="Favoriten">★</button>
+    <button id="btn-nearby" type="button" aria-label="In der Nähe" title="Haltestellen in der Nähe">◎</button>
+    <button id="btn-locate" type="button" aria-label="Mein Standort" aria-pressed="false" title="Mein Standort: 1× tippen zeigt und folgt, nochmal tippen beendet">➤</button>
+    <button id="btn-lines" type="button" aria-label="Linien filtern" title="Linien filtern">☰</button>
+    <button id="collapse" type="button" aria-label="Optionen" title="Optionen" aria-expanded="false">⚙</button>
+    <button id="btn-install" type="button" aria-label="App installieren" title="App installieren" hidden>⤓</button>
+  </nav>
 
   <div id="legend" hidden></div>
 
@@ -63,12 +64,23 @@
     <p id="notice" role="status" hidden></p>
     <div class="row">
       <span id="clock" aria-label="Simulierte Uhrzeit">--:--:--</span>
-      <button id="now" type="button" title="Zurück zur aktuellen Uhrzeit">Jetzt</button>
-      <span id="count" aria-live="off"></span>
+      <button id="now" type="button" title="Zurück zur aktuellen Uhrzeit" hidden>Jetzt</button>
       <span id="live" class="live" hidden></span>
-      <button id="collapse" type="button" aria-label="Optionen" title="Optionen" aria-expanded="true">⚙</button>
+      <span id="count" aria-live="off"></span>
+      <button id="btn-info" type="button" aria-label="Info zur App" title="Info zur App">ⓘ</button>
     </div>
+  </footer>
+
+  <aside id="settings" hidden aria-labelledby="settings-h">
+    <button id="settings-close" type="button" aria-label="Schließen">×</button>
+    <h2 id="settings-h">Optionen</h2>
     <div id="options">
+      <div class="group wide">
+        <span class="gt">Lage im Netz</span>
+        <button id="btn-detours" type="button" class="chip">⚠ Umleitungen heute</button>
+        <button id="btn-alerts" type="button" class="chip" hidden>📢 Meldungen</button>
+        <button id="btn-stats" type="button" class="chip" hidden>⏱ Pünktlichkeit</button>
+      </div>
       <div class="group wide">
         <span class="gt">Zeitreise: andere Uhrzeit oder Zeitraffer</span>
         <button id="play" type="button" aria-label="Pause">❚❚</button>
@@ -104,6 +116,7 @@
         <span class="gt">Anzeige</span>
         <label title="Zeigt einen Schweif hinter den Fahrzeugen"><input type="checkbox" id="trails"> Spuren</label>
         <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
+        <button id="btn-theme" type="button" class="chip" aria-pressed="false">☾ Dunkelmodus</button>
         <label title="Hintergrundkarte">Karte <select id="basemap"><option value="light">Schlicht (grau)</option><option value="color">basemap.de farbig</option><option value="osm">OpenStreetMap</option></select></label>
         <label title="Namen der Haltestellen ab Zoomstufe 15 einblenden"><input type="checkbox" id="stoplabels"> Haltestellennamen</label>
         <label title="Zeigt unter jedem Fahrzeug die Zug- oder Kursnummer, soweit der Fahrplan eine nennt (ab Zoomstufe 14)"><input type="checkbox" id="nums"> Zug-/Kursnummern</label>
@@ -117,12 +130,9 @@
         <label id="notify-wrap" hidden title="Prüft alle 15 Minuten, ob es Störungen auf den Linien deiner Favoriten gibt"><input type="checkbox" id="notify"> 🔔 Störungen meiner Favoriten melden</label>
         <label title="Wie früh die 🔔-Erinnerung kommt">🔔 Erinnern <select id="lead"><option value="2">2 Min.</option><option value="5">5 Min.</option><option value="10">10 Min.</option><option value="15">15 Min.</option></select> vorher</label>
         <label title="Weniger Bilder pro Sekunde und geringere Auflösung, schont den Akku"><input type="checkbox" id="saver"> Akkusparmodus</label>
-        <button id="btn-detours" type="button" class="chip">⚠ Umleitungen heute</button>
-        <button id="btn-alerts" type="button" class="chip" hidden>📢 Meldungen</button>
-        <button id="btn-stats" type="button" class="chip" hidden>⏱ Pünktlichkeit</button>
       </div>
     </div>
-  </footer>
+  </aside>
 
   <script src="/vendor/leaflet/leaflet.js"></script>
   <script src="/vendor/qrcode/qrcode.js"></script>

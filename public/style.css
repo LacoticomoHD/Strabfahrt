@@ -97,11 +97,6 @@ label { white-space: nowrap; }
 }
 
 /* Werkzeuge */
-#tools { display: flex; gap: 6px; pointer-events: auto; }
-#tools button { font: inherit; padding: 7px 10px; border: 0; border-radius: 8px; background: var(--bg); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; }
-#tools button span { margin-left: 5px; }
-#tools button[hidden] { display: none; }
-#tools button[aria-pressed="true"] { background: var(--accent); color: var(--bg); }
 #search { background: var(--bg); color: var(--fg); }
 #results li { color: var(--fg); }
 #top h1 { color: var(--fg); }
@@ -114,15 +109,8 @@ label { white-space: nowrap; }
 .linegrid { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .linebtn { border: 2px solid transparent; background: none; padding: 2px; border-radius: 8px; cursor: pointer; }
 .linebtn[aria-pressed="false"] { opacity: .3; border-color: var(--line); }
-#collapse { margin-left: auto; }
-#bar.collapsed #options { display: none; }
 
 @media (max-width: 700px) {
-  #top { flex-wrap: wrap; }
-  #searchbox { flex: 1 1 100%; order: 1; }
-  #tools { order: 0; width: 100%; justify-content: space-between; }
-  #tools button { flex: 1; padding: 8px 6px; }
-  #tools button span { display: none; }
   #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: 55vh; border-radius: 14px 14px 0 0; padding-bottom: 18px; }
   body.panel-open #bar { display: none; }
   body.panel-open .leaflet-bottom { display: none; }
@@ -190,14 +178,10 @@ body.board-open #bar, body.board-open #top, body.board-open #panel, body.board-o
 .cm { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 
 /* Optionen */
-#options { margin-top: 6px; display: grid; gap: 8px 22px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); max-width: 820px; }
 #options .group { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; align-content: flex-start; }
 #options .gt { width: 100%; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 #options .wide { grid-column: 1 / -1; margin: 0; }
 #bar .chip { border: 1px solid var(--line); background: var(--soft); color: var(--fg); border-radius: 999px; padding: 2px 10px; }
-@media (max-width: 700px) {
-  #options { max-height: 42vh; overflow: auto; }
-}
 
 /* Mehrfach-Tafel, QR */
 .bcols.multi { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 8px 28px; }
@@ -281,11 +265,6 @@ tr.goalrow .goal { opacity: 1; }
 .xfer.fc { font-size: 13.5px; margin: 6px 0 4px; }
 .units { font-size: .8em; font-weight: 700; opacity: .75; white-space: nowrap; }
 
-/* Rangfolge der Knöpfe: Route hervorgehoben, Nebensachen nur als Symbol */
-#tools button.primary { background: var(--accent); color: var(--bg); font-weight: 600; }
-#tools button.minor { padding: 7px 9px; color: var(--muted); }
-#tools button.minor[aria-pressed="true"] { color: var(--bg); }
-#collapse { font-size: 18px; line-height: 1; padding: 3px 9px !important; }
 
 /* Info-Fenster */
 #about { max-width: 420px; width: calc(100% - 32px); border: 0; border-radius: 12px; padding: 18px 20px 16px; background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
@@ -297,3 +276,61 @@ tr.goalrow .goal { opacity: 1; }
 #about a { color: var(--accent); }
 #about-close { position: absolute; top: 8px; right: 10px; border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted); }
 #about-ok { margin-top: 14px; width: 100%; font: inherit; font-weight: 600; padding: 9px; border: 0; border-radius: 8px; background: var(--accent); color: var(--bg); cursor: pointer; }
+
+/* ================= Aufbau: Hauptaktionen oben, Werkzeuge rechts, Status unten, Optionen als Fenster ================= */
+/* Oben: Marke, Suche und Route (wichtigste Aktionen) */
+#top { align-items: center; }
+#top h1 { padding: 8px 12px; font-size: 14px; }
+#searchbox { flex: 0 1 380px; }
+#search { padding: 10px 14px; border-radius: 10px; font-size: 15px; }
+#btn-route { flex: 0 0 auto; font: inherit; font-weight: 600; padding: 9px 14px; border: 0; border-radius: 10px; background: var(--accent); color: var(--bg); box-shadow: var(--shadow); cursor: pointer; white-space: nowrap; }
+#btn-route span { margin-left: 6px; }
+#btn-route[aria-pressed="true"] { outline: 3px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+
+/* Rechts: Kartenwerkzeuge, alle gleich groß, nur Symbol (Bezeichnung im Tooltip) */
+#tools { position: fixed; z-index: 1000; right: calc(10px + var(--sar)); top: calc(66px + var(--sat)); display: flex; flex-direction: column; gap: 8px; }
+#tools button { width: 42px; height: 42px; display: grid; place-items: center; font: inherit; font-size: 18px; line-height: 1; padding: 0; border: 0; border-radius: 50%; background: var(--bg); color: var(--fg); box-shadow: var(--shadow); cursor: pointer; }
+#tools button:hover { background: var(--hover); }
+#tools button[hidden] { display: none; }
+#tools button[aria-pressed="true"], #tools button[aria-expanded="true"] { background: var(--accent); color: var(--bg); }
+#btn-favs { color: #e0a800; }
+/* Fenster rechts offen (PC): Werkzeuge rücken links daneben */
+@media (min-width: 701px) {
+  body.panel-open #tools, body.settings-open #tools { right: calc(372px + var(--sar)); }
+}
+
+/* Unten links: schmale Statuszeile */
+#bar { padding: 6px 8px 6px 12px; border-radius: 999px; }
+#bar .row { gap: 10px; flex-wrap: nowrap; }
+#bar #notice { border-radius: 8px; }
+#bar:has(#notice:not([hidden])) { border-radius: 12px; }
+#clock { min-width: 0; }
+#count { white-space: nowrap; }
+#btn-info { border: 0 !important; background: none !important; color: var(--muted) !important; font-size: 16px; padding: 2px 4px !important; }
+#now { font-weight: 600; color: var(--accent) !important; }
+
+/* Optionen: eigenes Fenster wie die anderen, rechts (PC) bzw. unten (Handy) */
+#settings { position: fixed; z-index: 1001; top: calc(66px + var(--sat)); right: calc(10px + var(--sar)); width: 350px; max-height: calc(100vh - 140px - var(--sat) - var(--sab)); overflow: auto; background: var(--bg); color: var(--fg); border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px 14px; }
+#settings h2 { margin: 0 24px 8px 0; font-size: 16px; }
+#settings-close { position: absolute; top: 6px; right: 8px; border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted); }
+#options { display: flex; flex-direction: column; gap: 14px; }
+#options .group { gap: 6px 14px; }
+#options .gt { margin-bottom: 2px; }
+#settings button, #settings select, #settings input[type="datetime-local"] { font: inherit; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--soft); color: var(--fg); }
+#settings button { cursor: pointer; }
+#settings .chip { border-radius: 999px; padding: 3px 11px; }
+#settings .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+#options .group.wide #when { flex: 1 1 160px; }
+
+@media (max-width: 700px) {
+  #top { flex-wrap: nowrap; gap: 8px; }
+  #searchbox { flex: 1 1 auto; }
+  #btn-route { padding: 9px 12px; }
+  #btn-route span { display: none; }
+  #tools { top: calc(62px + var(--sat)); gap: 6px; }
+  #tools button { width: 40px; height: 40px; }
+  #settings { top: auto; left: 0; right: 0; bottom: 0; width: auto; max-height: calc(70vh + var(--sab)); border-radius: 14px 14px 0 0; padding-bottom: calc(18px + var(--sab)); }
+  body.settings-open #bar, body.settings-open .leaflet-bottom { display: none; }
+  body.settings-open #tools { display: none; }
+  #bar { right: auto; }
+}

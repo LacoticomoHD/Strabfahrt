@@ -589,7 +589,9 @@ function followTarget(size) {
   if (top) y0 = Math.max(y0, top.bottom - m.top);
   const bar = box('bar');
   if (bar) y1 = Math.min(y1, bar.top - m.top);
-  const r = box('panel');
+  const tools = box('tools');
+  if (tools && tools.left - m.left > size.x / 2) x1 = Math.min(x1, tools.left - m.left - 6); // Werkzeugleiste rechts
+  const r = box('panel') || box('settings');
   if (r) {
     if (r.width > size.x * 0.6) y1 = Math.min(y1, r.top - m.top); // Handy: Fenster unten über die ganze Breite
     else if (r.left - m.left > size.x / 2) x1 = Math.min(x1, r.left - m.left); // Fenster rechts
@@ -955,6 +957,8 @@ function tick(now) {
   if (text !== lastClockText) {
     $('clock').textContent = text;
     lastClockText = text;
+    // "Jetzt" nur zeigen, wenn die Uhr von der echten Zeit abweicht (Zeitreise, Zeitraffer, Pause)
+    $('now').hidden = Math.abs(state.sim - wallNow()) < 90 && state.speed === 1 && state.playing;
     if (!document.activeElement || document.activeElement.id !== 'when') {
       $('when').value = new Date(state.sim * 1000).toISOString().slice(0, 16);
     }
@@ -1058,6 +1062,7 @@ map.on('click', (e) => {
     }
     if (bs) { openStation(bs.index); return; }
   }
+  closeSettings();
   if (['route', 'line', 'detours', 'groupedit', 'alerts', 'stats'].includes(state.list)) return; // Panel bleibt offen
   closePanel();
 });
@@ -1065,6 +1070,7 @@ map.on('click', (e) => {
 // ---------- Panels ----------
 
 function showPanel() {
+  closeSettings();
   $('panel').hidden = false;
   document.body.classList.add('panel-open');
 }
@@ -1085,6 +1091,7 @@ $('panel-close').addEventListener('click', closePanel);
 // Android-Zurücktaste: erst Tafel, dann Fenster schließen. true = erledigt, false = App darf in den Hintergrund
 window.strabBack = () => {
   if (document.body.classList.contains('board-open')) { closeBoard(); return true; }
+  if (!$('settings').hidden) { closeSettings(); return true; }
   if (!$('panel').hidden) { closePanel(); return true; }
   return false;
 };
@@ -2699,16 +2706,26 @@ $('btn-theme').addEventListener('click', () => {
   save('strab.theme', next);
 });
 
-if (window.innerWidth < 900) $('bar').classList.add('collapsed');
-$('collapse').setAttribute('aria-expanded', String(!$('bar').classList.contains('collapsed')));
+// Optionen als eigenes Fenster (schließt ein offenes Fenster und umgekehrt)
+function openSettings() {
+  if (!$('panel').hidden) closePanel();
+  $('settings').hidden = false;
+  document.body.classList.add('settings-open');
+  $('collapse').setAttribute('aria-expanded', 'true');
+}
+function closeSettings() {
+  if ($('settings').hidden) return;
+  $('settings').hidden = true;
+  document.body.classList.remove('settings-open');
+  $('collapse').setAttribute('aria-expanded', 'false');
+}
+$('collapse').addEventListener('click', () => ($('settings').hidden ? openSettings() : closeSettings()));
+$('settings-close').addEventListener('click', closeSettings);
+// Aus den Optionen geöffnete Listen (Meldungen, Pünktlichkeit, Umleitungen) ersetzen das Optionsfenster
+for (const id of ['btn-detours', 'btn-alerts', 'btn-stats']) $(id).addEventListener('click', closeSettings, true);
 
 // Höhe der unteren Leiste als CSS-Variable, damit Kartenhinweise (OSM, Info & Datenschutz) nicht verdeckt werden
 if (window.ResizeObserver) new ResizeObserver(() => document.documentElement.style.setProperty('--bar-h', `${$('bar').offsetHeight}px`)).observe($('bar'));
-$('collapse').addEventListener('click', () => {
-  const c = $('bar').classList.toggle('collapsed');
-  $('collapse').setAttribute('aria-expanded', String(!c));
-
-});
 
 // ---------- Suche ----------
 
