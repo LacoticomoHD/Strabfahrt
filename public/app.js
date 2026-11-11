@@ -1003,7 +1003,41 @@ $('about-close').addEventListener('click', closeAbout);
 $('about-ok').addEventListener('click', closeAbout);
 about.addEventListener('close', () => save('strab.seenIntro', true));
 about.addEventListener('click', (e) => { if (e.target === about) closeAbout(); }); // Klick neben das Fenster
-if (!load('strab.seenIntro', false) && !location.hash.includes('tafel')) setTimeout(() => { if (!about.open) about.showModal(); }, 600);
+const firstVisit = !load('strab.seenIntro', false);
+if (firstVisit && !location.hash.includes('tafel')) setTimeout(() => { if (!about.open) about.showModal(); }, 600);
+
+// Was ist neu: nach einem Update beim ersten Öffnen die Änderungen seit dem letzten Besuch zeigen
+const news = $('news');
+const NEWS_SECTIONS = [['neu', '✨ Neu'], ['geaendert', '🔧 Geändert'], ['behoben', '✅ Behoben'], ['entfernt', '🗑 Entfernt']];
+function showNews(entries) {
+  const body = $('news-body');
+  body.replaceChildren();
+  for (const e of entries) {
+    body.append(el('h3', {}, e.title || 'Update', el('span', { class: 'ndate' }, e.date || '')));
+    for (const [key, label] of NEWS_SECTIONS) {
+      if (!e[key] || !e[key].length) continue;
+      body.append(el('h4', {}, label), el('ul', {}, ...e[key].map((t) => el('li', {}, t))));
+    }
+  }
+  if (!news.open) news.showModal();
+}
+let changelog = [];
+const closeNews = () => { if (news.open) news.close(); if (changelog.length) save('strab.seenChangelog', changelog[0].id); };
+$('news-ok').addEventListener('click', closeNews);
+$('news-close').addEventListener('click', closeNews);
+news.addEventListener('close', () => { if (changelog.length) save('strab.seenChangelog', changelog[0].id); });
+news.addEventListener('click', (e) => { if (e.target === news) closeNews(); });
+$('btn-news').addEventListener('click', () => { if (about.open) about.close(); if (changelog.length) showNews(changelog); });
+fetch('changelog.json', { cache: 'no-cache' }).then((r) => r.json()).then((list) => {
+  changelog = Array.isArray(list) ? list : [];
+  if (!changelog.length) return;
+  const seen = load('strab.seenChangelog', null);
+  if (firstVisit || location.hash.includes('tafel')) { save('strab.seenChangelog', changelog[0].id); return; } // Neue Nutzer: erst die Anleitung
+  if (seen === changelog[0].id) return;
+  const idx = changelog.findIndex((e) => e.id === seen);
+  const fresh = idx > 0 ? changelog.slice(0, idx) : changelog.slice(0, 1);
+  setTimeout(() => { if (!about.open) showNews(fresh); }, 900);
+}).catch(() => { /* offline: kein Hinweis */ });
 
 state.stopLabels = load('strab.stopLabels', true);
 $('stoplabels').checked = state.stopLabels;

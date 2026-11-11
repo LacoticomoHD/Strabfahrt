@@ -56,8 +56,15 @@
       <li><b>★</b> Haltestelle als Favorit merken, <b>⚙</b> Optionen wie Zeitreise und Filter</li>
     </ul>
     <p id="note" class="small">Positionen nach Fahrplan, keine GPS-Ortung. Daten: KVV (CC0). Karte: basemap.de / BKG oder © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.</p>
-    <p class="small"><a href="info.html">Info &amp; Datenschutz</a></p>
+    <p class="small"><a href="info.html">Info &amp; Datenschutz</a> · <button id="btn-news" type="button" class="ghost">Was ist neu?</button></p>
     <button id="about-ok" type="button" class="primary">Los geht's</button>
+  </dialog>
+
+  <dialog id="news" aria-labelledby="news-h">
+    <button id="news-close" type="button" aria-label="Schließen">×</button>
+    <h2 id="news-h">Was ist neu?</h2>
+    <div id="news-body"></div>
+    <button id="news-ok" type="button" class="bigbtn">Alles klar</button>
   </dialog>
 
   <footer id="bar">

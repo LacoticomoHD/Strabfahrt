@@ -351,3 +351,14 @@ details.more > summary::-webkit-details-marker { display: none; }
 .rowbtns .chip { margin-left: 6px; }
 .paging[hidden], .actions[hidden] { display: none; }
 .target[hidden], .chips[hidden] { display: none; }
+
+/* Was ist neu */
+#news { max-width: 460px; width: calc(100% - 32px); max-height: 80vh; border: 0; border-radius: 12px; padding: 18px 20px 14px; background: var(--bg); color: var(--fg); box-shadow: var(--shadow); }
+#news::backdrop { background: rgba(0, 0, 0, .35); }
+#news h2 { margin: 0 0 8px; font-size: 18px; }
+#news h3 { margin: 14px 0 2px; font-size: 15px; }
+#news .ndate { color: var(--muted); font-size: 12px; font-weight: 400; margin-left: 6px; }
+#news h4 { margin: 8px 0 2px; font-size: 13px; color: var(--muted); }
+#news ul { margin: 2px 0; padding-left: 18px; }
+#news li { margin: 3px 0; font-size: 13.5px; }
+#news-close { position: absolute; top: 8px; right: 10px; border: 0; background: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted); }
