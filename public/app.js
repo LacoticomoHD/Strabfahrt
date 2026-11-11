@@ -2261,7 +2261,7 @@ function renderRoutePanel(autorun = false) {
   });
   const later = el('button', { class: 'chip', type: 'button' }, 'Später →');
   later.addEventListener('click', () => {
-    if (state.journeys.length) setTime(Math.floor(Math.min(...state.journeys.map((j) => j.dep)) / 60) + 1);
+    if (state.journeys.length) setTime(Math.floor(Math.max(...state.journeys.map((j) => j.start)) / 60) + 1); // nach der letzten gezeigten
     else { const [hh, mm] = timeInput.value.split(':').map(Number); setTime((hh || 0) * 60 + (mm || 0) + 30); }
     search();
   });

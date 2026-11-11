@@ -61,7 +61,7 @@ export async function handle(path, params = {}) {
     case '/api/line':
       return model.line(String(params.name || ''));
     case '/api/plan':
-      return model.plan(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t), { accessible: params.acc === '1' || params.acc === 1 }).slice(0, 5);
+      return model.planMany(spec(params, 'from'), spec(params, 'to'), String(params.date), Number(params.t), { accessible: params.acc === '1' || params.acc === 1 }, 5);
     case '/api/profile':
       return model.profile(spec(params, 'from'), spec(params, 'to'), String(params.date), undefined, undefined, undefined, { accessible: params.acc === '1' || params.acc === 1 });
     case '/api/last':

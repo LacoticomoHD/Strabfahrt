@@ -543,6 +543,30 @@ export class Model {
     }).filter(Boolean);
   }
 
+  // Mehrere Verbindungen nacheinander: Suche wiederholt ab der jeweils naechsten Abfahrt, bis count Stueck da sind.
+  // Ergebnisse, die eine andere schlaegt (spaeter los, frueher oder gleich da, nicht mehr Umstiege), fallen weg.
+  planMany(fromSpec, toSpec, ymd, depSec, opts = {}, count = 5) {
+    const all = [];
+    const seen = new Set();
+    let t = depSec;
+    for (let round = 0; round < count + 3 && all.length < count * 2; round++) {
+      const res = this.plan(fromSpec, toSpec, ymd, t, opts);
+      if (!res.length) break;
+      for (const j of res) {
+        const key = j.legs.map((l) => (l.type === 'ride' ? `${l.trip}@${l.dep}` : 'w')).join('|');
+        if (!seen.has(key)) { seen.add(key); all.push(j); }
+      }
+      const next = Math.min(...res.map((j) => j.start)) + 60;
+      if (next <= t) break;
+      t = next;
+      if (t > depSec + 4 * 3600) break;
+    }
+    const keep = all.filter((a) => !all.some((b) => b !== a && b.start >= a.start && b.arr <= a.arr && b.transfers <= a.transfers
+      && (b.start > a.start || b.arr < a.arr || b.transfers < a.transfers)));
+    keep.sort((a, b) => a.start - b.start || a.arr - b.arr);
+    return keep.slice(0, count);
+  }
+
   // Alle Stationen, die ab fromIdx in maxMinutes erreichbar sind: Liste [Stationsindex, Minuten]
   reach(fromIdx, ymd, depSec, maxMinutes = 30) {
     const pi = this._planIndex();

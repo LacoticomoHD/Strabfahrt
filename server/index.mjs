@@ -180,7 +180,7 @@ function handleApi(url, req, res) {
       }
       if (url.pathname === '/api/profile') return sendJson(res, 200, model.profile(from, to, date, undefined, undefined, undefined, opts));
       if (url.pathname === '/api/last') return sendJson(res, 200, model.lastJourney(from, to, date, t, opts), {}, req);
-      return sendJson(res, 200, model.plan(from, to, date, t, opts).slice(0, 5), {}, req);
+      return sendJson(res, 200, model.planMany(from, to, date, t, opts, 5), {}, req);
     }
 
     case '/api/delays':
