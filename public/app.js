@@ -676,6 +676,9 @@ function drawFrame() {
     const pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
     if (!inArea(pos.lat, pos.lon)) continue; // außerhalb des Gebiets nur Luftlinie: ausblenden
+    // Unterwegs auf einem Abschnitt ohne Streckenverlauf, der aus dem Gebiet führt (z. B. ICE Karlsruhe–Mannheim):
+    // die Luftlinie liefe quer durch die Stadt, also ausblenden
+    if (!pos.atStop && pos.k < pat.s.length - 1 && offAreaSeg(pat.s[pos.k], pat.s[pos.k + 1])) continue;
     if (state.follow === trip.id) followPos = pos;
     const p = map.latLngToContainerPoint([pos.lat, pos.lon]);
     if (p.x < -40 || p.y < -40 || p.x > size.x + 40 || p.y > size.y + 40) continue;
