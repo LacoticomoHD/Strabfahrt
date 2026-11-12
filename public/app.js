@@ -2997,7 +2997,8 @@ async function init() {
   if (meta.realtime || rtBase) {
     const poll = async () => {
       try {
-        const j = rtBase ? await (await fetch(`${rtBase.replace(/\/$/, '')}/api/delays`)).json() : await api('/api/delays');
+        const q = hitOnce; hitOnce = '';
+        const j = rtBase ? await (await fetch(`${rtBase.replace(/\/$/, '')}/api/delays${q}`)).json() : await api('/api/delays');
         if (!j || j.enabled === false) return;
         // Quelle hängt (Stand älter als 20 Min.): alte Verspätungen nicht mehr anzeigen, sonst wären sie falsch
         const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
@@ -3019,8 +3020,8 @@ async function init() {
     };
     state.rtBase = rtBase;
     syncNative();
-    // Anonymer Zähler: ein Aufruf je App-Start, ohne Kennung, nichts wird auf dem Gerät gespeichert
-    try { fetch(`${rtBase.replace(/\/$/, '')}/api/hit?p=${window.StrabNative ? 'app' : 'web'}`, { cache: 'no-store' }).catch(() => {}); } catch { /* egal */ }
+    // Anonymer Zähler: der erste Live-Abruf nach dem Start trägt ?hit=, ohne Kennung, nichts wird auf dem Gerät gespeichert
+    let hitOnce = `?hit=${window.StrabNative ? 'app' : 'web'}&n=${Math.random().toString(36).slice(2, 8)}`;
     // Erster Abruf kann ein älterer Zwischenstand sein (schnelle Antwort nach einer Pause): kurz darauf frisch nachladen
     poll().then(() => { if (state.rt.feedTime && Date.now() / 1000 - state.rt.feedTime > 100) setTimeout(poll, 5000); });
     setInterval(poll, 30000);
