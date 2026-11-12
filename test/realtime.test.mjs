@@ -37,6 +37,7 @@ test('Zuordnung: Stream-Fahrt trifft nur die KVV-Fahrt des richtigen Betriebstag
       { id: '2', tripUpdate: { trip: { tripId: '777', startDate: '20261102', scheduleRelationship: 3 } } },
       { id: '3', tripUpdate: { trip: { tripId: 'fremd', startDate: '20261102' }, stopTimeUpdate: [{ departure: { delay: 5 } }] } },
       { id: 'a1', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Karlsruhe: Bauarbeiten Linie 3') } },
+      { id: 'a6', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Neckarsulm - Stuttgart: Zugausfall') } }, // vom Rand nach außen
       { id: 'a5', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Hauptbahnhof - Vaihingen: S1 bis S6 nachts') } }, // Linie im Gebiet, Ort nicht
       { id: 'a2', alert: { informedEntity: [{ routeId: 'anderswo' }], headerText: tr('Woanders') } },
       { id: 'a3', alert: { informedEntity: [{ trip: { tripId: 's1', startDate: '20261102' } }], headerText: tr('Defektes Stellwerk') } },

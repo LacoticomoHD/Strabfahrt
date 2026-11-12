@@ -197,6 +197,9 @@ export class Realtime {
         if (periods.length && !periods.some(([a, b]) => (!a || a <= nowSec + 86400) && (!b || b >= nowSec))) continue;
         const local = /karlsruhe|\bka\b|kvv|vbk|durlach|ettlingen|bruchsal|rastatt|wörth|rheinstetten|stutensee|bretten/i.test(`${header} ${text}`);
         if (!placed) continue; // Überschrift nennt nur Orte außerhalb (z. B. Schorndorf, Stuttgart)
+        // Strecke vom Netzrand weg nach außen (z. B. "Neckarsulm - Stuttgart"): nur behalten, wenn Karlsruhe oder eine S-Bahn-Linie genannt ist
+        const head = header || text.split('\n')[0];
+        if (/stuttgart|mannheim|heidelberg|frankfurt|tübingen|würzburg|\bulm\b|offenburg|freiburg|schorndorf|aalen/i.test(head) && !/karlsruhe|\bS\d{1,2}\b|kvv|avg/i.test(head)) continue;
         if (alerts.some((a) => a.header === (header || text.split('\n')[0].slice(0, 120)))) continue;
         alerts.push({ id: e.id, header: header || text.split('\n')[0].slice(0, 120), text, url: pick(e.alert.url), periods, local });
       }
