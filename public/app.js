@@ -760,6 +760,8 @@ function drawFrame() {
   ctx.textAlign = 'center';
   for (const v of out) {
     const sel = state.selected && state.selected.id === v.trip.id;
+    // Keine Live-Daten für diese Fahrt: Position rein nach Fahrplan, daher blass (Fahrt kann ausfallen oder verspätet sein)
+    ctx.globalAlpha = state.rt.active && !state.demo && v.delay === undefined && !sel ? 0.38 : 1;
     if (zoom >= 14) {
       ctx.font = 'bold 11px system-ui, sans-serif';
       const label = route0(v.route);
@@ -828,6 +830,7 @@ function drawFrame() {
       ctx.stroke();
     }
   }
+  ctx.globalAlpha = 1;
   ctx.textAlign = 'start';
   ctx.textBaseline = 'alphabetic';
   $('count').textContent = `${out.length} Fahrzeuge`;

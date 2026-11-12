@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-12c",
+    "version": "3.4",
+    "date": "12.11.2026",
+    "title": "Fahrplan oder live: jetzt sichtbar",
+    "neu": [
+      "Fahrzeuge ohne Live-Daten sind blass: Ihre Position ist reiner Fahrplan und kann von der Wirklichkeit abweichen (z. B. bei Ausfällen)"
+    ],
+    "geaendert": [
+      "Info-Fenster erklärt, wie die Positionen berechnet werden"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12b",
     "version": "3.3",
     "date": "12.11.2026",
