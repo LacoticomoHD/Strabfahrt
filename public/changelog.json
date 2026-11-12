@@ -1,5 +1,22 @@
 [
   {
+    "id": "2026-11-12b",
+    "version": "3.3",
+    "date": "12.11.2026",
+    "title": "Nur noch Meldungen aus dem KVV-Gebiet",
+    "neu": [],
+    "geaendert": [
+      "Meldungen und Benachrichtigungen zeigen nur noch Störungen und Bauarbeiten im KVV-Gebiet (keine Stuttgart-, Tübingen- oder Würzburg-Meldungen mehr)"
+    ],
+    "behoben": [
+      "Dieselbe Meldung kam als Benachrichtigung mehrfach",
+      "Ausgeblendete Elemente blieben teils sichtbar"
+    ],
+    "entfernt": [
+      "Reine Zughinweise wie „Zug wird in Offenburg getrennt“ aus den Meldungen"
+    ]
+  },
+  {
     "id": "2026-11-12a",
     "version": "3.2",
     "date": "12.11.2026",

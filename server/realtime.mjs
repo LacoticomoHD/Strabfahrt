@@ -15,7 +15,11 @@ export const RT_ATTRIBUTION = 'Echtzeit: gtfs.de (CC BY-SA 4.0)';
 const CANCELED = 3; // TripDescriptor.ScheduleRelationship.CANCELED
 const IDLE_MS = 5 * 60 * 1000; // ohne Abrufe nach 5 Minuten pausieren
 // Fahrzeugmerkmale und Quellenvermerke, keine Stoerungen
-const NOISE = /echtzeitdaten aufbereitet|wlan|klimaanlage|niederflur|stufenlos|rollstuhl|barrierefrei|\bwc\b|check-in|fahrradmitnahme|ruhebereich|steckdose/i;
+// Orte und Betreiber im KVV-Netz: eine Meldung gilt nur als relevant, wenn sie einen davon nennt
+// oder ausdrücklich eine Haltestelle bzw. Fahrt im Gebiet betrifft (Linien allein reichen nicht: S1 gibt es auch in Stuttgart)
+export const KVV_PLACES = /karlsruhe|\bka\b|\bkvv\b|\bvbk\b|\bavg\b|albtal|durlach|ettlingen|bruchsal|rastatt|wörth|rheinstetten|stutensee|bretten|baden-baden|gaggenau|gernsbach|forbach|bühl|achern|freudenstadt|bad herrenalb|ittersbach|söllingen|berghausen|weingarten \(baden\)|jöhlingen|eppingen|öhringen|mosbach|neckarsulm|bad friedrichshall|neckarelz|neckarzimmern|gundelsheim|haßmersheim|grombach|eutingen|horb|sinsheim|bad rappenau|menzingen|odenheim|ubstadt|graben-neudorf|philippsburg|waghäusel|bad schönborn|östringen|germersheim|rheinzabern|jockgrim|kandel|linkenheim|leopoldshafen|eggenstein|hochstetten|blankenloch|neureut|knielingen|maxau|daxlanden|rüppurr|malsch|durmersheim|bietigheim \(baden\)|muggensturm|kuppenheim|ötigheim|steinmauern|sinzheim|ottersweier|renchen|oppenau|bad peterstal|kraichtal|bad wildbad|neuenbürg|herrenalb|marxzell|waldbronn|karlsbad|pfinztal|remchingen|wilferdingen|kämpfelbach|ispringen|flehingen|sulzfeld|gölshausen|kürnbach|zaisenhausen|gondelsheim|helmsheim|heidelsheim|untergrombach|weingarten/i;
+
+const NOISE = /echtzeitdaten aufbereitet|zug getrennt|zugteil|wlan|klimaanlage|niederflur|stufenlos|rollstuhl|barrierefrei|\bwc\b|check-in|fahrradmitnahme|ruhebereich|steckdose/i;
 
 // Verspaetung einer Fahrt: letzte Angabe an einem Halt, der schon erreicht ist, sonst die erste
 export function tripDelay(tu, nowSec) {
@@ -183,12 +187,16 @@ export class Realtime {
           for (const x of ents) for (const id of this.ownIds(x.trip.tripId, x.trip.startDate)) { reasons.set(id, label); hit = true; }
           if (!isNotice || !hit) continue;
         }
-        const relevant = ents.some((x) => (x.routeId && this.routeSet.has(x.routeId)) || (x.stopId && this.stopSet.has(x.stopId))
-          || (x.trip && x.trip.tripId && this.ownIds(x.trip.tripId).length));
-        if (!relevant) continue;
+        const byStopOrTrip = ents.some((x) => (x.stopId && this.stopSet.has(x.stopId)) || (x.trip && x.trip.tripId && this.ownIds(x.trip.tripId).length));
+        const byRoute = ents.some((x) => x.routeId && this.routeSet.has(x.routeId));
+        // Nur das KVV-Gebiet: Haltestelle/Fahrt dort, oder Linie dort UND ein Ort aus dem Gebiet im Text
+        // Ort in der Überschrift (im Text steht oft nur "Richtung Karlsruhe" bei Meldungen weit weg)
+        const placed = KVV_PLACES.test(header || text.split('\n')[0]);
+        if (!byStopOrTrip && !(byRoute && placed)) continue;
         const periods = (e.alert.activePeriod || []).map((p) => [Number(p.start || 0), Number(p.end || 0)]);
         if (periods.length && !periods.some(([a, b]) => (!a || a <= nowSec + 86400) && (!b || b >= nowSec))) continue;
         const local = /karlsruhe|\bka\b|kvv|vbk|durlach|ettlingen|bruchsal|rastatt|wörth|rheinstetten|stutensee|bretten/i.test(`${header} ${text}`);
+        if (!placed) continue; // Überschrift nennt nur Orte außerhalb (z. B. Schorndorf, Stuttgart)
         if (alerts.some((a) => a.header === (header || text.split('\n')[0].slice(0, 120)))) continue;
         alerts.push({ id: e.id, header: header || text.split('\n')[0].slice(0, 120), text, url: pick(e.alert.url), periods, local });
       }

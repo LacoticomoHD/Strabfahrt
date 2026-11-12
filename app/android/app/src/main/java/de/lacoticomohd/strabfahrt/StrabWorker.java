@@ -208,8 +208,16 @@ public class StrabWorker extends Worker {
         }
         JSONArray alerts = new JSONObject(get(StrabStore.base(c) + "/api/alerts")).optJSONArray("alerts");
         if (alerts == null) return;
-        Set<String> seen = new HashSet<>(p.getStringSet("seenAlerts", new HashSet<>()));
-        Set<String> current = new HashSet<>();
+        // Gesehene Meldungen 14 Tage merken, nach Überschrift statt Kennung: dieselbe Meldung kommt
+        // im Feed teils mit neuer Kennung oder fehlt kurz und taucht wieder auf, sonst gäbe es sie mehrfach
+        long today = System.currentTimeMillis() / 86400000L;
+        Set<String> seen = new HashSet<>();
+        for (String e : p.getStringSet("seenAlerts2", new HashSet<>())) {
+            int at = e.lastIndexOf('|');
+            try { if (at > 0 && today - Long.parseLong(e.substring(at + 1)) <= 14) seen.add(e); } catch (NumberFormatException ignored) { }
+        }
+        Set<String> seenKeys = new HashSet<>();
+        for (String e : seen) seenKeys.add(e.substring(0, e.lastIndexOf('|')));
         int posted = 0;
         ensureChannel(c);
         for (int i = 0; i < alerts.length(); i++) {
@@ -221,8 +229,8 @@ public class StrabWorker extends Worker {
             boolean match = false;
             for (Pattern pt : patterns) if (pt.matcher(all).find()) { match = true; break; }
             if (!match) continue;
-            current.add(id);
-            if (seen.contains(id) || posted >= 3) continue;
+            String key = String.valueOf((header.isEmpty() ? text : header).replaceAll("\\s+", " ").trim().toLowerCase(Locale.GERMANY).hashCode());
+            if (seenKeys.contains(key) || posted >= 3) continue;
             posted++;
             Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("openAlerts", true);
             PendingIntent pi = PendingIntent.getActivity(c, 100 + i, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -234,12 +242,11 @@ public class StrabWorker extends Worker {
                 .setContentIntent(pi)
                 .setAutoCancel(true)
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT);
-            NotificationManagerCompat.from(c).notify(id.hashCode(), b.build());
-            seen.add(id);
+            NotificationManagerCompat.from(c).notify(key.hashCode(), b.build());
+            seen.add(key + "|" + today);
+            seenKeys.add(key);
         }
-        // Nur Meldungen merken, die noch aktiv sind, damit die Liste klein bleibt
-        seen.retainAll(current);
-        p.edit().putStringSet("seenAlerts", seen).apply();
+        p.edit().putStringSet("seenAlerts2", seen).apply();
     }
 
     static void ensureChannel(Context c) {
