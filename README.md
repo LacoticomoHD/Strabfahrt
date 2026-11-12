@@ -95,7 +95,7 @@ Weitere Optionen:
 
 ```bash
 PORT=8080 HOST=0.0.0.0 npm start                       # anderer Port, von außen erreichbar
-BBOX="48.90,8.20,49.15,8.65" npm run build:data        # Gebiet: süd,west,nord,ost
+BBOX="48.90,8.20,49.15,8.65" npm run build:data        # kleineres Gebiet: süd,west,nord,ost (Standard: ganzes KVV-Netz)
 node scripts/build-data.mjs --zip pfad/zum/feed.zip    # lokale ZIP-Datei nutzen
 node scripts/build-data.mjs --raw pfad/zum/ordner      # bereits entpackter Feed
 npm test

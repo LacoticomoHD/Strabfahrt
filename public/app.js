@@ -2191,7 +2191,8 @@ function suggestField(label, initial, onPick, opts = {}) {
   ul.hidden = true;
   let seq = 0;
   let timer = null;
-  const pick = (r) => { input.value = r.name; ul.hidden = true; onPick(r); };
+  let picked = !!initial;
+  const pick = (r) => { input.value = r.name; ul.hidden = true; picked = true; onPick(r); };
 
   const addressRow = (q) => {
     const li = el('li', { class: 'addr' }, `🔎 Adresse suchen: „${q}“`);
@@ -2216,6 +2217,7 @@ function suggestField(label, initial, onPick, opts = {}) {
 
   input.addEventListener('input', () => {
     clearTimeout(timer);
+    picked = false;
     onPick(null);
     timer = setTimeout(async () => {
       const q = input.value.trim();
@@ -2236,12 +2238,26 @@ function suggestField(label, initial, onPick, opts = {}) {
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
-      const a = ul.querySelector('li.addr');
-      if (a && ul.children.length === 1) a.click();
+      // Enter nimmt den ersten Vorschlag (oder startet die Adresssuche, wenn es nur die gibt)
+      const first = ul.hidden ? null : ul.querySelector('li:not(.note)');
+      if (first) { e.preventDefault(); first.click(); }
     }
   });
+  // Feld verlassen: Liste schließen, damit sie nichts verdeckt (kurz warten, sonst geht der Klick auf einen Vorschlag verloren)
+  input.addEventListener('blur', () => setTimeout(() => { if (!ul.querySelector('li.note')) ul.hidden = true; }, 250));
+  input.addEventListener('focus', () => { if (ul.children.length && input.value.trim().length >= 2 && !picked) ul.hidden = false; });
   wrap.append(input, ul);
-  wrap.setValue = (r) => { input.value = r ? r.name : ''; ul.hidden = true; };
+  wrap.setValue = (r) => { input.value = r ? r.name : ''; ul.hidden = true; picked = !!r; };
+  // Text getippt, aber nichts ausgewählt: besten Treffer nehmen (für "Suchen" ohne Auswahl)
+  wrap.resolve = async () => {
+    const q = input.value.trim();
+    if (picked || q.length < 2) return picked;
+    try {
+      const res = await api('/api/search', { q });
+      if (res.length) { pick(mkStation(res[0].index)); return true; }
+    } catch (e) { console.error(e); }
+    return false;
+  };
   return wrap;
 }
 
@@ -2280,8 +2296,10 @@ function renderRoutePanel(autorun = false) {
   });
 
   const search = async () => {
+    await fromField.resolve();
+    await toField.resolve();
     const { from, to } = state.route;
-    if (!from || !to) { status.textContent = 'Bitte Start und Ziel aus der Liste wählen.'; return; }
+    if (!from || !to) { status.textContent = 'Bitte Start und Ziel eingeben.'; return; }
     const [hh, mm] = timeInput.value.split(':').map(Number);
     if (!Number.isFinite(hh) || !Number.isFinite(mm)) { status.textContent = 'Bitte eine Uhrzeit angeben.'; return; }
     status.textContent = 'Suche läuft …';

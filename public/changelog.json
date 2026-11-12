@@ -1,5 +1,20 @@
 [
   {
+    "id": "2026-11-12d",
+    "version": "3.5",
+    "date": "12.11.2026",
+    "title": "Verbindungssuche verzeiht mehr",
+    "neu": [],
+    "geaendert": [
+      "Route: Start und Ziel müssen nicht mehr aus der Liste gewählt werden, „Verbindungen suchen“ nimmt den besten Treffer",
+      "Route: Enter übernimmt den ersten Vorschlag"
+    ],
+    "behoben": [
+      "Route: offene Vorschlagsliste verdeckte Felder und den Suchknopf"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12c",
     "version": "3.4",
     "date": "12.11.2026",
