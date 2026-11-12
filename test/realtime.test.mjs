@@ -36,7 +36,8 @@ test('Zuordnung: Stream-Fahrt trifft nur die KVV-Fahrt des richtigen Betriebstag
       { id: '1', tripUpdate: { trip: { tripId: 's1', startDate: '20261102' }, stopTimeUpdate: [{ departure: { delay: 120 } }] } }, // Montag
       { id: '2', tripUpdate: { trip: { tripId: '777', startDate: '20261102', scheduleRelationship: 3 } } },
       { id: '3', tripUpdate: { trip: { tripId: 'fremd', startDate: '20261102' }, stopTimeUpdate: [{ departure: { delay: 5 } }] } },
-      { id: 'a1', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Bauarbeiten Linie 3') } },
+      { id: 'a1', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Karlsruhe: Bauarbeiten Linie 3') } },
+      { id: 'a5', alert: { informedEntity: [{ routeId: 'r9' }], headerText: tr('Hauptbahnhof - Vaihingen: S1 bis S6 nachts') } }, // Linie im Gebiet, Ort nicht
       { id: 'a2', alert: { informedEntity: [{ routeId: 'anderswo' }], headerText: tr('Woanders') } },
       { id: 'a3', alert: { informedEntity: [{ trip: { tripId: 's1', startDate: '20261102' } }], headerText: tr('Defektes Stellwerk') } },
       { id: 'a4', alert: { informedEntity: [{ trip: { tripId: 's1', startDate: '20261102' } }], headerText: tr('Stufenloses Fahrzeug, WLAN') } },
@@ -45,7 +46,7 @@ test('Zuordnung: Stream-Fahrt trifft nur die KVV-Fahrt des richtigen Betriebstag
   const s = rt.snapshot();
   assert.deepEqual(s.d, { 'k-werktag': 120 });
   assert.deepEqual(s.c, ['fv:777']);
-  assert.deepEqual(rt.alerts.map((a) => a.header), ['Bauarbeiten Linie 3']);
+  assert.deepEqual(rt.alerts.map((a) => a.header), ['Karlsruhe: Bauarbeiten Linie 3'], 'nur Meldungen mit Ort im KVV-Gebiet');
   assert.deepEqual(s.r, { 'k-werktag': 'Defektes Stellwerk' }, 'Grund an der Fahrt, Fahrzeugmerkmal verworfen');
 });
 
