@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-12f",
+    "version": "3.7",
+    "date": "12.11.2026",
+    "title": "OpenStreetMap als Standardkarte",
+    "neu": [],
+    "geaendert": [
+      "Neue Besucher sehen zuerst die OpenStreetMap-Karte; die graue und die farbige basemap.de-Karte bleiben unter Einstellungen → Karte wählbar. Eine bereits gewählte Karte bleibt erhalten"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12e",
     "version": "3.6",
     "date": "12.11.2026",

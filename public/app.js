@@ -256,7 +256,7 @@ function setBasemap(name) {
   baseLayer = BASEMAPS[name]().addTo(map);
   baseLayer.bringToBack();
 }
-setBasemap(load('strab.basemap', 'light'));
+setBasemap(load('strab.basemap', 'osm'));
 
 const overlays = {
   infra: L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', { maxZoom: 19, subdomains: 'abc', attribution: '© <a href="https://www.openrailwaymap.org/">OpenRailwayMap</a>' }),
@@ -1008,7 +1008,7 @@ $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if 
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
 $('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
 $('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
-$('basemap').value = load('strab.basemap', 'light');
+$('basemap').value = load('strab.basemap', 'osm');
 $('basemap').closest('label').hidden = !TILES;
 $('basemap').addEventListener('change', (e) => { save('strab.basemap', e.target.value); setBasemap(e.target.value); });
 
