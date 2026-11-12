@@ -21,17 +21,22 @@ export const KVV_PLACES = /karlsruhe|\bka\b|\bkvv\b|\bvbk\b|\bavg\b|albtal|durla
 
 const NOISE = /echtzeitdaten aufbereitet|zug getrennt|zugteil|wlan|klimaanlage|niederflur|stufenlos|rollstuhl|barrierefrei|\bwc\b|check-in|fahrradmitnahme|ruhebereich|steckdose/i;
 
-// Verspaetung einer Fahrt: letzte Angabe an einem Halt, der schon erreicht ist, sonst die erste
+// Mehr als 3 Minuten zu frueh gilt als unglaubwuerdig: Die Quelle ordnet dann meist die Bahn davor
+// der naechsten Fahrt zu (bei 10-Minuten-Takt wird aus +3 Minuten ein -7), oder der Wert ist Datenmuell (-3600).
+export const EARLY_LIMIT = -180;
+
+// Verspaetung einer Fahrt: letzte Angabe an einem Halt, der schon erreicht ist, sonst die erste.
+// Unglaubwuerdig fruehe Werte ergeben null: Die Fahrt gilt dann als ohne Live-Daten.
 export function tripDelay(tu, nowSec) {
   const ups = (tu.stopTimeUpdate || []).filter((u) => (u.departure && u.departure.delay != null) || (u.arrival && u.arrival.delay != null));
-  if (!ups.length) return tu.delay != null ? Number(tu.delay) : null;
+  if (!ups.length) return tu.delay != null && Number(tu.delay) >= EARLY_LIMIT ? Number(tu.delay) : null;
   let pick = ups[0];
   for (const u of ups) {
     const ev = u.departure && u.departure.time ? Number(u.departure.time) : u.arrival && u.arrival.time ? Number(u.arrival.time) : null;
     if (ev !== null && ev <= nowSec) pick = u;
   }
-  const d = pick.departure && pick.departure.delay != null ? pick.departure.delay : pick.arrival.delay;
-  return Number(d);
+  const d = Number(pick.departure && pick.departure.delay != null ? pick.departure.delay : pick.arrival.delay);
+  return d >= EARLY_LIMIT ? d : null;
 }
 
 /** Ist-Zeiten je Halt aus einer Fahrt-Meldung: flache Liste [Plan-Ankunft, Abweichung, Plan-Abfahrt, Abweichung, ...] (Unix-Sekunden, 0/null = fehlt). */
@@ -39,8 +44,8 @@ export function stopTimesOf(tu) {
   const out = [];
   for (const u of tu.stopTimeUpdate || []) {
     const a = u.arrival; const d = u.departure;
-    const at = a && a.time && a.delay != null ? Number(a.time) - Number(a.delay) : 0;
-    const dt = d && d.time && d.delay != null ? Number(d.time) - Number(d.delay) : 0;
+    const at = a && a.time && a.delay != null && Number(a.delay) >= EARLY_LIMIT ? Number(a.time) - Number(a.delay) : 0;
+    const dt = d && d.time && d.delay != null && Number(d.delay) >= EARLY_LIMIT ? Number(d.time) - Number(d.delay) : 0;
     if (!at && !dt) continue;
     out.push(at, at ? Number(a.delay) : null, dt, dt ? Number(d.delay) : null);
   }

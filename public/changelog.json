@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-12g",
+    "version": "3.8",
+    "date": "12.11.2026",
+    "title": "Keine falschen „7 Minuten zu früh“ mehr",
+    "neu": [],
+    "geaendert": [],
+    "behoben": [
+      "Bahnen und Busse wurden manchmal als 5 bis 10 Minuten zu früh angezeigt. Die Live-Quelle ordnet dann die Bahn davor der nächsten Fahrt zu. Solche Werte (mehr als 3 Minuten zu früh) werden jetzt verworfen, das Fahrzeug fährt dann blass nach Fahrplan"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12f",
     "version": "3.7",
     "date": "12.11.2026",

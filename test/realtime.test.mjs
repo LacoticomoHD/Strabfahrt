@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Model } from '../server/model.mjs';
-import { Realtime, tripDelay } from '../server/realtime.mjs';
+import { Realtime, tripDelay, stopTimesOf } from '../server/realtime.mjs';
 
 const model = new Model({
   meta: { bbox: [0, 0, 1, 1], built: 'rt-test' },
@@ -27,6 +27,14 @@ test('Verspaetung: letzte erreichte Angabe zaehlt', () => {
   assert.equal(tripDelay(tu, 300), 240);
   assert.equal(tripDelay(tu, 50), 60);
   assert.equal(tripDelay({ stopTimeUpdate: [] }, 0), null);
+});
+
+test('Verspaetung: mehr als 3 Minuten zu frueh gilt als unglaubwuerdig', () => {
+  const tu = { stopTimeUpdate: [{ departure: { delay: -437, time: 100 } }, { departure: { delay: 115, time: 9e9 } }] };
+  assert.equal(tripDelay(tu, 300), null);
+  assert.equal(tripDelay({ stopTimeUpdate: [{ departure: { delay: -120, time: 100 } }] }, 300), -120);
+  assert.equal(tripDelay({ stopTimeUpdate: [], delay: -3600 }, 0), null);
+  assert.deepEqual(stopTimesOf(tu), [0, null, 9e9 - 115, 115]);
 });
 
 test('Zuordnung: Stream-Fahrt trifft nur die KVV-Fahrt des richtigen Betriebstags', () => {
