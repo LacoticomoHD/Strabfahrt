@@ -141,6 +141,59 @@ export class Realtime {
     return out;
   }
 
+  /**
+   * Feed nur teilweise entpacken: Der bundesweite Feed hat rund 110.000 Fahrten, davon brauchen wir etwa 2.000.
+   * Jede Fahrt wird nur bis zur Fahrt-ID angelesen; vollständig entpackt werden eigene Fahrten und alle Meldungen.
+   * Spart den größten Teil der Rechenzeit (Vercel-Kontingent).
+   */
+  decodeFeed(buf) {
+    const P = this.proto;
+    const want = (id) => this.map.trips[id] !== undefined || this.tripIndex.has('fv:' + id) || this.tripIndex.has('rv:' + id);
+    const dec = new TextDecoder();
+    // Länge eines varint-kodierten Werts ab pos lesen: [Wert, neue Position]
+    const varint = (pos) => {
+      let v = 0; let mul = 1; let b;
+      do { b = buf[pos++]; v += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80);
+      return [v, pos];
+    };
+    // Feld mit Nummer `field` (Länge-kodiert) in buf[start, end) suchen: [Anfang, Ende] oder null
+    const find = (start, end, field) => {
+      let pos = start;
+      while (pos < end) {
+        let key; [key, pos] = varint(pos);
+        const type = key & 7; const num = Math.floor(key / 8);
+        if (type === 2) {
+          let len; [len, pos] = varint(pos);
+          if (num === field) return [pos, pos + len];
+          pos += len;
+        } else if (type === 0) { [, pos] = varint(pos); }
+        else if (type === 1) pos += 8;
+        else if (type === 5) pos += 4;
+        else return null;
+      }
+      return null;
+    };
+    const feed = { header: null, entity: [] };
+    let pos = 0;
+    while (pos < buf.length) {
+      let key; [key, pos] = varint(pos);
+      const type = key & 7; const num = Math.floor(key / 8);
+      if (type !== 2) { if (type === 0) [, pos] = varint(pos); else if (type === 1) pos += 8; else if (type === 5) pos += 4; else break; continue; }
+      let len; [len, pos] = varint(pos);
+      const s = pos; const e = pos + len; pos = e;
+      if (num === 1) { feed.header = P.FeedHeader.decode(buf.subarray(s, e)); continue; }
+      if (num !== 2) continue;
+      const tu = find(s, e, 3); // FeedEntity.trip_update
+      if (tu) {
+        const trip = find(tu[0], tu[1], 1); // TripUpdate.trip
+        const idr = trip && find(trip[0], trip[1], 1); // TripDescriptor.trip_id
+        if (!idr || !want(dec.decode(buf.subarray(idr[0], idr[1])))) continue;
+      } else if (!find(s, e, 5)) continue; // weder Fahrt noch Meldung (z. B. Fahrzeugposition)
+      feed.entity.push(P.FeedEntity.decode(buf.subarray(s, e)));
+    }
+    return feed;
+  }
+
   async fetchOnce() {
     if (this.busy) return;
     this.busy = true;
@@ -148,7 +201,7 @@ export class Realtime {
       const res = await fetch(this.url, { headers: { 'User-Agent': 'STRABFAHRT/0.1 (Fahrplankarte Karlsruhe)' } });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const buf = new Uint8Array(await res.arrayBuffer());
-      this.ingest(this.proto.FeedMessage.decode(buf));
+      this.ingest(this.decodeFeed(buf));
       this.error = null;
     } catch (e) {
       this.error = e.message;
