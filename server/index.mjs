@@ -191,6 +191,11 @@ function handleApi(url, req, res) {
       realtime.touch();
       return sendJson(res, 200, { id: q.get('id') || '', feedTime: realtime.feedTime, s: realtime.stopTimes.get(q.get('id') || '') || [] }, CORS, req);
 
+    case '/api/hit':
+      return sendJson(res, 200, {}, CORS, req);
+    case '/api/hits':
+      return sendJson(res, 200, { days: [] }, CORS, req);
+
     case '/api/alerts':
       realtime.touch();
       return sendJson(res, 200, { updated: realtime.updated, alerts: realtime.alerts }, CORS, req);

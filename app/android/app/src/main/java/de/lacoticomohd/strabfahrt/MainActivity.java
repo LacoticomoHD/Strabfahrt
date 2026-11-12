@@ -199,6 +199,50 @@ public class MainActivity extends BridgeActivity {
             catch (Exception e) { return "?"; }
         }
 
+        /** Neue APK laden und die Installation starten. Rückmeldung an die Seite: ok, erlaubnis, fehler. */
+        @JavascriptInterface
+        public void installUpdate(String url) {
+            if (url == null || !url.startsWith("https://github.com/LacoticomoHD/Strabfahrt/releases/download/")) { installResult("fehler"); return; }
+            if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
+                try {
+                    startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, android.net.Uri.parse("package:" + getPackageName())));
+                    installResult("erlaubnis");
+                } catch (Exception e) { installResult("fehler"); }
+                return;
+            }
+            new Thread(() -> {
+                try {
+                    java.io.File dir = new java.io.File(getCacheDir(), "update");
+                    dir.mkdirs();
+                    java.io.File apk = new java.io.File(dir, "strabfahrt.apk");
+                    java.net.HttpURLConnection con = (java.net.HttpURLConnection) new java.net.URL(url).openConnection();
+                    con.setInstanceFollowRedirects(true);
+                    con.setConnectTimeout(15000);
+                    con.setReadTimeout(60000);
+                    if (con.getResponseCode() != 200) throw new java.io.IOException("HTTP " + con.getResponseCode());
+                    try (java.io.InputStream in = con.getInputStream(); java.io.OutputStream out = new java.io.FileOutputStream(apk)) {
+                        byte[] buf = new byte[65536];
+                        int n;
+                        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                    }
+                    if (apk.length() < 1000000) throw new java.io.IOException("Datei zu klein");
+                    android.net.Uri uri = androidx.core.content.FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", apk);
+                    Intent install = new Intent(Intent.ACTION_VIEW)
+                        .setDataAndType(uri, "application/vnd.android.package-archive")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(install);
+                    installResult("ok");
+                } catch (Exception e) {
+                    installResult("fehler");
+                }
+            }).start();
+        }
+
+        private void installResult(String r) {
+            WebView web = getBridge().getWebView();
+            web.post(() -> web.evaluateJavascript("window.strabInstallResult && window.strabInstallResult('" + r + "')", null));
+        }
+
         @JavascriptInterface
         public void checkUpdateNow() {
             checkForUpdate(true);

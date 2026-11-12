@@ -1046,6 +1046,22 @@ $('news-ok').addEventListener('click', closeNews);
 $('news-close').addEventListener('click', closeNews);
 news.addEventListener('close', () => { if (changelog.length) save('strab.seenChangelog', changelog[0].id); });
 news.addEventListener('click', (e) => { if (e.target === news) closeNews(); });
+$('btn-usage').addEventListener('click', async () => {
+  if (about.open) about.close();
+  state.selected = null; state.station = null; state.follow = null; state.lineView = null; state.journey = null;
+  state.list = 'stats';
+  const body = $('panel-body');
+  body.replaceChildren(el('h2', {}, 'Nutzung'), el('div', { class: 'sub' }, 'Lade …'));
+  showPanel();
+  let data = { days: [] };
+  try { data = await rtGet('/api/hits'); } catch (e) { console.error(e); }
+  body.replaceChildren(el('h2', {}, 'Nutzung'), el('div', { class: 'sub' }, 'So oft wurde die App pro Tag geöffnet. Anonym gezählt, ohne Kennung. Die Zahlen sind eine Untergrenze, einzelne Aufrufe können fehlen.'));
+  if (!data.days || !data.days.length) { body.append(el('div', { class: 'empty' }, 'Noch keine Zahlen.')); return; }
+  const table = el('table');
+  table.append(el('tr', { class: 'th' }, el('td', {}, 'Tag'), el('td', { class: 'r' }, 'Web'), el('td', { class: 'r' }, 'Android'), el('td', { class: 'r' }, 'Summe')));
+  for (const d of data.days) table.append(el('tr', {}, el('td', {}, `${d.date.slice(6, 8)}.${d.date.slice(4, 6)}.`), el('td', { class: 'r' }, String(d.web || 0)), el('td', { class: 'r' }, String(d.app || 0)), el('td', { class: 'r' }, el('b', {}, String((d.web || 0) + (d.app || 0))))));
+  body.append(table);
+});
 $('btn-news').addEventListener('click', () => { if (about.open) about.close(); if (changelog.length) showNews(changelog); });
 fetch('changelog.json', { cache: 'no-cache' }).then((r) => r.json()).then((list) => {
   changelog = Array.isArray(list) ? list : [];
@@ -1313,7 +1329,7 @@ function renderVehiclePanel() {
     table.append(tr);
   });
   body.append(table);
-  const legend = el('div', { class: 'sub istnote', hidden: '' }, 'Links Fahrplan, daneben tatsächliche Zeit mit Abweichung (Messpunkte auf volle Minuten). ≈ zwischen zwei Messpunkten geschätzt, ~ Prognose.');
+  const legend = el('div', { class: 'sub istnote', hidden: '' }, 'Links Fahrplan, daneben die tatsächliche Zeit. Kräftig = gemessen, blass = geschätzt (≈ zwischen Messpunkten, ~ Prognose). Manche Fahrten haben nur einen Messpunkt, dann steht überall derselbe Wert.');
   body.append(legend);
   vehicleView = { trip, sub, rows, targetBox, pat, legend };
   loadTripStops(trip);
@@ -1394,7 +1410,7 @@ function updateVehiclePanel() {
     if (d !== null && d !== undefined) {
       any = true;
       txt = `${mark}${hhmm(plan + d)}${Math.abs(d) >= 30 ? ` ${fmtDelayExact(d)}` : ''}`;
-      cls += (d >= 60 ? ' late' : d <= -60 ? ' early' : ' ok') + (mark === '≈' ? ' est' : '');
+      cls += (d >= 60 ? ' late' : d <= -60 ? ' early' : ' ok') + (mark ? ' est' : ' meas');
     }
     if (r.ist.textContent !== txt) r.ist.textContent = txt;
     if (r.ist.className !== cls) r.ist.className = cls;
@@ -2022,12 +2038,12 @@ let boardTimer = null;
 let wakeLock = null;
 let boardCountdown = 0;
 let boardSeq = 0;
-let boardUi = { adding: false, qr: false };
+let boardUi = { adding: false, qr: false, more: false };
 
 async function openBoard(stations) {
   closePanel();
   state.board = (Array.isArray(stations) ? stations : [stations]).slice(0, 6);
-  boardUi = { adding: false, qr: false };
+  boardUi = { adding: false, qr: false, more: false };
   $('board').hidden = false;
   document.body.classList.add('board-open');
   writeHash();
@@ -2080,11 +2096,14 @@ async function renderBoard() {
   view.replaceChildren();
 
   const mk = (label, fn) => { const b = el('button', { type: 'button', class: 'chip' }, label); b.addEventListener('click', fn); return b; };
-  const buttons = el('div', { class: 'bbtns' },
+  const back = mk('← Zur Karte', closeBoard);
+  back.className = 'chip go';
+  const buttons = el('div', { class: 'bbtns' }, back,
     mk('＋ Haltestelle', () => { boardUi.adding = !boardUi.adding; renderBoard(); }),
+    mk(boardUi.more ? 'Weniger' : 'Mehr …', () => { boardUi.more = !boardUi.more; renderBoard(); }));
+  if (boardUi.more || boardUi.qr) buttons.append(
     mk('QR-Code', () => { writeHash(); boardUi.qr = !boardUi.qr; renderBoard(); }),
-    mk('Vollbild', () => { try { document.documentElement.requestFullscreen(); } catch { /* nicht erlaubt */ } }),
-    mk('Zur Karte', closeBoard));
+    mk('Vollbild', () => { try { document.documentElement.requestFullscreen(); } catch { /* nicht erlaubt */ } }));
   view.append(el('div', { class: 'bhead' }, el('div', { class: 'bname' }, stations.map((i) => state.stops[i][1]).join(' · ')), el('div', { class: 'bclock', id: 'bclock' }, hhmmss(now)), buttons));
 
   if (boardUi.adding) {
@@ -2708,6 +2727,25 @@ window.strabOpenStationId = (id, tries = 0) => {
 };
 if (window.__strabOpenId) window.strabOpenStationId(window.__strabOpenId);
 
+// Update-Knopf: neue App lädt und installiert direkt, ältere Apps öffnen den Download im Browser
+function updateButton(info) {
+  const url = info.url.includes('?') ? info.url : `${info.url}?v=${info.versionCode}`;
+  const nat = window.StrabNative;
+  if (!nat || !nat.installUpdate) return el('a', { class: 'chip', href: url, target: '_blank', rel: 'noopener' }, 'Herunterladen');
+  const b = el('button', { class: 'chip', type: 'button' }, 'Jetzt aktualisieren');
+  b.addEventListener('click', () => { b.textContent = 'Lädt …'; b.disabled = true; try { nat.installUpdate(url); } catch { location.href = url; } });
+  // Rückmeldung aus der App: 'ok' (Installation gestartet), 'erlaubnis' (Einstellung geöffnet), 'fehler'
+  window.strabInstallResult = (r) => {
+    b.disabled = false;
+    if (r === 'ok') { b.textContent = 'Installation läuft'; return; }
+    if (r === 'erlaubnis') { b.textContent = 'Jetzt aktualisieren'; toast('Bitte „Installieren unbekannter Apps“ für STRABFAHRT erlauben und nochmal tippen.'); return; }
+    b.textContent = 'Jetzt aktualisieren';
+    toast('Direktes Update nicht möglich, öffne den Download.');
+    window.open(url, '_blank');
+  };
+  return b;
+}
+
 // Android-App: neue Version unter GitHub-Releases gefunden
 window.strabShowUpdate = (info) => {
   if (!info || !info.url || document.getElementById('update')) return;
@@ -2716,7 +2754,7 @@ window.strabShowUpdate = (info) => {
   const box = el('div', { id: 'update', role: 'status' },
     el('span', {}, `Neue App-Version ${info.versionName || ''} verfügbar.`),
     // ?v= je Version: sonst liefert der Browser beim Herunterladen teils eine ältere, zwischengespeicherte APK
-    el('a', { class: 'chip', href: info.url.includes('?') ? info.url : `${info.url}?v=${info.versionCode}`, target: '_blank', rel: 'noopener' }, 'Herunterladen'));
+    updateButton(info));
   const later = el('button', { class: 'chip', type: 'button' }, 'Später');
   later.addEventListener('click', () => box.remove());
   box.append(later);
@@ -2743,7 +2781,7 @@ async function openAlerts() {
   let data = { alerts: [] };
   try { data = await rtGet('/api/alerts'); } catch (e) { console.error(e); }
   if (state.list !== 'alerts') return;
-  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Störungs- und Baustellenmeldungen aus dem Echtzeitstream (gtfs.de), Region Karlsruhe zuerst.'));
+  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Störungen und Bauarbeiten im KVV-Gebiet, aus dem Echtzeitstream von gtfs.de. Antippen zeigt die Einzelheiten.'));
   if (!data.alerts.length) body.append(el('div', { class: 'empty' }, 'Gerade keine Meldungen für das Gebiet.'));
   for (const a of data.alerts) {
     const det = el('details', { class: 'block' }, el('summary', {}, a.header));
@@ -2981,6 +3019,8 @@ async function init() {
     };
     state.rtBase = rtBase;
     syncNative();
+    // Anonymer Zähler: ein Aufruf je App-Start, ohne Kennung, nichts wird auf dem Gerät gespeichert
+    try { fetch(`${rtBase.replace(/\/$/, '')}/api/hit?p=${window.StrabNative ? 'app' : 'web'}`, { cache: 'no-store' }).catch(() => {}); } catch { /* egal */ }
     // Erster Abruf kann ein älterer Zwischenstand sein (schnelle Antwort nach einer Pause): kurz darauf frisch nachladen
     poll().then(() => { if (state.rt.feedTime && Date.now() / 1000 - state.rt.feedTime > 100) setTimeout(poll, 5000); });
     setInterval(poll, 30000);

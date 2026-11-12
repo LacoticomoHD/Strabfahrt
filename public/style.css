@@ -378,3 +378,7 @@ details.more > summary::-webkit-details-marker { display: none; }
   .bbtns .chip, .bbtns button { font-size: 14px; padding: 4px 10px; }
   .bhead { gap: 8px 16px; }
 }
+
+/* Fahrzeugfenster: gemessene Zeiten kräftig, geschätzte blass und kursiv */
+#panel td.ist.meas { font-weight: 700; }
+#panel td.ist.est { font-weight: 400; font-style: italic; opacity: .55; }

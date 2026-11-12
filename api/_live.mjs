@@ -39,6 +39,28 @@ export async function readStats() {
   return res.json();
 }
 
+// Anonymer Zähler für App-Starts: je Tag { web, app }. Wird mit der Statistik gespeichert (keine eigenen Schreibzugriffe).
+const pendingHits = {};
+let savedHits = {};
+const berlinDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date()).replace(/-/g, '');
+export function addHit(kind) {
+  const d = berlinDay();
+  pendingHits[d] = pendingHits[d] || { web: 0, app: 0 };
+  pendingHits[d][kind === 'app' ? 'app' : 'web'] += 1;
+}
+function mergedHits(base) {
+  const out = {};
+  for (const [d, v] of Object.entries(base || {})) out[d] = { web: v.web || 0, app: v.app || 0 };
+  for (const [d, v] of Object.entries(pendingHits)) { out[d] = out[d] || { web: 0, app: 0 }; out[d].web += v.web; out[d].app += v.app; }
+  return Object.fromEntries(Object.keys(out).sort().slice(-60).map((d) => [d, out[d]]));
+}
+export async function hitsByDay() {
+  const remote = await readStats().catch(() => null);
+  if (remote && remote.hits) savedHits = remote.hits;
+  const all = mergedHits(savedHits);
+  return Object.keys(all).sort().reverse().map((date) => ({ date, ...all[date] }));
+}
+
 async function saveStats(rt) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
   if (Date.now() - lastSave < STATS_SAVE_EVERY) return;
@@ -53,9 +75,12 @@ async function saveStats(rt) {
   rt.lastFlush = 0;
   rt.flushStats();
   const { put } = await import('@vercel/blob');
-  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen] });
+  const hits = mergedHits(remote ? remote.hits : savedHits);
+  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits });
   await put(STATS_PATH, body, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60 });
   lastSave = Date.now();
+  savedHits = hits;
+  for (const k of Object.keys(pendingHits)) delete pendingHits[k];
 }
 
 // Gespeicherten Stand einmischen, ohne eigene neuere Werte zu verlieren

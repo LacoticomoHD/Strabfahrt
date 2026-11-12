@@ -615,6 +615,7 @@ export class Model {
     const re = /umleitung|\bsev\b|ersatzverkehr|schienenersatz/i;
     const byLine = new Map();
     for (const { trip, start } of this.activeTrips(ymd, 0, DAY)) {
+      if (start < 0 || start >= DAY) continue; // nur Fahrten, die an diesem Tag beginnen (sonst zählt die Nachtfahrt von gestern mit)
       const p = this.patterns[trip.pattern];
       const r = this.routes[p.route];
       const key = `${r[0]}|${r[1]}`;

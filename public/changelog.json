@@ -1,5 +1,24 @@
 [
   {
+    "id": "2026-11-12e",
+    "version": "3.6",
+    "date": "12.11.2026",
+    "title": "Update per Fingertipp und klarere Zeiten",
+    "neu": [
+      "Android: „Jetzt aktualisieren“ lädt und installiert die neue Version direkt in der App (Android fragt beim ersten Mal nach der Erlaubnis)",
+      "Unter ⓘ → „Nutzung“ steht, wie oft die App pro Tag geöffnet wird (anonym gezählt, siehe Info & Datenschutz)"
+    ],
+    "geaendert": [
+      "Fahrzeugfenster: gemessene Zeiten kräftig, geschätzte blass und kursiv",
+      "Tafel: „Zur Karte“ vorn, QR-Code und Vollbild unter „Mehr“",
+      "Favoriten, Nähe, Linien und Meldungen im neuen Stil"
+    ],
+    "behoben": [
+      "Info & Datenschutz nannte die neue Grundkarte (basemap.de) noch nicht"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12d",
     "version": "3.5",
     "date": "12.11.2026",
