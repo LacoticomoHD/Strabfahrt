@@ -48,16 +48,28 @@ export function addHit(kind) {
   pendingHits[d] = pendingHits[d] || { web: 0, app: 0 };
   pendingHits[d][kind === 'app' ? 'app' : 'web'] += 1;
 }
-function mergedHits(base) {
+// Gespeicherte Stände zusammenführen: je Tag der höhere Wert. So geht nichts verloren,
+// wenn die Datei einmal nicht oder veraltet gelesen wird.
+function maxHits(...bases) {
   const out = {};
-  for (const [d, v] of Object.entries(base || {})) out[d] = { web: v.web || 0, app: v.app || 0 };
+  for (const base of bases) {
+    for (const [d, v] of Object.entries(base || {})) {
+      const o = out[d] || { web: 0, app: 0 };
+      out[d] = { web: Math.max(o.web, v.web || 0), app: Math.max(o.app, v.app || 0) };
+    }
+  }
+  return out;
+}
+// Gespeicherter Stand plus eigene, noch nicht gespeicherte Zählungen (letzte 60 Tage)
+function mergedHits(base) {
+  const out = maxHits(base);
   for (const [d, v] of Object.entries(pendingHits)) { out[d] = out[d] || { web: 0, app: 0 }; out[d].web += v.web; out[d].app += v.app; }
   return Object.fromEntries(Object.keys(out).sort().slice(-60).map((d) => [d, out[d]]));
 }
 export async function hitsByDay() {
   let err = null;
   const remote = await readStats().catch((e) => { err = e.message; return null; });
-  if (remote && remote.hits) savedHits = remote.hits;
+  if (remote && remote.hits) savedHits = maxHits(remote.hits, savedHits);
   const all = mergedHits(savedHits);
   const days = Object.keys(all).sort().reverse().map((date) => ({ date, ...all[date] }));
   // Zustand der Speicherdatei (ohne Inhalt), damit ein leerer Zähler erklärbar ist
@@ -72,6 +84,7 @@ async function saveStats(rt) {
   const remote = await readStats().catch((e) => { console.warn('Statistik lesen:', e.message); return undefined; });
   // Lesen fehlgeschlagen: nicht speichern, sonst würde der gespeicherte Stand (Zähler, Statistik) überschrieben
   if (remote === undefined) return;
+  if (remote && remote.hits) savedHits = maxHits(remote.hits, savedHits);
   if (remote && Date.now() - (remote.savedAt || 0) < STATS_SAVE_EVERY) {
     mergeRemote(rt, remote);
     lastSave = remote.savedAt;
@@ -81,7 +94,7 @@ async function saveStats(rt) {
   rt.lastFlush = 0;
   rt.flushStats();
   const { put } = await import('@vercel/blob');
-  const hits = mergedHits(remote ? remote.hits : savedHits);
+  const hits = mergedHits(maxHits(remote ? remote.hits : null, savedHits));
   const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits });
   await put(STATS_PATH, body, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60 });
   lastSave = Date.now();
@@ -126,7 +139,7 @@ export async function getModel() {
 export async function getLive() {
   const d = await ensureData();
   const rt = d.realtime;
-  if (rt.collect && !statsLoaded) statsLoaded = readStats().then((s) => { if (s) mergeRemote(rt, s); }).catch((e) => console.warn(e.message));
+  if (rt.collect && !statsLoaded) statsLoaded = readStats().then((s) => { if (s) { mergeRemote(rt, s); if (s.hits) savedHits = { ...s.hits }; } }).catch((e) => console.warn(e.message));
   if (Date.now() - rt.updated > LIVE_TTL) {
     if (!livePromise) {
       livePromise = rt.fetchOnce()
