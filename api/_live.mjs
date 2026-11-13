@@ -55,17 +55,23 @@ function mergedHits(base) {
   return Object.fromEntries(Object.keys(out).sort().slice(-60).map((d) => [d, out[d]]));
 }
 export async function hitsByDay() {
-  const remote = await readStats().catch(() => null);
+  let err = null;
+  const remote = await readStats().catch((e) => { err = e.message; return null; });
   if (remote && remote.hits) savedHits = remote.hits;
   const all = mergedHits(savedHits);
-  return Object.keys(all).sort().reverse().map((date) => ({ date, ...all[date] }));
+  const days = Object.keys(all).sort().reverse().map((date) => ({ date, ...all[date] }));
+  // Zustand der Speicherdatei (ohne Inhalt), damit ein leerer Zähler erklärbar ist
+  const info = { read: err ? `Fehler: ${err}` : remote ? 'ok' : 'kein Speicher', savedAt: remote ? remote.savedAt || 0 : 0, hasHits: Boolean(remote && remote.hits) };
+  return { days, info };
 }
 
 async function saveStats(rt) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) return;
   if (Date.now() - lastSave < STATS_SAVE_EVERY) return;
   // Andere Instanz hat gerade gespeichert? Dann deren Stand uebernehmen und warten.
-  const remote = await readStats().catch(() => null);
+  const remote = await readStats().catch((e) => { console.warn('Statistik lesen:', e.message); return undefined; });
+  // Lesen fehlgeschlagen: nicht speichern, sonst würde der gespeicherte Stand (Zähler, Statistik) überschrieben
+  if (remote === undefined) return;
   if (remote && Date.now() - (remote.savedAt || 0) < STATS_SAVE_EVERY) {
     mergeRemote(rt, remote);
     lastSave = remote.savedAt;
