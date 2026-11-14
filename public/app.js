@@ -515,8 +515,8 @@ function rtOf(tripId) {
 }
 
 // Zeit-Zelle: Plan-Zeit, dazu farbige Abweichung oder "fällt aus"
-function depTime(d) {
-  const r = rtOf(d.trip);
+function depTime(d, override) {
+  const r = override || rtOf(d.trip);
   const span = el('span', { class: r.canceled ? 'canc' : '' }, hhmm(d.t));
   if (r.canceled) {
     span.title = 'Fahrt fällt aus';
@@ -1445,6 +1445,8 @@ function updateVehiclePanel() {
 
 let stationTimer = null;
 let platformFilter = null;
+// Tagesverlauf: frühere Fahrten an der offenen Haltestelle (Variante A: Ist-Zeiten, solange die Quellen sie noch liefern)
+let past = { index: null, ymd: '', from: null, rows: [], rt: new Map(), loading: false };
 
 function refreshPanel() {
   if (state.station !== null) renderStation();
@@ -1477,12 +1479,48 @@ async function openStation(index) {
   state.journey = null;
   state.follow = null;
   platformFilter = null;
+  past = { index: null, ymd: '', from: null, rows: [], rt: new Map(), loading: false };
   clearInterval(stationTimer);
   scheduleHash();
   await renderStation();
   stationTimer = setInterval(refreshPanel, 15000);
   const s = state.stops[index];
   map.panTo([s[2], s[3]]);
+}
+
+// Eine Stunde früher laden: Fahrplan aus dem Modell, Ist-Zeiten von KVV/MobiData (gibt es nur für die letzten etwa 2 Stunden)
+async function loadEarlier(index, startSec) {
+  const ymd = ymdOf(state.sim);
+  if (past.index !== index || past.ymd !== ymd) past = { index, ymd, from: startSec, rows: [], rt: new Map(), loading: false };
+  if (past.loading || past.from <= 0) return;
+  past.loading = true;
+  const to = past.from;
+  const from = Math.max(0, to - 3600);
+  try {
+    const list = await api('/api/departures', { station: index, date: ymd, from, limit: 200 }).catch(() => []);
+    const rows = list.filter((d) => d.t >= from && d.t < to);
+    if (state.rtBase) {
+      const k = await rtGet(`/api/stopevents?stop=${encodeURIComponent(state.stops[index][0])}&at=${from}`).catch(() => null);
+      if (k && k.d) {
+        for (const [t, v] of Object.entries(k.d)) past.rt.set(t, { delay: v, canceled: false });
+        for (const t of k.c || []) past.rt.set(t, { ...(past.rt.get(t) || {}), canceled: true });
+      }
+    }
+    if (past.index !== index) return;
+    past.rows = [...rows, ...past.rows];
+    past.from = from;
+  } finally {
+    past.loading = false;
+  }
+  renderStation();
+}
+
+// Ist-Daten einer früheren Fahrt: KVV/MobiData-Abfrage, sonst was der Live-Feed noch weiß
+function pastRtOf(trip) {
+  const p = past.rt.get(trip);
+  if (p) return { delay: p.delay, canceled: !!p.canceled, reason: null };
+  const r = rtOf(trip);
+  return r;
 }
 
 async function renderStation() {
@@ -1564,6 +1602,31 @@ async function renderStation() {
   }
 
   const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && flagsOk(d.flags)).slice(0, 40);
+  // Frühere Fahrten (nur heute und nur, wenn die Abfahrten ab jetzt gezeigt werden)
+  const startSec = Math.floor(state.sim - base);
+  const live = Math.abs(state.sim - wallNow()) < 120;
+  if (past.index !== index || past.ymd !== ymdOf(state.sim)) past = { index, ymd: ymdOf(state.sim), from: startSec, rows: [], rt: new Map(), loading: false };
+  if (live && past.from > 0) {
+    const earlier = el('button', { class: 'ghost earlier', type: 'button' }, past.loading ? 'Lade …' : past.rows.length ? '↑ Noch eine Stunde früher' : '↑ Frühere Fahrten');
+    earlier.addEventListener('click', () => { earlier.textContent = 'Lade …'; loadEarlier(index, startSec); });
+    body.append(earlier);
+  }
+  const pastShown = live ? past.rows.filter((d) => (!platformFilter || d.platform === platformFilter) && flagsOk(d.flags)) : [];
+  if (pastShown.length) {
+    const ptable = el('table', { class: 'past' });
+    for (const d of pastShown) {
+      const r = pastRtOf(d.trip);
+      const style = routeStyle([d.line, d.type, d.color, d.textColor]);
+      const status = r.canceled ? 'fiel aus' : r.delay === undefined || r.delay === null ? 'keine Ist-Zeit' : 'abgefahren';
+      ptable.append(el('tr', {},
+        el('td', { class: 't' }, depTime(d, r)),
+        el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
+        el('td', { class: 'r' }, d.platform ? `Steig ${d.platform} · ` : '', status)));
+    }
+    body.append(ptable);
+    body.append(el('div', { class: 'sub pastnote' }, 'Ist-Zeiten liefern KVV und MobiData BW nur für etwa die letzten 2 Stunden. „keine Ist-Zeit“ heißt: nicht mehr bekannt oder ohne Live-Daten gefahren.'));
+    body.append(el('div', { class: 'nowline' }, `Jetzt, ${hhmm(state.sim)}`));
+  }
   if (!shown.length) {
     body.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
   } else {

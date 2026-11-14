@@ -382,3 +382,9 @@ details.more > summary::-webkit-details-marker { display: none; }
 /* Fahrzeugfenster: gemessene Zeiten kräftig, geschätzte blass und kursiv */
 #panel td.ist.meas { font-weight: 700; }
 #panel td.ist.est { font-weight: 400; font-style: italic; opacity: .55; }
+
+/* Frühere Fahrten an der Haltestelle */
+.earlier { margin: 6px 0; }
+table.past td.r { color: var(--muted, #8a94a6); }
+.pastnote { margin: 4px 0 2px; }
+.nowline { margin: 6px 0; padding-top: 4px; border-top: 2px solid #e5484d; color: #e5484d; font-size: 12px; font-weight: 600; }

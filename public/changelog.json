@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-14b",
+    "version": "3.10",
+    "date": "14.11.2026",
+    "title": "Frühere Fahrten an der Haltestelle",
+    "neu": [
+      "Haltestelle: „↑ Frühere Fahrten“ zeigt die Abfahrten der letzten Stunden, jede weitere Berührung eine Stunde mehr. Für etwa die letzten 2 Stunden mit tatsächlicher Abfahrtszeit, davor nur nach Fahrplan"
+    ],
+    "geaendert": [],
+    "behoben": [
+      "Nach einem neuen Fahrplan fehlten auf der Karte bei vielen Fahrten die Verspätungen"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-14a",
     "version": "3.9",
     "date": "14.11.2026",
