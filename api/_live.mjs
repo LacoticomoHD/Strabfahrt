@@ -111,7 +111,15 @@ function mergeRemote(rt, remote) {
 }
 
 async function loadData() {
-  const [m, map] = await Promise.all([getJson('model.json'), getJson('rt-map.json').catch(() => null)]);
+  const m = await getJson(`model.json?t=${Math.floor(Date.now() / 600000)}`); // höchstens 10 Min. alter CDN-Stand
+  // Zuordnung passend zum Fahrplan laden: nach einem neuen Fahrplan kann das CDN noch eine alte rt-map.json liefern,
+  // dann passen die Fahrt-IDs nicht und viele Fahrten bekommen keine Live-Daten.
+  const built = m.meta && m.meta.built;
+  let map = await getJson(`rt-map.json?v=${encodeURIComponent(built || Date.now())}`).catch(() => null);
+  if (map && built && map.modelBuilt && map.modelBuilt !== built) {
+    console.warn('rt-map passt nicht zum Fahrplan:', map.modelBuilt, built);
+    map = await getJson(`rt-map.json?t=${Date.now()}`).catch(() => map);
+  }
   const model = new Model(m);
   const realtime = new Realtime(model, null, { map: map || undefined, persist: false, collect: Boolean(process.env.BLOB_READ_WRITE_TOKEN) });
   realtime.enabled = true;
