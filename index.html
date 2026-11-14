@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>STRABFAHRT</title>
+  <meta name="description" content="Karte der Bahnen und Busse im Raum Karlsruhe nach Fahrplan, mit Abfahrtsanzeige je Haltestelle.">
+  <meta name="theme-color" content="#012f57">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="insets.js"></script>
+</head>
+<body>
+  <div id="map" role="application" aria-label="Karte"></div>
+
+  <header id="top">
+    <h1>STRABFAHRT</h1>
+    <div id="searchbox">
+      <label for="search" class="sr">Haltestelle suchen</label>
+      <input id="search" type="search" placeholder="Haltestelle oder Zugnummer suchen" autocomplete="off" spellcheck="false">
+      <ul id="results" hidden></ul>
+    </div>
+    <button id="btn-route" class="primary" type="button" aria-label="Verbindung suchen">⇄<span>Route</span></button>
+  </header>
+
+  <!-- Kartenwerkzeuge: einheitliche Symbol-Knöpfe am rechten Rand -->
+  <nav id="tools" aria-label="Werkzeuge">
+    <button id="btn-favs" type="button" aria-label="Favoriten" title="Favoriten">★</button>
+    <button id="btn-nearby" type="button" aria-label="In der Nähe" title="Haltestellen in der Nähe">◎</button>
+    <button id="btn-locate" type="button" aria-label="Mein Standort" aria-pressed="false" title="Mein Standort: 1× tippen zeigt und folgt, nochmal tippen beendet">➤</button>
+    <button id="btn-lines" type="button" aria-label="Linien filtern" title="Linien filtern">☰</button>
+    <button id="collapse" type="button" aria-label="Optionen" title="Optionen" aria-expanded="false">⚙</button>
+    <button id="btn-install" type="button" aria-label="App installieren" title="App installieren" hidden>⤓</button>
+  </nav>
+
+  <div id="legend" hidden></div>
+
+  <div id="board" hidden></div>
+
+  <aside id="panel" hidden aria-live="polite">
+    <button id="panel-close" type="button" aria-label="Schließen">×</button>
+    <div id="panel-body"></div>
+  </aside>
+
+  <dialog id="about" aria-labelledby="about-h">
+    <button id="about-close" type="button" aria-label="Schließen">×</button>
+    <h2 id="about-h">STRABFAHRT</h2>
+    <p>Alle Bahnen und Busse im KVV-Netz auf einer Karte, mit Live-Verspätungen.</p>
+    <ul>
+      <li><b>Fahrzeug antippen:</b> Linie, Ziel, Halte und Verspätung</li>
+      <li><b>Blasse Fahrzeuge:</b> keine Live-Daten, Position nur nach Fahrplan</li>
+      <li><b>Haltestelle antippen oder suchen:</b> nächste Abfahrten mit Echtzeit vom KVV</li>
+      <li><b>⇄ Route:</b> Verbindung von A nach B mit Live-Prognose</li>
+      <li><b>★</b> Haltestelle als Favorit merken, <b>⚙</b> Optionen wie Zeitreise und Filter</li>
+    </ul>
+    <p id="note" class="small">Keine GPS-Ortung: Die Position wird aus Fahrplan und Live-Verspätung berechnet. Fehlen Live-Daten, ist das Fahrzeug blass und die Position reiner Fahrplan. Daten: KVV (CC0). Karte: basemap.de / BKG oder © OpenStreetMap-Mitwirkende. Kein offizielles Angebot des KVV, der KVV haftet nicht für die Inhalte. Ohne Gewähr.</p>
+    <p class="small"><a href="info.html">Info &amp; Datenschutz</a> · <button id="btn-news" type="button" class="ghost">Was ist neu?</button> · <button id="btn-usage" type="button" class="ghost">Nutzung</button></p>
+    <button id="about-ok" type="button" class="primary">Los geht's</button>
+  </dialog>
+
+  <dialog id="news" aria-labelledby="news-h">
+    <button id="news-close" type="button" aria-label="Schließen">×</button>
+    <h2 id="news-h">Was ist neu?</h2>
+    <div id="news-body"></div>
+    <button id="news-ok" type="button" class="bigbtn">Alles klar</button>
+  </dialog>
+
+  <footer id="bar">
+    <p id="notice" role="status" hidden></p>
+    <div class="row">
+      <span id="clock" aria-label="Simulierte Uhrzeit">--:--:--</span>
+      <button id="now" type="button" title="Zurück zur aktuellen Uhrzeit" hidden>Jetzt</button>
+      <span id="live" class="live" hidden></span>
+      <span id="count" aria-live="off"></span>
+      <button id="btn-info" type="button" aria-label="Info zur App" title="Info zur App">ⓘ</button>
+    </div>
+  </footer>
+
+  <aside id="settings" hidden aria-labelledby="settings-h">
+    <button id="settings-close" type="button" aria-label="Schließen">×</button>
+    <h2 id="settings-h">Optionen</h2>
+    <div id="options">
+      <div class="group wide">
+        <span class="gt">Lage im Netz</span>
+        <button id="btn-detours" type="button" class="chip">⚠ Umleitungen heute</button>
+        <button id="btn-alerts" type="button" class="chip" hidden>📢 Meldungen</button>
+        <button id="btn-stats" type="button" class="chip" hidden>⏱ Pünktlichkeit</button>
+      </div>
+      <div class="group wide">
+        <span class="gt">Zeitreise: andere Uhrzeit oder Zeitraffer</span>
+        <button id="play" type="button" aria-label="Pause">❚❚</button>
+        <label class="sr" for="speed">Geschwindigkeit</label>
+        <select id="speed">
+          <option value="1">1×</option>
+          <option value="5">5×</option>
+          <option value="10">10×</option>
+          <option value="30">30×</option>
+          <option value="60">60×</option>
+          <option value="120">120×</option>
+        </select>
+        <label class="sr" for="when">Datum und Uhrzeit</label>
+        <input id="when" type="datetime-local">
+        <button id="night" type="button" class="chip" title="Springt auf 01:30 und zeigt, welche Linien nachts fahren">Nachtnetz (01:30)</button>
+        <label class="sr" for="tl">Uhrzeit des Tages</label>
+        <input id="tl" type="range" min="0" max="1439" step="1" value="720">
+      </div>
+      <div class="group">
+        <span class="gt">Verkehrsmittel</span>
+        <label><input type="checkbox" data-type="tram" checked> Tram</label>
+        <label><input type="checkbox" data-type="rail" checked> Bahn</label>
+        <label title="ICE, IC, EC und andere Fernzüge"><input type="checkbox" data-type="fern" checked> Fernverkehr</label>
+        <label><input type="checkbox" data-type="bus" checked> Bus</label>
+        <label><input type="checkbox" data-type="other" checked> Sonstige</label>
+      </div>
+      <div class="group">
+        <span class="gt">Filter</span>
+        <label><input type="checkbox" id="acc"> ♿ nur barrierefrei</label>
+        <label title="Der KVV-Feed nennt nur Verbote. Blendet Fahrten aus, bei denen Fahrräder ausdrücklich nicht erlaubt sind."><input type="checkbox" id="bike"> 🚲 Fahrrad nicht verboten</label>
+      </div>
+      <div class="group">
+        <span class="gt">Anzeige</span>
+        <label title="Zeigt einen Schweif hinter den Fahrzeugen"><input type="checkbox" id="trails"> Spuren</label>
+        <label title="Färbt Haltestellen nach Abfahrten pro Stunde"><input type="checkbox" id="takt"> Takt</label>
+        <button id="btn-theme" type="button" class="chip" aria-pressed="false">☾ Dunkelmodus</button>
+        <label title="Hintergrundkarte">Karte <select id="basemap"><option value="light">Schlicht (grau)</option><option value="color">basemap.de farbig</option><option value="osm">OpenStreetMap</option></select></label>
+        <label title="Namen der Haltestellen ab Zoomstufe 15 einblenden"><input type="checkbox" id="stoplabels"> Haltestellennamen</label>
+        <label title="Zeigt unter jedem Fahrzeug die Zug- oder Kursnummer, soweit der Fahrplan eine nennt (ab Zoomstufe 14)"><input type="checkbox" id="nums"> Zug-/Kursnummern</label>
+        <label class="ovl"><input type="checkbox" id="ovl-infra"> Gleise</label>
+        <label class="ovl"><input type="checkbox" id="ovl-signals"> Signale</label>
+        <label class="ovl"><input type="checkbox" id="ovl-maxspeed"> Tempo</label>
+        <label hidden><input type="checkbox" id="demo"> Demo-Verspätung (erfunden, überdeckt Live)</label>
+      </div>
+      <div class="group">
+        <span class="gt">Weiteres</span>
+        <label id="notify-wrap" hidden title="Prüft alle 15 Minuten, ob es Störungen auf den Linien deiner Favoriten gibt"><input type="checkbox" id="notify"> 🔔 Störungen meiner Favoriten melden</label>
+        <label title="Wie früh die 🔔-Erinnerung kommt">🔔 Erinnern <select id="lead"><option value="2">2 Min.</option><option value="5">5 Min.</option><option value="10">10 Min.</option><option value="15">15 Min.</option></select> vorher</label>
+        <label title="Weniger Bilder pro Sekunde und geringere Auflösung, schont den Akku"><input type="checkbox" id="saver"> Akkusparmodus</label>
+      </div>
+    </div>
+  </aside>
+
+  <script src="static-flag.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/qrcode/qrcode.js"></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>

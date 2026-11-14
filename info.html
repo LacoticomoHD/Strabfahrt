@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>STRABFAHRT: Über diese App und Datenschutz</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; padding: calc(16px + max(env(safe-area-inset-top), var(--sat, 0px))) 18px calc(32px + max(env(safe-area-inset-bottom), var(--sab, 0px))); max-width: 680px; margin-inline: auto; }
+  h1 { font-size: 1.4rem; margin: 0.4em 0; }
+  h2 { font-size: 1.05rem; margin: 1.6em 0 0.3em; }
+  p, li { margin: 0.4em 0; }
+  ul { padding-left: 1.2em; }
+  a { color: #0069b9; }
+  :root[data-theme="dark"] { color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] body { background: #10161d; color: #e8edf2; }
+  :root[data-theme="dark"] a { color: #7cc0ff; }
+  :root[data-theme="light"] body { background: #fff; color: #1d2330; }
+  .back { display: inline-block; margin: 4px 0 10px; padding: 9px 14px; border-radius: 10px; background: #0069b9; color: #fff !important; text-decoration: none; font-weight: 600; }
+  .small { font-size: 0.9rem; opacity: 0.8; }
+</style>
+<script src="info.js"></script>
+<script src="insets.js"></script>
+</head>
+<body>
+<a class="back" href="./">← Zurück zur Karte</a>
+<h1>Über diese App</h1>
+<p>STRABFAHRT ist ein privates, nicht kommerzielles Hobbyprojekt von <strong>Sebastian Of</strong>. Es gibt keine Werbung, keine Einnahmen und keine Benutzerkonten.</p>
+<p><strong>Kein offizielles Angebot des KVV.</strong> Der Karlsruher Verkehrsverbund ist nicht beteiligt und haftet nicht für die Inhalte. Alle Angaben ohne Gewähr. Maßgeblich sind die Auskünfte der Verkehrsunternehmen.</p>
+<p>Die Fahrzeuge auf der Karte sind aus Fahrplan und gemeldeter Verspätung berechnet. Es sind keine GPS-Positionen.</p>
+
+<h2>Kontakt</h2>
+<p>Fragen, Lob und Kritik gerne per E-Mail an <a href="mailto:sebastianof13@googlemail.com?subject=STRABFAHRT">sebastianof13@googlemail.com</a>.</p>
+
+<h2>Datenquellen</h2>
+<ul>
+  <li>Fahrplan: KVV (GTFS, CC0), Regional- und Fernverkehr: gtfs.de, Daten von DELFI e.V. (CC BY 4.0)</li>
+  <li>Echtzeit: gtfs.de, TRIAS-Schnittstelle des KVV, TRIAS-Schnittstelle von MobiData BW (NVBW)</li>
+  <li>Karte: © OpenStreetMap-Mitwirkende, OpenRailwayMap</li>
+</ul>
+
+<h2>Datenschutz</h2>
+<p>Die App kommt ohne Konto, ohne Cookies, ohne Werbung und ohne Auswertung deines persönlichen Nutzungsverhaltens aus. Verantwortlich für das Projekt: Sebastian Of (Kontakt siehe oben).</p>
+<ul>
+  <li><strong>Standort:</strong> Wird nur verwendet, wenn du ihn freigibst, und bleibt auf deinem Gerät. Er dient der Anzeige auf der Karte, den Haltestellen in der Nähe und als Startpunkt für Verbindungen. Gerechnet wird auf deinem Gerät.</li>
+  <li><strong>Gespeichert auf deinem Gerät:</strong> Favoriten, Einstellungen und Wecker. Nichts davon wird an mich übertragen.</li>
+  <li><strong>Abrufe bei Dritten:</strong> Beim Laden werden technisch bedingt Verbindungen aufgebaut, dabei sehen die Betreiber deine IP-Adresse:
+    <ul>
+      <li>GitHub (Auslieferung der Seite und der App-Updates)</li>
+      <li>Vercel (Echtzeit-Abfragen; dabei wird die Kennung der abgefragten Haltestelle oder Fahrt gesendet)</li>
+      <li>basemap.de des Bundesamts für Kartographie und Geodäsie, OpenStreetMap und OpenRailwayMap (Kartenkacheln, je nach gewählter Karte)</li>
+      <li>Nominatim von OpenStreetMap (nur bei der Adresssuche, dabei wird dein Suchtext gesendet)</li>
+      <li>Google Maps (nur wenn du „Hinlaufen“ antippst)</li>
+    </ul>
+  </li>
+  <li><strong>Anonymer Zähler:</strong> Ich zähle, wie oft die App pro Tag geöffnet wird (getrennt nach Web und Android). Es wird nur diese Zahl erhöht. Dabei wird nichts auf deinem Gerät gespeichert, keine IP-Adresse und keine Kennung erfasst. Die Zahlen stehen offen unter ⓘ → „Nutzung“.</li>
+  <li><strong>Protokolle:</strong> Ich selbst führe keine Protokolle über Nutzer. Die genannten Anbieter können Zugriffe nach ihren eigenen Regeln protokollieren.</li>
+</ul>
+<p class="small">Stand: November 2026 · App © 2026 Sebastian Of</p>
+</body>
+</html>

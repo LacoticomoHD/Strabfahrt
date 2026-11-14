@@ -1,0 +1,156 @@
+[
+  {
+    "id": "2026-11-12g",
+    "version": "3.8",
+    "date": "12.11.2026",
+    "title": "Keine falschen „7 Minuten zu früh“ mehr",
+    "neu": [],
+    "geaendert": [],
+    "behoben": [
+      "Bahnen und Busse wurden manchmal als 5 bis 10 Minuten zu früh angezeigt. Die Live-Quelle ordnet dann die Bahn davor der nächsten Fahrt zu. Solche Werte (mehr als 3 Minuten zu früh) werden jetzt verworfen, das Fahrzeug fährt dann blass nach Fahrplan"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12f",
+    "version": "3.7",
+    "date": "12.11.2026",
+    "title": "OpenStreetMap als Standardkarte",
+    "neu": [],
+    "geaendert": [
+      "Neue Besucher sehen zuerst die OpenStreetMap-Karte; die graue und die farbige basemap.de-Karte bleiben unter Einstellungen → Karte wählbar. Eine bereits gewählte Karte bleibt erhalten"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12e",
+    "version": "3.6",
+    "date": "12.11.2026",
+    "title": "Update per Fingertipp und klarere Zeiten",
+    "neu": [
+      "Android: „Jetzt aktualisieren“ lädt und installiert die neue Version direkt in der App (Android fragt beim ersten Mal nach der Erlaubnis)",
+      "Unter ⓘ → „Nutzung“ steht, wie oft die App pro Tag geöffnet wird (anonym gezählt, siehe Info & Datenschutz)"
+    ],
+    "geaendert": [
+      "Fahrzeugfenster: gemessene Zeiten kräftig, geschätzte blass und kursiv",
+      "Tafel: „Zur Karte“ vorn, QR-Code und Vollbild unter „Mehr“",
+      "Favoriten, Nähe, Linien und Meldungen im neuen Stil"
+    ],
+    "behoben": [
+      "Info & Datenschutz nannte die neue Grundkarte (basemap.de) noch nicht"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12d",
+    "version": "3.5",
+    "date": "12.11.2026",
+    "title": "Verbindungssuche verzeiht mehr",
+    "neu": [],
+    "geaendert": [
+      "Route: Start und Ziel müssen nicht mehr aus der Liste gewählt werden, „Verbindungen suchen“ nimmt den besten Treffer",
+      "Route: Enter übernimmt den ersten Vorschlag"
+    ],
+    "behoben": [
+      "Route: offene Vorschlagsliste verdeckte Felder und den Suchknopf"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12c",
+    "version": "3.4",
+    "date": "12.11.2026",
+    "title": "Fahrplan oder live: jetzt sichtbar",
+    "neu": [
+      "Fahrzeuge ohne Live-Daten sind blass: Ihre Position ist reiner Fahrplan und kann von der Wirklichkeit abweichen (z. B. bei Ausfällen)"
+    ],
+    "geaendert": [
+      "Info-Fenster erklärt, wie die Positionen berechnet werden"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12b",
+    "version": "3.3",
+    "date": "12.11.2026",
+    "title": "Nur noch Meldungen aus dem KVV-Gebiet",
+    "neu": [],
+    "geaendert": [
+      "Meldungen und Benachrichtigungen zeigen nur noch Störungen und Bauarbeiten im KVV-Gebiet (keine Stuttgart-, Tübingen- oder Würzburg-Meldungen mehr)"
+    ],
+    "behoben": [
+      "Dieselbe Meldung kam als Benachrichtigung mehrfach",
+      "Ausgeblendete Elemente blieben teils sichtbar"
+    ],
+    "entfernt": [
+      "Reine Zughinweise wie „Zug wird in Offenburg getrennt“ aus den Meldungen"
+    ]
+  },
+  {
+    "id": "2026-11-12a",
+    "version": "3.2",
+    "date": "12.11.2026",
+    "title": "Abfahrtstafel aufgeräumt",
+    "neu": [],
+    "geaendert": [
+      "Tafel: erwartete Zeit groß, Abweichung und Planzeit klein darunter",
+      "Tafel: Knöpfe kompakter, Überschrift nicht mehr unter der Statusleiste des Handys"
+    ],
+    "behoben": [
+      "Tafel: Verspätung bzw. Verfrühung wurde vom Liniensymbol überdeckt"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-11b",
+    "version": "3.1",
+    "date": "11.11.2026",
+    "title": "Neuer Aufbau und mehr Verbindungen",
+    "neu": [
+      "„Was ist neu“: Nach einem Update siehst du hier, was sich geändert hat",
+      "Verbindungssuche zeigt bis zu 5 Abfahrten statt nur der nächsten",
+      "Info-Fenster (ⓘ) mit kurzer Anleitung, öffnet sich beim ersten Besuch von selbst",
+      "Grundkarte wählbar: basemap.de grau (Standard), basemap.de farbig oder OpenStreetMap"
+    ],
+    "geaendert": [
+      "Neuer Aufbau: Suche und Route oben, Kartenwerkzeuge als runde Knöpfe rechts, schmale Statuszeile unten",
+      "Optionen (⚙) als eigenes Fenster, neu sortiert; Dunkelmodus liegt jetzt dort",
+      "Haltestelle: Abfahrten im Mittelpunkt, Umsteigen, Stufenfreiheit und Pünktlichkeit unter „Mehr“",
+      "Route: ein großer Suchknopf, Seltenes unter „Mehr“",
+      "Fahrzeug: „Fahrzeug folgen“ hervorgehoben, keine „keine Angabe“-Zeilen mehr"
+    ],
+    "behoben": [
+      "Fernzüge fuhren am Hbf in Luftlinie durch die Innenstadt (z. B. ICE über die Ettlinger Straße)",
+      "Android-Widget blieb bei manchen Handys (z. B. Xiaomi) leer",
+      "Neues Fenster begann an der alten Scrollposition"
+    ],
+    "entfernt": [
+      "Langer Hinweistext unten in den Optionen (steht jetzt im Info-Fenster)"
+    ]
+  },
+  {
+    "id": "2026-11-10",
+    "version": "3.0",
+    "date": "10.11.2026",
+    "title": "Ganzes KVV-Netz und eigene Adresse",
+    "neu": [
+      "Ganzes KVV-Netz: von Freudenstadt und Achern bis Heilbronn und Mosbach, mit Südpfalz",
+      "Eigene Adresse: strabfahrt.de",
+      "Gebietsgrenze als gestrichelte Linie auf der Karte",
+      "Haltestellennamen lassen sich unter ⚙ → Anzeige ausblenden",
+      "Zug- und Kursnummern: Suche danach und Anzeige unter den Fahrzeugen",
+      "Fahrzeug-Fenster zeigt die tatsächlichen Zeiten je Halt"
+    ],
+    "geaendert": [
+      "Fahrzeuge fahren fast überall auf echten Gleisen und Straßen statt in Luftlinie",
+      "Verfolgtes Fahrzeug bleibt sichtbar und liegt nicht mehr unter dem Fenster"
+    ],
+    "behoben": [
+      "Linie 47 fuhr quer durch den Oberwald, RE2 quer durch den Weiherwald",
+      "Doppelte Abfahrten aus zwei Datenquellen, uneinheitliche Steig-Namen"
+    ],
+    "entfernt": []
+  }
+]
