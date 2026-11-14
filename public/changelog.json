@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-14a",
+    "version": "3.9",
+    "date": "14.11.2026",
+    "title": "Fahrzeuge wieder kräftig",
+    "neu": [],
+    "geaendert": [
+      "Fahrzeuge ohne Live-Daten werden nicht mehr blass gezeichnet, sondern wie alle anderen"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-12g",
     "version": "3.8",
     "date": "12.11.2026",
