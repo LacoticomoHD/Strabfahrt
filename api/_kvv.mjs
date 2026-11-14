@@ -29,12 +29,13 @@ const allow = (source) => {
   return ++b.n <= MAX_PER_MIN;
 };
 
-const cached = (source, ref) => {
-  const key = `${source}|${ref}`;
+// when: Unix-Sekunden für vergangene Abfahrten (Tagesverlauf), sonst jetzt. Vergangenes ändert sich kaum: länger zwischenspeichern.
+const cached = (source, ref, when = null) => {
+  const key = `${source}|${ref}|${when || ''}`;
   let c = cache.get(key);
-  if (!c || Date.now() - c.at > TTL) {
+  if (!c || Date.now() - c.at > (when ? 5 * 60 * 1000 : TTL)) {
     if (!allow(source)) return c ? c.promise : Promise.resolve({ error: 'Abruflimit erreicht', events: [], source });
-    c = { at: Date.now(), promise: fetchStopEvents(ref, { count: 60, source }).catch((e) => ({ error: String(e.message || e), events: [], source })) };
+    c = { at: Date.now(), promise: fetchStopEvents(ref, { count: when ? 100 : 60, source, when }).catch((e) => ({ error: String(e.message || e), events: [], source })) };
     cache.set(key, c);
     if (cache.size > 800) cache.delete(cache.keys().next().value);
   }
@@ -50,13 +51,13 @@ export const isMainlineRail = (d) => d.type === 100 || RAIL.test(String(d.line |
  * KVV ist Hauptquelle. MobiData BW gewinnt bei Regional-/Fernzügen und füllt sonst nur Lücken.
  * only: genau eine Quelle verwenden (Fehlersuche).
  */
-export async function kvvForStation(model, idx, deps, { only } = {}) {
+export async function kvvForStation(model, idx, deps, { only, when = null } = {}) {
   if (!triasEnabled()) return null;
   const ref = triasStopRef(model, idx);
   if (!ref) return null;
   const { dayStartUnix } = berlinNow();
   const run = async (source) => {
-    const r = await cached(source, ref);
+    const r = await cached(source, ref, when);
     return { source, error: r.error, events: r.events.length, list: r.events, map: matchEvents(deps, r.events, dayStartUnix), raw: r.raw, tags: r.tags, status: r.status, url: r.url, dayStartUnix };
   };
   const have = enabledSources();

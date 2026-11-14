@@ -14,7 +14,7 @@ export const triasEnabled = () => enabledSources().length > 0;
 
 const esc = (s) => String(s).replace(/[<>&"']/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[c]));
 
-export function stopEventRequest(ref, stopRef, whenIso, count = 40) {
+export function stopEventRequest(ref, stopRef, whenIso, count = 40, depIso = null) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Trias version="1.1" xmlns="http://www.vdv.de/trias" xmlns:siri="http://www.siri.org.uk/siri" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
   <ServiceRequest>
@@ -24,7 +24,7 @@ export function stopEventRequest(ref, stopRef, whenIso, count = 40) {
       <StopEventRequest>
         <Location>
           <LocationRef>${/^de:\d{5}:\d+$/.test(stopRef) ? `<StopPlaceRef>${esc(stopRef)}</StopPlaceRef>` : `<StopPointRef>${esc(stopRef)}</StopPointRef>`}</LocationRef>
-          <DepArrTime>${esc(whenIso)}</DepArrTime>
+          <DepArrTime>${esc(depIso || whenIso)}</DepArrTime>
         </Location>
         <Params>
           <NumberOfResults>${count}</NumberOfResults>
@@ -92,12 +92,13 @@ export function parseStopEvents(xml) {
   return { error: events.length ? null : err, events };
 }
 
-export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000, source = 'kvv' } = {}) {
+export async function fetchStopEvents(stopRef, { count = 40, timeoutMs = 6000, source = 'kvv', when = null } = {}) {
   const src = SOURCES[source];
   const ref = src && process.env[src.refEnv];
   if (!ref) throw new Error(`${src ? src.refEnv : source} fehlt`);
   const url = process.env[src.urlEnv] || src.url;
-  const body = stopEventRequest(ref, stopRef, new Date().toISOString().replace(/\.\d+Z$/, 'Z'), count);
+  const iso = (d) => d.toISOString().replace(/\.\d+Z$/, 'Z');
+  const body = stopEventRequest(ref, stopRef, iso(new Date()), count, when ? iso(new Date(when * 1000)) : null);
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
