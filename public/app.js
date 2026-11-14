@@ -1617,7 +1617,7 @@ async function renderStation() {
     for (const d of pastShown) {
       const r = pastRtOf(d.trip);
       const style = routeStyle([d.line, d.type, d.color, d.textColor]);
-      const status = r.canceled ? 'fiel aus' : r.delay === undefined || r.delay === null ? 'keine Ist-Zeit' : 'abgefahren';
+      const status = r.canceled ? 'fiel aus' : r.delay === undefined || r.delay === null ? 'keine Ist-Zeit' : d.t + r.delay > startSec ? 'kommt noch' : 'abgefahren';
       ptable.append(el('tr', {},
         el('td', { class: 't' }, depTime(d, r)),
         el('td', {}, pill(d.line, style, () => openLine(d.line)), ' ', cleanHeadsign(d.line, d.headsign), accessible(d.flags) ? ' ♿' : ''),
