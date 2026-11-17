@@ -41,6 +41,12 @@ const ymdOf = (sec) => new Date(sec * 1000).toISOString().slice(0, 10).replaceAl
 const dayStart = (ymd) => Date.UTC(+ymd.slice(0, 4), +ymd.slice(4, 6) - 1, +ymd.slice(6, 8)) / 1000;
 const pad = (n) => String(n).padStart(2, '0');
 
+// Haltestellenname für die Kartenbeschriftung: Stadtname Karlsruhe weglassen
+function mapName(n) {
+  const m = /^(?:Karlsruhe|KA)\s+(.{3,})$/.exec(n);
+  return m ? m[1] : n;
+}
+
 function hhmm(sec) {
   const s = ((Math.floor(sec) % 86400) + 86400) % 86400;
   return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}`;
@@ -679,7 +685,9 @@ function drawFrame() {
       ctx.stroke();
       if (labels) {
         // Name in weißer, fetter Schrift auf halbtransparenter Box; die Box ist anklickbar (öffnet die Abfahrten)
-        const tw = ctx.measureText(s.name).width;
+        // Auf der Karte ohne "Karlsruhe"/"KA" davor, spart Platz (Suche und Abfahrten zeigen weiter den vollen Namen)
+        const name = mapName(s.name);
+        const tw = ctx.measureText(name).width;
         const bx = p.x + r + 4;
         const by = p.y - 10;
         const bw = tw + 12;
@@ -689,7 +697,7 @@ function drawFrame() {
         if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 5); else ctx.rect(bx, by, bw, bh);
         ctx.fill();
         ctx.fillStyle = '#fff';
-        ctx.fillText(s.name, bx + 6, p.y + 4);
+        ctx.fillText(name, bx + 6, p.y + 4);
         state.labelBoxes.push({ x: bx, y: by, w: bw, h: bh, index: s.index });
       }
     }

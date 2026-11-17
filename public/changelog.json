@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-17a",
+    "version": "3.11",
+    "date": "17.11.2026",
+    "title": "Kürzere Namen auf der Karte",
+    "neu": [],
+    "geaendert": [
+      "Karte: Haltestellennamen ohne „Karlsruhe“ bzw. „KA“ davor, das spart Platz. Suche, Abfahrten und Tafel zeigen weiter den vollen Namen"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-14b",
     "version": "3.10",
     "date": "14.11.2026",
