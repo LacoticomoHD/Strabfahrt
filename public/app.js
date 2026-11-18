@@ -1595,7 +1595,19 @@ async function renderStation() {
   walk.className = 'ghost';
   board.textContent = '▦ Tafel';
   share.textContent = '🔗 Link';
-  body.append(el('div', { class: 'actions' }, board, walk, share));
+  // Verbindung von oder zu dieser Haltestelle: die andere Seite bleibt, falls schon gesetzt
+  const routeWith = (side) => {
+    const st = mkStation(index);
+    const other = side === 'from' ? state.route.to : state.route.from;
+    const keep = other && !(!other.point && other.index === index) ? other : null;
+    state.route = side === 'from' ? { from: st, to: keep } : { from: keep, to: st };
+    openRoute(Boolean(keep));
+  };
+  const fromHere = el('button', { class: 'ghost', type: 'button', title: 'Verbindung ab dieser Haltestelle suchen' }, '⇄ Von hier');
+  fromHere.addEventListener('click', () => routeWith('from'));
+  const toHere = el('button', { class: 'ghost', type: 'button', title: 'Verbindung zu dieser Haltestelle suchen' }, '⇄ Hierhin');
+  toHere.addEventListener('click', () => routeWith('to'));
+  body.append(el('div', { class: 'actions' }, fromHere, toHere, board, walk, share));
   // Zusatzinfos eingeklappt unter den Abfahrten
   const more = el('details', { class: 'more' }, el('summary', {}, 'Mehr zur Haltestelle'));
   const near = nearbyStations(index);

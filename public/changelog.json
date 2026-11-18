@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-18b",
+    "version": "3.13",
+    "date": "18.11.2026",
+    "title": "Verbindung direkt von der Haltestelle",
+    "neu": [
+      "Haltestelle: „Von hier“ und „Hierhin“ öffnen die Verbindungssuche mit dieser Haltestelle als Start oder Ziel. Ist die andere Seite schon gesetzt, wird gleich gesucht"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-18a",
     "version": "3.12",
     "date": "18.11.2026",
