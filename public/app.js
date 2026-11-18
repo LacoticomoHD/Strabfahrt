@@ -1514,6 +1514,37 @@ async function openStation(index) {
   map.panTo([s[2], s[3]]);
 }
 
+// Verbindung ab oder zu der offenen Haltestelle: großes Eingabefeld wie in der Verbindungssuche.
+// Das Feld bleibt beim sekündlichen Neuzeichnen erhalten (sonst wäre Getipptes weg).
+let stationRoute = { index: null, dir: 'from', box: null };
+function stationRouteBox(index) {
+  if (stationRoute.index === index && stationRoute.box) return stationRoute.box;
+  const st = mkStation(index);
+  const box = el('div', { class: 'stroute' });
+  stationRoute = { index, dir: 'from', box };
+  const go = (r) => {
+    if (!r) return;
+    state.route = stationRoute.dir === 'from' ? { from: st, to: r } : { from: r, to: st };
+    stationRoute = { index: null, dir: 'from', box: null };
+    openRoute(true);
+  };
+  const field = suggestField('Wohin? Ziel eingeben', null, go);
+  const input = field.querySelector('input');
+  const mk = (dir, label) => {
+    const b = el('button', { class: 'seg', type: 'button', 'aria-pressed': String(dir === 'from') }, label);
+    b.addEventListener('click', () => {
+      stationRoute.dir = dir;
+      for (const x of box.querySelectorAll('.seg')) x.setAttribute('aria-pressed', String(x === b));
+      input.placeholder = dir === 'from' ? 'Wohin? Ziel eingeben' : 'Woher? Start eingeben';
+      input.setAttribute('aria-label', input.placeholder);
+      input.focus();
+    });
+    return b;
+  };
+  box.append(el('div', { class: 'segs' }, mk('from', '⇄ Von hier'), mk('to', '⇄ Hierhin')), field);
+  return box;
+}
+
 // Eine Stunde früher laden: Fahrplan aus dem Modell, Ist-Zeiten von KVV/MobiData (gibt es nur für die letzten etwa 2 Stunden)
 async function loadEarlier(index, startSec) {
   const ymd = ymdOf(state.sim);
@@ -1595,19 +1626,8 @@ async function renderStation() {
   walk.className = 'ghost';
   board.textContent = '▦ Tafel';
   share.textContent = '🔗 Link';
-  // Verbindung von oder zu dieser Haltestelle: die andere Seite bleibt, falls schon gesetzt
-  const routeWith = (side) => {
-    const st = mkStation(index);
-    const other = side === 'from' ? state.route.to : state.route.from;
-    const keep = other && !(!other.point && other.index === index) ? other : null;
-    state.route = side === 'from' ? { from: st, to: keep } : { from: keep, to: st };
-    openRoute(Boolean(keep));
-  };
-  const fromHere = el('button', { class: 'ghost', type: 'button', title: 'Verbindung ab dieser Haltestelle suchen' }, '⇄ Von hier');
-  fromHere.addEventListener('click', () => routeWith('from'));
-  const toHere = el('button', { class: 'ghost', type: 'button', title: 'Verbindung zu dieser Haltestelle suchen' }, '⇄ Hierhin');
-  toHere.addEventListener('click', () => routeWith('to'));
-  body.append(el('div', { class: 'actions' }, fromHere, toHere, board, walk, share));
+  body.append(el('div', { class: 'actions' }, board, walk, share));
+  body.append(stationRouteBox(index));
   // Zusatzinfos eingeklappt unter den Abfahrten
   const more = el('details', { class: 'more' }, el('summary', {}, 'Mehr zur Haltestelle'));
   const near = nearbyStations(index);

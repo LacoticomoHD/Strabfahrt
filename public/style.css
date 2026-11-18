@@ -388,3 +388,10 @@ details.more > summary::-webkit-details-marker { display: none; }
 table.past td.r { color: var(--muted, #8a94a6); }
 .pastnote { margin: 4px 0 2px; }
 .nowline { margin: 6px 0; padding-top: 4px; border-top: 2px solid #e5484d; color: #e5484d; font-size: 12px; font-weight: 600; }
+
+/* Verbindung ab/zu der offenen Haltestelle */
+.stroute { margin: 8px 0 10px; }
+.stroute .segs { display: flex; gap: 8px; margin-bottom: 6px; }
+.stroute .seg { flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line, #3a4352); background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.stroute .seg[aria-pressed="true"] { background: #7fb2ff; border-color: #7fb2ff; color: #0b1a33; }
+.stroute .sf input { width: 100%; box-sizing: border-box; }

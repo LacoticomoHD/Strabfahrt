@@ -1,5 +1,17 @@
 [
   {
+    "id": "2026-11-18c",
+    "version": "3.14",
+    "date": "18.11.2026",
+    "title": "Verbindungssuche in der Haltestelle",
+    "neu": [],
+    "geaendert": [
+      "Haltestelle: Statt der kleinen Knöpfe gibt es jetzt ein großes Feld „Wohin?“. Ziel eintippen, auswählen, fertig. Mit „Hierhin“ wird die Haltestelle zum Ziel"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-18b",
     "version": "3.13",
     "date": "18.11.2026",
