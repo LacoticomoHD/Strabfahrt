@@ -10,5 +10,11 @@
       "maxDuration": 30,
       "memory": 1024
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/api/:f(delays|alerts|departures|tripstops|stats|trip|hits|stopevents)",
+      "destination": "/api/live?f=:f"
+    }
+  ]
 }
