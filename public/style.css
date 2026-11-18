@@ -395,3 +395,18 @@ table.past td.r { color: var(--muted, #8a94a6); }
 .stroute .seg { flex: 1; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--line, #3a4352); background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
 .stroute .seg[aria-pressed="true"] { background: #7fb2ff; border-color: #7fb2ff; color: #0b1a33; }
 .stroute .sf input { width: 100%; box-sizing: border-box; }
+
+/* Meine Fahrt: Begleitkarte oben unter der Suche */
+#ride { position: fixed; z-index: 1001; top: calc(62px + var(--sat)); left: calc(10px + var(--sal)); right: calc(70px + var(--sar)); max-width: 460px;
+  background: var(--bg); color: var(--fg); border-radius: 12px; box-shadow: var(--shadow); padding: 10px 12px; font-size: 14px; border-left: 5px solid #2e7d32; }
+#ride.warn { border-left-color: #e5a400; }
+#ride.bad { border-left-color: #d32f2f; }
+#ride .rk { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+#ride .rmain { font-size: 17px; font-weight: 700; margin: 2px 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+#ride .rsub { color: var(--fg); }
+#ride .ralert { margin-top: 6px; padding: 6px 8px; border-radius: 8px; background: rgba(229,72,77,.15); font-weight: 600; }
+#ride .ralert.tight { background: rgba(229,164,0,.18); }
+#ride .rbtns { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+#ride .rbtns button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); cursor: pointer; }
+#ride .rbtns button.go { background: #7fb2ff; border-color: #7fb2ff; color: #0b1a33; font-weight: 600; }
+.jcard .ridebtn { background: #2e7d32; border-color: #2e7d32; color: #fff; font-weight: 600; }

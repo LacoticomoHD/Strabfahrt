@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-19a",
+    "version": "3.16",
+    "date": "19.11.2026",
+    "title": "Meine Fahrt: Live-Begleitung",
+    "neu": [
+      "Verbindung: „▶ Fahrt begleiten“ startet die Live-Begleitung. Oben auf der Karte steht immer, was als Nächstes kommt: Abfahrt mit Countdown, unterwegs der nächste Halt und wann du aussteigst",
+      "Begleitung warnt, wenn ein Umstieg knapp wird oder eine Fahrt ausfällt, und sucht auf Knopfdruck eine Alternative",
+      "Erinnerungen werden automatisch gesetzt: vor der Abfahrt, vor jedem Umstieg und 2 Minuten vor dem Aussteigen. In der Android-App auch bei geschlossener App, mit Live-Verspätung"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-18d",
     "version": "3.15",
     "date": "18.11.2026",

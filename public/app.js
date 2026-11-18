@@ -1006,6 +1006,7 @@ function tick(now) {
       $('when').value = new Date(state.sim * 1000).toISOString().slice(0, 16);
     }
     if (state.selected) updateVehiclePanel();
+    if (state.ride) updateRide();
     if (!tlDragging) tl.value = String(Math.min(1439, Math.floor((state.sim - dayStart(ymdOf(state.sim))) / 60)));
     if (state.takt.on) loadTakt();
     updateNotice();
@@ -2427,7 +2428,9 @@ function renderRoutePanel(autorun = false) {
   body.replaceChildren(el('h2', {}, '⇄ Verbindung'));
   const fromField = suggestField('Start (Haltestelle oder Adresse)', state.route.from, (r) => { state.route.from = r; });
   const toField = suggestField('Ziel (Haltestelle oder Adresse)', state.route.to, (r) => { state.route.to = r; });
-  const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.sim) });
+  // Abfahrtszeit: normalerweise jetzt, bei „Alternative suchen“ aus der Begleitung die erwartete Ankunft am Umstieg
+  const timeInput = el('input', { type: 'time', class: 'timebox', 'aria-label': 'Abfahrt ab', value: hhmm(state.routeAt || state.sim) });
+  state.routeAt = null;
   const status = el('div', { class: 'sub' }, state.rt.active ? 'Nach Fahrplan, Live-Verspätungen werden angezeigt, ausgefallene Fahrten gemieden.' : 'Nach Fahrplan (Soll), ohne Echtzeit.');
   const results = el('div', { class: 'results' });
   const chart = el('div', { class: 'chart' });
@@ -2663,6 +2666,184 @@ function forecastBox(j) {
 }
 
 let journeyBox = null;
+// ---------- Meine Fahrt: Live-Begleitung ----------
+// Eine gewählte Verbindung wird begleitet: Countdown bis zur Abfahrt, unterwegs nächster Halt und Aussteigen,
+// Warnung bei gefährdetem Umstieg oder Ausfall mit Suche nach einer Alternative. Erinnerungen laufen über das
+// vorhandene Wecker-System (in der App als Benachrichtigung, auch bei geschlossener App, mit Live-Verspätung).
+state.ride = load('strab.ride', null);
+// Element für die Begleitkarte (falls eine ältere index.html es noch nicht enthält, z. B. in der App)
+if (!$('ride')) document.body.append(el('section', { id: 'ride', 'aria-live': 'polite', hidden: '' }));
+
+function startRide(j) {
+  endRide(true);
+  const base = dayStart(ymdOf(state.sim));
+  const legs = j.legs.map((l) => ({ ...l }));
+  const rides = legs.filter((l) => l.type === 'ride');
+  if (!rides.length) { toast('Nur Fußweg, da gibt es nichts zu begleiten'); return; }
+  const ride = { base, legs, to: state.route.to, from: state.route.from, keys: [], at: Date.now() };
+  // Erinnerungen: erste Abfahrt mit der eingestellten Vorlaufzeit, Umstiege und Aussteigen 2 Min. vorher
+  rides.forEach((l, i) => {
+    const mk = (kind, stop, t, lead) => {
+      const key = `ride|${kind}|${l.trip}|${stop}`;
+      const a = { key, kind, trip: l.trip, stopId: state.stops[stop][0], stopName: state.stops[stop][1], line: l.line, dest: cleanHeadsign(l.line, l.headsign), planned: Math.round(toUnix(base + t)), lead };
+      state.alarms[key] = a;
+      ride.keys.push(key);
+      try { if (window.StrabNative && window.StrabNative.setAlarm) window.StrabNative.setAlarm(JSON.stringify({ ...a, base: state.rtBase || '' })); } catch { /* alte App */ }
+    };
+    mk('dep', l.from, l.dep, i === 0 ? state.lead : 2);
+    mk('arr', l.to, l.arr, 2);
+  });
+  saveAlarms();
+  if (!window.StrabNative && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+  scheduleWebAlarms();
+  state.ride = ride;
+  save('strab.ride', ride);
+  toast(window.StrabNative ? 'Fahrt wird begleitet, Erinnerungen sind gesetzt' : 'Fahrt wird begleitet. Erinnerungen kommen, solange die Seite offen ist');
+  closePanel();
+  updateRide(true);
+}
+
+function endRide(silent = false) {
+  const r = state.ride;
+  if (!r) return;
+  for (const k of r.keys || []) {
+    delete state.alarms[k];
+    try { window.StrabNative && window.StrabNative.cancelAlarm(k); } catch { /* alte App */ }
+    clearTimeout(webTimers.get(k));
+    webTimers.delete(k);
+  }
+  saveAlarms();
+  state.ride = null;
+  save('strab.ride', null);
+  $('ride').hidden = true;
+  if (!silent) toast('Begleitung beendet');
+}
+
+// Position im Linienverlauf der Fahrt: nächster Halt und verbleibende Halte bis zum Ausstieg
+function rideProgress(leg, delay, nowAbs) {
+  const trip = state.trips.find((t) => t.id === leg.trip);
+  if (!trip) return null;
+  const pat = state.patterns.get(trip.pid);
+  if (!pat) return null;
+  const toPos = pat.s.lastIndexOf(leg.to);
+  const ref = nowAbs - (delay || 0);
+  let k = -1;
+  for (let i = 0; i < pat.s.length; i++) if (trip.t0 + trip.prof[2 * i + 1] <= ref) k = i;
+  if (toPos < 0) return null;
+  const next = Math.min(k + 1, toPos);
+  return { next: pat.s[next], left: Math.max(0, toPos - k) };
+}
+
+let rideLastHtml = '';
+function updateRide(force = false) {
+  const r = state.ride;
+  const box = $('ride');
+  if (!r) { box.hidden = true; return; }
+  const nowAbs = wallNow();
+  const now = nowAbs - r.base;
+  const legs = r.legs;
+  const rides = legs.filter((l) => l.type === 'ride');
+  const last = rides[rides.length - 1];
+  const dly = (l) => rtOf(l.trip).delay || 0;
+  const minsTo = (t) => Math.max(0, Math.round((t - now) / 60));
+  const inText = (t) => { const m = minsTo(t); return m <= 0 ? 'jetzt' : m < 60 ? `in ${m} Min.` : `in ${Math.floor(m / 60)} Std. ${m % 60} Min.`; };
+  const name = (i) => state.stops[i] ? state.stops[i][1] : '';
+  // Abgelaufen: 15 Min. nach der Ankunft automatisch beenden
+  if (now > last.arr + dly(last) + 15 * 60 || now < -6 * 3600) { endRide(true); return; }
+
+  let kicker = ''; let main = []; let sub = ''; let alert = null; let level = 'ok'; let follow = null;
+  let phase = 'done';
+  for (let i = 0; i < rides.length; i++) {
+    const l = rides[i];
+    const d = dly(l);
+    const r1 = rtOf(l.trip);
+    const depR = l.dep + d; const arrR = l.arr + d;
+    const style = routeStyle([l.line, l.routeType, l.color, l.textColor]);
+    const pillEl = pill(l.line, style);
+    const prev = rides[i - 1];
+    if (now < depR) {
+      phase = 'wait';
+      follow = l.trip;
+      kicker = i === 0 ? 'Meine Fahrt · Abfahrt' : `Meine Fahrt · Umstieg ${i} von ${rides.length - 1}`;
+      main = [pillEl, `→ ${cleanHeadsign(l.line, l.headsign)}`];
+      sub = `ab ${name(l.from)} um ${hhmm(depR)}${Math.abs(d) >= 60 ? ` (${fmtDelayExact(d)})` : ''} · ${inText(depR)}`;
+      if (r1.canceled) { alert = 'Diese Fahrt fällt aus.'; level = 'bad'; }
+      else if (prev) {
+        // Umstieg: kommt die vorige Fahrt rechtzeitig an?
+        let walk = 0;
+        const pi = legs.indexOf(prev); const li = legs.indexOf(l);
+        for (let k = pi + 1; k < li; k++) if (legs[k].type === 'walk') walk += legs[k].secs;
+        const spare = Math.round((depR - (prev.arr + dly(prev)) - walk) / 60);
+        if (now < prev.arr + dly(prev)) { /* noch in der vorigen Fahrt, siehe unten */ }
+        else if (spare < 1) { alert = `Anschluss gefährdet (${spare} Min.)`; level = 'bad'; }
+      }
+      break;
+    }
+    if (now < arrR) {
+      phase = 'ride';
+      follow = l.trip;
+      kicker = `Meine Fahrt · unterwegs${rides.length > 1 ? ` (${i + 1}/${rides.length})` : ''}`;
+      const pr = rideProgress(l, d, nowAbs);
+      main = [pillEl, !pr ? `→ ${cleanHeadsign(l.line, l.headsign)}` : pr.left > 1 ? `Nächster Halt: ${name(pr.next)}` : `Gleich aussteigen: ${name(l.to)}`];
+      sub = `Aussteigen: ${name(l.to)} um ${hhmm(arrR)} · ${inText(arrR)}${pr ? ` · noch ${pr.left} Halt${pr.left === 1 ? '' : 'e'}` : ''}`;
+      if (r1.canceled) { alert = 'Diese Fahrt ist als ausgefallen gemeldet.'; level = 'bad'; }
+      const nxt = rides[i + 1];
+      if (nxt && !alert) {
+        let walk = 0;
+        for (let k = legs.indexOf(l) + 1; k < legs.indexOf(nxt); k++) if (legs[k].type === 'walk') walk += legs[k].secs;
+        const spare = Math.round((nxt.dep + dly(nxt) - arrR - walk) / 60);
+        if (rtOf(nxt.trip).canceled) { alert = `Anschluss ${nxt.line} fällt aus`; level = 'bad'; }
+        else if (spare < 1) { alert = `Anschluss ${nxt.line} um ${hhmm(nxt.dep + dly(nxt))} gefährdet (${spare} Min.)`; level = 'bad'; }
+        else if (spare < 4) { alert = `Umstieg knapp: ${spare} Min. für ${nxt.line}`; level = 'warn'; }
+      }
+      break;
+    }
+  }
+  if (phase === 'done') {
+    kicker = 'Meine Fahrt';
+    main = ['✓ Angekommen'];
+    const end = r.to && r.to.name ? r.to.name : name(last.to);
+    sub = `${end} · Ankunft ${hhmm(last.arr + dly(last))}`;
+  }
+  const html = JSON.stringify([kicker, main.map((x) => (typeof x === 'string' ? x : x.textContent)), sub, alert, level, phase]);
+  if (!force && html === rideLastHtml && !box.hidden) return;
+  rideLastHtml = html;
+  box.className = level === 'ok' ? '' : level;
+  const btns = el('div', { class: 'rbtns' });
+  if (alert && level === 'bad') {
+    const alt = el('button', { class: 'go', type: 'button' }, 'Alternative suchen');
+    alt.addEventListener('click', () => {
+      // Ab der Haltestelle, an der man gerade ist oder als Nächstes ankommt
+      const cur = rides.find((l) => now < l.arr + dly(l)) || last;
+      const boarding = now < cur.dep + dly(cur);
+      const startStop = boarding ? cur.from : cur.to;
+      state.route = { from: mkStation(startStop), to: r.to || mkStation(last.to) };
+      state.routeAt = boarding ? null : r.base + cur.arr + dly(cur);
+      openRoute(true);
+    });
+    btns.append(alt);
+  }
+  if (follow && phase !== 'done') {
+    const show = el('button', { type: 'button' }, phase === 'ride' ? 'Mitfahren auf der Karte' : 'Bahn auf der Karte');
+    show.addEventListener('click', () => {
+      const t = state.trips.find((x) => x.id === follow);
+      if (t) { state.follow = t.id; selectVehicle(t); return; }
+      // Fahrt noch nicht geladen (außerhalb des Ausschnitts): zur Haltestelle springen, kurz danach erneut versuchen
+      const l = rides.find((x) => x.trip === follow);
+      const st = state.stops[phase === 'wait' ? l.from : l.to];
+      map.setView([st[2], st[3]], 15);
+      setTimeout(() => { const t2 = state.trips.find((x) => x.id === follow); if (t2) { state.follow = t2.id; selectVehicle(t2); } }, 2500);
+    });
+    btns.append(show);
+  }
+  const stop = el('button', { type: 'button' }, phase === 'done' ? 'Schließen' : 'Beenden');
+  stop.addEventListener('click', () => endRide());
+  btns.append(stop);
+  box.replaceChildren(el('div', { class: 'rk' }, kicker), el('div', { class: 'rmain' }, ...main), el('div', { class: 'rsub' }, sub),
+    alert ? el('div', { class: `ralert${level === 'warn' ? ' tight' : ''}` }, `⚠ ${alert}`) : '', btns);
+  box.hidden = false;
+}
+
 function renderJourneys(container) {
   journeyBox = container;
   container.replaceChildren();
@@ -2706,7 +2887,10 @@ function renderJourneys(container) {
     const ics = el('button', { class: 'chip', type: 'button' }, 'In Kalender');
     ics.addEventListener('click', (ev) => { ev.stopPropagation(); downloadIcs(j, note); });
     ics.addEventListener('keydown', (ev) => ev.stopPropagation());
-    card.append(el('div', { class: 'chips' }, ics), note);
+    const rideBtn = el('button', { class: 'chip ridebtn', type: 'button' }, '▶ Fahrt begleiten');
+    rideBtn.addEventListener('click', (ev) => { ev.stopPropagation(); startRide(j); });
+    rideBtn.addEventListener('keydown', (ev) => ev.stopPropagation());
+    card.append(el('div', { class: 'chips' }, rideBtn, ics), note);
     const pick = () => {
       state.journey = j;
       const pts = j.legs.flatMap((l) => (l.type === 'ride' ? l.stops.map((i) => [state.stops[i][2], state.stops[i][3]]) : [legPoint(l, 'from'), legPoint(l, 'to')]));
