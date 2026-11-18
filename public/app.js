@@ -1673,7 +1673,7 @@ async function renderStation() {
     // Pünktlichkeit an genau dieser Haltestelle (gemessene Abfahrten der letzten Tage)
     if (state.rtBase) {
       rtGet(`/api/stats?station=${encodeURIComponent(stationId)}`).then((h) => {
-        if (!h || !h.deps || state.station !== index) return;
+        if (!h || !(h.deps >= 20) || state.station !== index) return; // erst ab 20 gemessenen Abfahrten aussagekräftig
         punct.prepend(el('div', { class: 'bh' }, 'Pünktlichkeit an dieser Haltestelle'),
           el('div', { class: 'prow' }, `Ø ${fmtDelayExact(h.avg)} · ${h.latePct} % ab 3 Min. zu spät · ${h.deps} gemessene Abfahrten an ${h.days} Tag${h.days === 1 ? '' : 'en'}`));
       }).catch(() => {});
