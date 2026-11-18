@@ -1,5 +1,20 @@
 [
   {
+    "id": "2026-11-18d",
+    "version": "3.15",
+    "date": "18.11.2026",
+    "title": "Aufgeräumt und sparsamer",
+    "neu": [],
+    "geaendert": [
+      "Live-Server: alle Live-Abfragen laufen jetzt über einen gemeinsamen Abruf statt über sechs getrennte. Antworten kommen nach Pausen schneller, und der Server braucht deutlich weniger Rechenzeit"
+    ],
+    "behoben": [
+      "Verbindung: kurze Fahrten zeigten „0 min“, jetzt passt die Dauer zu den angezeigten Uhrzeiten",
+      "Tafel: lässt sich mit der Escape-Taste schließen"
+    ],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-18c",
     "version": "3.14",
     "date": "18.11.2026",

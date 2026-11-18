@@ -2182,6 +2182,9 @@ async function openBoard(stations) {
   try { wakeLock = await navigator.wakeLock.request('screen'); } catch { /* nicht verfuegbar oder verweigert */ }
 }
 
+// Escape schließt die Tafel (Tastatur, Fernbedienung am Fernseher)
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && state.board) closeBoard(); });
+
 function closeBoard() {
   clearInterval(boardTimer);
   state.board = null;
@@ -2665,7 +2668,8 @@ function renderJourneys(container) {
   container.replaceChildren();
   state.journeys.forEach((j) => {
     const card = el('div', { class: 'jcard', role: 'button', tabindex: '0', 'aria-pressed': String(state.journey === j) });
-    const mins = Math.round((j.arr - j.start) / 60);
+    // Dauer passend zu den angezeigten Uhrzeiten (volle Minuten), mindestens 1 min
+    const mins = Math.max(j.arr > j.start ? 1 : 0, Math.floor(j.arr / 60) - Math.floor(j.start / 60));
     card.append(el('div', { class: 'jh' }, `${hhmm(j.start)} → ${hhmm(j.arr)}`, el('span', { class: 'sub' }, ` · ${mins} min · ${j.transfers === 0 ? 'direkt' : `${j.transfers} Umstieg${j.transfers > 1 ? 'e' : ''}`}`)));
     card.append(forecastBox(j));
     let prevArr = null; // erwartete Ankunft der vorigen Fahrt (mit Live-Verspätung)
