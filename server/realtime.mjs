@@ -7,6 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { berlinOffset } from './model.mjs';
 
 const require = createRequire(import.meta.url);
 
@@ -103,6 +104,10 @@ export class Realtime {
       try { this.stats = JSON.parse(fs.readFileSync(this.statsFile, 'utf8')); } catch { /* neu */ }
     }
     this.seen = new Map(); // "Datum|Fahrt" -> letzte Verspaetung (fuer die Statistik)
+    // Pünktlichkeit je Haltestelle: Datum -> Haltestellen-ID -> [Abfahrten, Summe Verspätung, ab 3 Min. zu spät]
+    this.stationStats = {};
+    this.stationCounted = new Map(); // Datum -> Set(Fahrt-Index * 256 + Position), damit jeder Halt einmal zählt
+    this.startedAt = Math.floor(Date.now() / 1000);
 
     if (this.enabled) {
       try {
@@ -227,7 +232,7 @@ export class Realtime {
         const d = isCanceled ? null : tripDelay(tu, nowSec);
         const st = isCanceled ? [] : stopTimesOf(tu);
         for (const id of ids) {
-          if (st.length) stopTimes.set(id, st);
+          if (st.length) { stopTimes.set(id, st); this.countStations(tu.trip.startDate, id, st, nowSec); }
           if (isCanceled) canceled.add(id);
           else if (d !== null && Number.isFinite(d)) delays.set(id, d);
           this.record(tu.trip.startDate, id, isCanceled ? 'X' : d);
@@ -272,6 +277,54 @@ export class Realtime {
     this.flushStats();
   }
 
+  // Abfahrten an Haltestellen zählen, sobald sie vorbei sind (gemessene Zeit aus dem Stream)
+  countStations(startDate, id, st, nowSec) {
+    if (!this.collect || !startDate || startDate > berlinToday()) return;
+    const ti = this.tripIndex.get(id);
+    if (ti === undefined) return;
+    const m = this.model;
+    const trip = m.trips[ti];
+    const stops = m.patterns[trip.pattern].stops;
+    const prof = m.profiles[trip.profile];
+    const y = Number(startDate.slice(0, 4)); const mo = Number(startDate.slice(4, 6)) - 1; const d = Number(startDate.slice(6, 8));
+    const noon = Date.UTC(y, mo, d, 12);
+    const day0 = Date.UTC(y, mo, d) / 1000 - berlinOffset(noon) * 60;
+    // Planzeit (Abfahrt) -> Position im Linienverlauf
+    const byTime = new Map();
+    for (let k = 0; k < stops.length; k++) byTime.set(day0 + trip.start + prof[2 * k + 1], k);
+    let counted = this.stationCounted.get(startDate);
+    if (!counted) { counted = new Set(); this.stationCounted.set(startDate, counted); }
+    const day = (this.stationStats[startDate] = this.stationStats[startDate] || {});
+    for (let i = 0; i < st.length; i += 4) {
+      const planned = st[i + 2] || st[i];
+      const delay = st[i + 2] ? st[i + 3] : st[i + 1];
+      if (!planned || delay === null) continue;
+      // Nur Vorbeigefahrenes, und nach einem Neustart nichts doppelt (frühere Halte hat die vorige Instanz gezählt)
+      if (planned + delay > nowSec || planned + delay < this.startedAt - 120) continue;
+      const k = byTime.get(planned);
+      if (k === undefined || k === stops.length - 1) continue; // Endhalt: keine Abfahrt
+      const key = ti * 256 + k;
+      if (counted.has(key)) continue;
+      counted.add(key);
+      const sIdx = stops[k];
+      const parent = m.stops[sIdx][4] >= 0 ? m.stops[sIdx][4] : sIdx;
+      const sid = m.stops[parent][0];
+      const e = day[sid] || (day[sid] = [0, 0, 0]);
+      e[0]++; e[1] += delay; if (delay >= 180) e[2]++;
+    }
+  }
+
+  stationSummary(stopId) {
+    const days = Object.keys(this.stationStats).sort();
+    let n = 0; let sum = 0; let late = 0; let used = 0;
+    for (const d of days) {
+      const e = this.stationStats[d][stopId];
+      if (!e) continue;
+      used++; n += e[0]; sum += e[1]; late += e[2];
+    }
+    return { station: stopId, days: used, deps: n, avg: n ? Math.round(sum / n) : 0, latePct: n ? Math.round((100 * late) / n) : 0 };
+  }
+
   record(startDate, id, value) {
     if (!this.collect) return;
     if (!startDate || startDate > berlinToday()) return; // Vorab-Angaben fuer morgen nicht zaehlen
@@ -303,6 +356,9 @@ export class Realtime {
       this.stats[date] = this.stats[date] || {};
       this.stats[date][`${line}|${type}`] = e;
     }
+    const keepSt = Object.keys(this.stationStats).sort().slice(-30);
+    this.stationStats = Object.fromEntries(keepSt.map((d) => [d, this.stationStats[d]]));
+    for (const d of this.stationCounted.keys()) if (!this.stationStats[d] || d < (keepSt.slice(-2)[0] || '')) this.stationCounted.delete(d);
     const keep = Object.keys(this.stats).sort().slice(-30);
     this.stats = Object.fromEntries(keep.map((d) => [d, this.stats[d]]));
     // Nur Eintraege der letzten zwei Tage im Speicher halten
@@ -336,6 +392,42 @@ export class Realtime {
     return {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
       d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons),
+      p: this.delayCourse(),
     };
+  }
+
+  /**
+   * Verspätungsverlauf je Fahrt für die Karte: { Fahrt: [Planzeit, Verspätung, ...] } (Unix-Sekunden).
+   * Nur Fahrten, deren Verspätung sich unterwegs ändert, und nur die Wendepunkte, damit die Antwort klein bleibt.
+   */
+  delayCourse() {
+    const out = {};
+    const now = Math.floor(Date.now() / 1000);
+    for (const [id, st] of this.stopTimes) {
+      if (!this.delays.has(id)) continue;
+      const pts = [];
+      for (let i = 0; i < st.length; i += 4) {
+        const t = st[i + 2] || st[i];
+        const d = st[i + 2] ? st[i + 3] : st[i + 1];
+        if (t && d !== null && (!pts.length || t > pts[pts.length - 2])) pts.push(t, d);
+      }
+      if (pts.length < 4 || pts[pts.length - 2] < now - 600) continue;
+      const keep = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        const prev = i > 0 ? pts[i - 1] : null;
+        const next = i + 3 < pts.length ? pts[i + 3] : null;
+        // Punkt behalten, wenn sich die Verspätung davor oder danach um mindestens 20 s ändert
+        if (prev === null || next === null || Math.abs(pts[i + 1] - prev) >= 20 || Math.abs(next - pts[i + 1]) >= 20) keep.push(pts[i], pts[i + 1]);
+      }
+      // Vergangenes weglassen: ab dem letzten Punkt vor jetzt reicht für die Position
+      let from = 0;
+      for (let i = 0; i < keep.length; i += 2) if (keep[i] <= now - 120) from = i;
+      keep.splice(0, from);
+      if (keep.length < 4) continue;
+      let varies = false;
+      for (let i = 3; i < keep.length; i += 2) if (Math.abs(keep[i] - keep[1]) >= 20) { varies = true; break; }
+      if (varies) out[id] = keep;
+    }
+    return out;
   }
 }

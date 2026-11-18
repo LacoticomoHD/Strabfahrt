@@ -7,6 +7,8 @@ export default async function handler(req, res) {
     const rt = await getLive();
     rt.lastFlush = 0;
     rt.flushStats();
+    const station = new URL(req.url, 'http://x').searchParams.get('station');
+    if (station) return send(res, 200, rt.stationSummary(station), 600);
     send(res, 200, rt.statsSummary(), 600);
   } catch (e) {
     send(res, 502, { error: String(e.message || e), days: 0, lines: [] }, 30);

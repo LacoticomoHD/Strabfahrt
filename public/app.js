@@ -156,6 +156,7 @@ const state = {
   hiddenLines: new Set(load('strab.hiddenLines', [])),
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
+  course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
   canceled: new Set(), // ausgefallene Fahrten (Echtzeit)
   reasons: new Map(), // Fahrt-ID -> Grund (Echtzeit)
@@ -487,7 +488,24 @@ function unitsBadge(tripId) {
 function delayOf(trip) {
   if (state.demo) return demoDelay(trip.id);
   const k = kvvOf(trip.id);
-  return k && k.delay !== undefined ? k.delay : state.delays.get(trip.id);
+  if (k && k.delay !== undefined) return k.delay;
+  const c = state.course.get(trip.id);
+  return c ? courseDelay(c, state.sim) : state.delays.get(trip.id);
+}
+
+// Verspätung laut Prognose je Halt an der Stelle, an der das Fahrzeug jetzt ist.
+// Gesucht ist die Planzeit p mit p + D(p) = jetzt; D wird zwischen den Prognosepunkten linear verbunden.
+function courseDelay(c, now) {
+  const at = (p) => {
+    if (p <= c[0]) return c[1];
+    for (let i = 2; i < c.length; i += 2) {
+      if (p <= c[i]) return c[i - 1] + ((c[i + 1] - c[i - 1]) * (p - c[i - 2])) / (c[i] - c[i - 2]);
+    }
+    return c[c.length - 1];
+  };
+  let d = at(now - c[1]);
+  for (let n = 0; n < 8; n++) d = at(now - d);
+  return Math.round(d);
 }
 
 function fmtDelay(d) {
@@ -1652,6 +1670,14 @@ async function renderStation() {
     const lines = [...new Set(shown.map((d) => d.line))];
     const punct = el('div', { class: 'block punct' });
     more.append(punct);
+    // Pünktlichkeit an genau dieser Haltestelle (gemessene Abfahrten der letzten Tage)
+    if (state.rtBase) {
+      rtGet(`/api/stats?station=${encodeURIComponent(stationId)}`).then((h) => {
+        if (!h || !h.deps || state.station !== index) return;
+        punct.prepend(el('div', { class: 'bh' }, 'Pünktlichkeit an dieser Haltestelle'),
+          el('div', { class: 'prow' }, `Ø ${fmtDelayExact(h.avg)} · ${h.latePct} % ab 3 Min. zu spät · ${h.deps} gemessene Abfahrten an ${h.days} Tag${h.days === 1 ? '' : 'en'}`));
+      }).catch(() => {});
+    }
     lineStats().then((st) => {
       if (!st || state.station !== index) return;
       const by = new Map(st.lines.map((l) => [l.line, l]));
@@ -3074,6 +3100,8 @@ async function init() {
         // Quelle hängt (Stand älter als 20 Min.): alte Verspätungen nicht mehr anzeigen, sonst wären sie falsch
         const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
         state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
+        const off = wallNow() - Date.now() / 1000;
+        state.course = old ? new Map() : new Map(Object.entries(j.p || {}).map(([k, v]) => [k, v.map((x, i) => (i % 2 ? Number(x) : Number(x) + off))]));
         state.canceled = old ? new Set() : new Set(j.c || []);
         state.reasons = old ? new Map() : new Map(Object.entries(j.r || {}));
         state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error, okAt: Date.now() };
@@ -3081,7 +3109,7 @@ async function init() {
         state.rt = { ...state.rt, error: e.message };
         // Live-Server länger als 3 Minuten nicht erreichbar (z. B. Kontingent aufgebraucht): alte Verspätungen nicht weiter zeigen
         if (Date.now() - (state.rt.okAt || 0) > 180000) {
-          state.delays = new Map(); state.canceled = new Set(); state.reasons = new Map();
+          state.delays = new Map(); state.course = new Map(); state.canceled = new Set(); state.reasons = new Map();
           state.rt = { ...state.rt, active: false, down: true };
         }
       }

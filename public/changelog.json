@@ -1,5 +1,21 @@
 [
   {
+    "id": "2026-11-18a",
+    "version": "3.12",
+    "date": "18.11.2026",
+    "title": "Genauere Live-Daten",
+    "neu": [
+      "Haltestelle: unter „Mehr zur Haltestelle“ steht, wie pünktlich die Abfahrten genau hier sind (gemessen, ab heute gesammelt)"
+    ],
+    "geaendert": [
+      "Live-Daten werden alle 30 Sekunden geholt statt alle 2 Minuten",
+      "Karte: Holt eine Bahn Verspätung auf oder wird langsamer, bewegt sie sich nach der Prognose je Halt statt mit einer festen Verspätung",
+      "Pünktlichkeits-Statistik wird alle 10 statt alle 25 Minuten gespeichert"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-17a",
     "version": "3.11",
     "date": "17.11.2026",

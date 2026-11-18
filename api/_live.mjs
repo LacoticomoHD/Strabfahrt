@@ -7,9 +7,9 @@ import { Realtime, RT_ATTRIBUTION } from '../server/realtime.mjs';
 
 const DATA_URL = (process.env.STRAB_DATA_URL || 'https://strabfahrt.de/').replace(/\/?$/, '/');
 const DATA_TTL = 6 * 3600 * 1000; // Fahrplan alle 6 Stunden neu pruefen
-const LIVE_TTL = 120 * 1000; // Live-Daten hoechstens alle 2 Minuten neu holen (jeder Abruf kostet CPU-Kontingent)
+const LIVE_TTL = 30 * 1000; // Live-Daten hoechstens alle 30 Sekunden (so oft aktualisiert gtfs.de) neu holen (jeder Abruf kostet CPU-Kontingent)
 const STATS_PATH = 'stats/strabfahrt.json';
-const STATS_SAVE_EVERY = 25 * 60 * 1000; // Blob-Schreibzugriffe sparsam halten (Hobby-Kontingent)
+const STATS_SAVE_EVERY = 10 * 60 * 1000; // Blob-Schreibzugriffe sparsam halten (Hobby-Kontingent)
 
 let data = null; // { model, realtime, loaded }
 let dataPromise = null;
@@ -95,7 +95,7 @@ async function saveStats(rt) {
   rt.flushStats();
   const { put } = await import('@vercel/blob');
   const hits = mergedHits(maxHits(remote ? remote.hits : null, savedHits));
-  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits });
+  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits, st: rt.stationStats });
   await put(STATS_PATH, body, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60 });
   lastSave = Date.now();
   savedHits = hits;
@@ -107,6 +107,11 @@ function mergeRemote(rt, remote) {
   for (const [k, v] of remote.seen || []) if (!rt.seen.has(k)) rt.seen.set(k, v);
   for (const [d, lines] of Object.entries(remote.stats || {})) {
     rt.stats[d] = { ...lines, ...(rt.stats[d] || {}) };
+  }
+  // Haltestellen: je Tag und Haltestelle den Stand mit mehr gezählten Abfahrten nehmen (zwei Instanzen zählen dasselbe)
+  for (const [d, sts] of Object.entries(remote.st || {})) {
+    const own = (rt.stationStats[d] = rt.stationStats[d] || {});
+    for (const [sid, e] of Object.entries(sts)) if (!own[sid] || own[sid][0] < e[0]) own[sid] = e;
   }
 }
 
