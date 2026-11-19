@@ -52,16 +52,17 @@ jobs:
             data/osm-rail3.json
             data/osm-bus2.json
             data/osm-road2.json
-          key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
+          key: osm-v4-${{ steps.week.outputs.w }}-${{ github.run_id }}
           # Erst diese Woche, sonst der letzte ältere Stand: lieber alte Gleisdaten als Luftlinie, falls Overpass ausfällt
           restore-keys: |
-            osm-v3-${{ steps.week.outputs.w }}-
+            osm-v4-${{ steps.week.outputs.w }}-
+            osm-v4-
             osm-v3-
 
       # Gleis- und Straßendaten aus einer älteren Woche: neu laden (sonst bleiben sie für immer alt, z. B. ohne neu
       # hinzugekommene Gebiete). Der alte Stand bleibt als .old liegen und springt ein, wenn Overpass nicht antwortet.
       - name: Alte OpenStreetMap-Daten zum Auffrischen markieren
-        if: steps.osmcache.outputs.cache-matched-key != '' && !startsWith(steps.osmcache.outputs.cache-matched-key, format('osm-v3-{0}-', steps.week.outputs.w))
+        if: steps.osmcache.outputs.cache-matched-key != '' && !startsWith(steps.osmcache.outputs.cache-matched-key, format('osm-v4-{0}-', steps.week.outputs.w))
         run: |
           for f in data/osm-rail3.json data/osm-bus2.json data/osm-road2.json; do [ -f "$f" ] && mv "$f" "$f.old" || true; done
           ls -la data/*.old || true
@@ -94,7 +95,7 @@ jobs:
             data/osm-rail3.json
             data/osm-bus2.json
             data/osm-road2.json
-          key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
+          key: osm-v4-${{ steps.week.outputs.w }}-${{ github.run_id }}
 
       - name: Erweitertes Straßennetz im Cache sichern
         if: always() && steps.roadcache.outputs.cache-hit != 'true' && (hashFiles('data/osm-road3.json') != '' || hashFiles('data/osm-road3.part.json') != '')
