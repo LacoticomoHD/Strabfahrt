@@ -595,6 +595,16 @@ function angleBetween(p, q) {
   return Math.atan2(-dy, dx); // Bildschirm: y nach unten, Norden oben
 }
 
+// Fahrprofil statt gleichmäßigem Tempo: anfahren, fahren, bremsen (Anteil a der Zeit je zum Beschleunigen und Bremsen)
+function easeTravel(t, a = 0.2) {
+  if (t <= 0) return 0;
+  if (t >= 1) return 1;
+  const v = 1 / (1 - a); // Reisegeschwindigkeit, damit nach der ganzen Zeit die ganze Strecke geschafft ist
+  if (t < a) return (v * t * t) / (2 * a);
+  if (t > 1 - a) return 1 - (v * (1 - t) * (1 - t)) / (2 * a);
+  return v * (t - a / 2);
+}
+
 function locate(trip, now, noCursor = false) {
   if (now < trip.t0 || now > trip.end) return null;
   const pat = state.patterns.get(trip.pid);
@@ -612,8 +622,18 @@ function locate(trip, now, noCursor = false) {
     const heading = atEnd ? angleBetween(along(g, 0.9), along(g, 1)) : angleBetween(along(g, 0), along(g, 0.1));
     return { lat: a[2], lon: a[3], k, f: 0, atStop: true, heading };
   }
-  const f = (rel - prof[2 * k + 1]) / (prof[2 * (k + 1)] - prof[2 * k + 1]);
+  const t0 = prof[2 * k + 1];
+  let t1 = prof[2 * (k + 1)];
+  // Fahrplan ohne Haltezeit (Ankunft = Abfahrt): Fahrzeug kommt etwas früher an und steht kurz an der Haltestelle
+  const nextDwell = k + 1 < n - 1 ? prof[2 * (k + 1) + 1] - prof[2 * (k + 1)] : 99;
+  if (nextDwell < 15 && t1 - t0 > 60) t1 -= Math.min(15 - nextDwell, (t1 - t0) * 0.15);
   const g = segGeom(pat.s[k], pat.s[k + 1]);
+  const raw = (rel - t0) / (t1 - t0);
+  if (raw >= 1) {
+    const b = state.stops[pat.s[k + 1]];
+    return { lat: b[2], lon: b[3], k: k + 1, f: 0, atStop: true, heading: angleBetween(along(g, 0.9), along(g, 1)) };
+  }
+  const f = easeTravel(raw);
   const [lat, lon] = along(g, f);
   return { lat, lon, k, f, atStop: false, heading: angleBetween(along(g, Math.max(0, f - 0.03)), along(g, Math.min(1, f + 0.03))) };
 }

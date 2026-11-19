@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-19c",
+    "version": "3.18",
+    "date": "19.11.2026",
+    "title": "Natürlichere Fahrt auf der Karte",
+    "neu": [],
+    "geaendert": [
+      "Karte: Bahnen und Busse fahren an, rollen und bremsen, statt mit gleichmäßigem Tempo von Halt zu Halt zu gleiten",
+      "Ohne Haltezeit im Fahrplan steht das Fahrzeug kurz an der Haltestelle, statt durchzufahren",
+      "Streckenverläufe: großzügigere Zuordnung zu Gleisen und Straßen, damit weniger Abschnitte als gerade Linie erscheinen (wirkt nach dem nächsten Daten-Neubau)"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-19b",
     "version": "3.17",
     "date": "19.11.2026",

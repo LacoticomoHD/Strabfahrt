@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildGraph, matchSegment, waysByRef } from './lib/rail.mjs';
+import { buildGraph, matchSegment, waysByRef, nearestNodes } from './lib/rail.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(ROOT, 'data');
@@ -135,20 +135,33 @@ function areaClause(types, pad = 1) {
     for (let i = 1; i < stops.length; i++) pairs.add(`${stops[i - 1]},${stops[i]}`);
   }
   console.log('Haltepaare Schiene:', pairs.size);
+  const missedRail = [];
   for (const key of pairs) {
     const [a, b] = key.split(',').map(Number);
-    const pts = matchSegment(graph, [model.stops[a][2], model.stops[a][3]], [model.stops[b][2], model.stops[b][3]], { snapMeters: 200, detour: 2, slack: 600 });
-    if (pts) { segs[key] = flat(pts); stats.matched++; } else stats.missed++;
+    const A = [model.stops[a][2], model.stops[a][3]]; const B = [model.stops[b][2], model.stops[b][3]];
+    let pts = matchSegment(graph, A, B, { snapMeters: 200, detour: 2, slack: 600 });
+    // Zweiter Versuch, großzügiger: Halte weiter weg vom Gleis (Bahnhof liegt im Fahrplan am Vorplatz), Umwege über Verbindungskurven
+    if (!pts) { pts = matchSegment(graph, A, B, { snapMeters: 450, detour: 3, slack: 2500 }); if (pts) stats.railRelaxed = (stats.railRelaxed || 0) + 1; }
+    if (pts) { segs[key] = flat(pts); stats.matched++; } else { stats.missed++; missedRail.push([a, b]); }
+  }
+  // Fehlersuche im Log: welche Abschnitte fehlen, und wie weit liegen die Halte vom nächsten Gleis?
+  const near = (p) => { const n = nearestNodes(graph, p[0], p[1], 2000); return n.length ? Math.round(n[0][0]) : '>2000'; };
+  for (const [a, b] of missedRail.filter(([a, b]) => inArea(model.stops[a]) && inArea(model.stops[b])).slice(0, 40)) {
+    const A = model.stops[a]; const B = model.stops[b];
+    console.log(`  Luftlinie Schiene: ${A[1]} (Gleis ${near([A[2], A[3]])} m) -> ${B[1]} (Gleis ${near([B[2], B[3]])} m)`);
   }
 }
 
 // ---------- Busse ----------
 const overpassSync = {};
 try {
-  overpassSync.road = await overpass('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road)$"]',
-    areaClause(new Set([3, 11]), 0), 'out tags geom;', 'osm-road2.json', '--osm-road');
+  overpassSync.road = await overpass('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road|service)$"]["service"!~"^(parking_aisle|driveway|drive-through)$"]',
+    areaClause(new Set([3, 11]), 1), 'out tags geom;', 'osm-road3.json', '--osm-road');
 } catch (e) {
-  console.warn('Strassennetz uebersprungen:', e.message);
+  // Größere Abfrage fehlgeschlagen: auf den älteren, kleineren Stand zurückgreifen, falls vorhanden
+  const old = path.join(DATA, 'osm-road2.json');
+  if (fs.existsSync(old)) { overpassSync.road = JSON.parse(fs.readFileSync(old, 'utf8')); console.warn('Strassennetz neu nicht geladen, nutze alten Stand:', e.message); }
+  else console.warn('Strassennetz uebersprungen:', e.message);
 }
 // Buslinien-Relationen sind nur eine Verfeinerung und fuer Overpass sehr teuer: hoechstens 8 Minuten, sonst ohne
 let busRel = { elements: [] };
@@ -182,9 +195,9 @@ try {
     try {
       const osmRoad = overpassSync.road || null;
       if (osmRoad) {
-        const SLOW = /^(residential|living_street|unclassified|service)$/;
+        const SLOW = /^(residential|living_street|unclassified)$/;
         roadGraph = buildGraph((osmRoad.elements || []).filter((el) => el.type === 'way' && Array.isArray(el.geometry))
-          .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: SLOW.test(el.tags && el.tags.highway) ? 1.4 : 1 })));
+          .map((el) => ({ pts: el.geometry.map((g) => [g.lat, g.lon]), f: el.tags && el.tags.highway === 'service' ? 2.5 : SLOW.test(el.tags && el.tags.highway) ? 1.4 : 1 })));
         console.log('Strassengraph:', roadGraph.coords.length, 'Knoten');
       }
     } catch (e) { console.warn('Strassennetz nicht nutzbar:', e.message); }
@@ -208,7 +221,8 @@ try {
         viaUnion = !!pts;
       }
       if (!pts && roads()) {
-        pts = matchSegment(roads(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 120, detour: 2.2, slack: 500 });
+        pts = matchSegment(roads(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 120, detour: 2.2, slack: 500 })
+          || matchSegment(roads(), [a[2], a[3]], [b[2], b[3]], { snapMeters: 300, detour: 3, slack: 1500 }); // großzügiger
         if (pts) stats.busViaRoad = (stats.busViaRoad || 0) + 1;
       }
       if (pts) {

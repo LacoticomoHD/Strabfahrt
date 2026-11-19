@@ -52,6 +52,7 @@ jobs:
             data/osm-rail3.json
             data/osm-bus2.json
             data/osm-road2.json
+            data/osm-road3.json
           key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
           # Erst diese Woche, sonst der letzte ältere Stand: lieber alte Gleisdaten als Luftlinie, falls Overpass ausfällt
           restore-keys: |
@@ -73,6 +74,7 @@ jobs:
             data/osm-rail3.json
             data/osm-bus2.json
             data/osm-road2.json
+            data/osm-road3.json
           key: osm-v3-${{ steps.week.outputs.w }}-${{ github.run_id }}
 
       - name: Statische Variante mit Karte bauen
