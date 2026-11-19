@@ -625,6 +625,8 @@ function followTarget(size) {
   const box = (id) => { const e = $(id); if (!e || e.hidden) return null; const r = e.getBoundingClientRect(); return r.height > 0 && r.width > 0 ? r : null; };
   const top = box('top');
   if (top) y0 = Math.max(y0, top.bottom - m.top);
+  const ride = box('ride'); // Begleitkarte „Meine Fahrt“ oben
+  if (ride) y0 = Math.max(y0, ride.bottom - m.top);
   const bar = box('bar');
   if (bar) y1 = Math.min(y1, bar.top - m.top);
   const tools = box('tools');
@@ -744,6 +746,7 @@ function drawFrame() {
     out.push({ trip, pat, route, style, pos, delay, x: p.x, y: p.y });
   }
   state.vehicles = out;
+  document.body.classList.toggle('following', Boolean(state.follow));
   if (followPos) {
     const c = map.latLngToContainerPoint([followPos.lat, followPos.lon]);
     const t = followTarget(size);
@@ -1166,6 +1169,17 @@ map.on('click', (e) => {
 // ---------- Panels ----------
 
 let panelKey = '';
+// Handy: Griff oben am Fenster klappt es auf eine Kopfzeile zusammen, damit die Karte frei ist
+const panelGrip = el('button', { id: 'panel-grip', type: 'button', 'aria-label': 'Fenster ein- oder ausklappen' });
+panelGrip.addEventListener('click', () => {
+  const min = !document.body.classList.contains('sheet-min');
+  document.body.classList.toggle('sheet-min', min);
+  panelGrip.setAttribute('aria-expanded', String(!min));
+  if (min) $('panel').scrollTop = 0;
+  needsDraw = true;
+});
+$('panel').prepend(panelGrip);
+
 function showPanel() {
   closeSettings();
   // Neuer Inhalt (anderes Fahrzeug, andere Haltestelle, andere Liste): oben anfangen statt an alter Scrollposition

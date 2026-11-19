@@ -410,3 +410,17 @@ table.past td.r { color: var(--muted, #8a94a6); }
 #ride .rbtns button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); cursor: pointer; }
 #ride .rbtns button.go { background: #7fb2ff; border-color: #7fb2ff; color: #0b1a33; font-weight: 600; }
 .jcard .ridebtn { background: #2e7d32; border-color: #2e7d32; color: #fff; font-weight: 600; }
+
+/* Handy: Fenster unten mit Griff, beim Folgen höchstens ein Drittel hoch, zusammenklappbar */
+#panel-grip { display: none; }
+@media (max-width: 700px) {
+  #panel-grip { display: block; width: calc(100% + 28px); height: 22px; margin: -12px -14px 2px; padding: 0; border: 0; background: var(--bg); border-radius: 14px 14px 0 0; cursor: pointer; position: sticky; top: -12px; z-index: 2; }
+  #panel-close { z-index: 3; }
+  #panel-grip::before { content: ''; display: block; width: 44px; height: 5px; margin: 8px auto; border-radius: 3px; background: var(--muted); opacity: .6; }
+  body.following #panel { max-height: calc(33vh + var(--sab)); }
+  body.sheet-min #panel { max-height: calc(112px + var(--sab)); overflow: hidden; }
+  /* Begleitkarte schlank, solange unten ein Fenster offen ist */
+  body.panel-open #ride { padding: 6px 10px; font-size: 13px; }
+  body.panel-open #ride .rbtns, body.panel-open #ride .rk { display: none; }
+  body.panel-open #ride .rmain { font-size: 15px; }
+}

@@ -1,5 +1,21 @@
 [
   {
+    "id": "2026-11-19b",
+    "version": "3.17",
+    "date": "19.11.2026",
+    "title": "Mehr Karte beim Mitfahren",
+    "neu": [
+      "Handy: Das Fenster unten hat einen Griff. Antippen klappt es auf eine Kopfzeile zusammen und wieder auf"
+    ],
+    "geaendert": [
+      "Handy: Beim Folgen eines Fahrzeugs ist das Fenster unten höchstens ein Drittel des Bildschirms hoch",
+      "Meine Fahrt: Ist unten ein Fenster offen, wird die Begleitkarte schmal (ohne Knöpfe)",
+      "Beim Folgen steht das Fahrzeug in der Mitte des freien Kartenbereichs, auch mit Begleitkarte oben"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-19a",
     "version": "3.16",
     "date": "19.11.2026",
