@@ -59,14 +59,28 @@ async function overpass(sel, boxes, out, cacheName, argName) {
   }
   const PACK = 3;
   const seen = new Map();
+  // Fortschritt je Paket sichern: bricht ein Lauf ab (Overpass überlastet, Zeitlimit), macht der nächste dort weiter
+  const partFile = cache.replace(/\.json$/, '.part.json');
+  const key = JSON.stringify([sel, boxes, out]);
+  let done = new Set();
+  if (fs.existsSync(partFile)) {
+    try {
+      const p = JSON.parse(fs.readFileSync(partFile, 'utf8'));
+      if (p.key === key) { done = new Set(p.done); for (const el of p.elements) seen.set(`${el.type}${el.id}`, el); console.log(`${cacheName}: setze bei Paket ${done.size + 1} fort`); }
+    } catch { /* kaputt: neu anfangen */ }
+  }
   for (let i = 0; i < boxes.length; i += PACK) {
+    if (done.has(i)) continue;
     const part = boxes.slice(i, i + PACK);
     console.log(`Lade ${cacheName}: Paket ${i / PACK + 1} von ${Math.ceil(boxes.length / PACK)}`);
     const json = await fetchOverpass(`[out:json][timeout:180];(${part.map((b) => `${sel}(${b});`).join('')});${out}`);
     for (const el of json.elements || []) seen.set(`${el.type}${el.id}`, el);
+    done.add(i);
+    fs.writeFileSync(partFile, JSON.stringify({ key, done: [...done], elements: [...seen.values()] }));
   }
   const json = { elements: [...seen.values()] };
   fs.writeFileSync(cache, JSON.stringify(json));
+  try { fs.unlinkSync(partFile); } catch { /* egal */ }
   return json;
 }
 
@@ -155,8 +169,12 @@ function areaClause(types, pad = 1) {
 // ---------- Busse ----------
 const overpassSync = {};
 try {
-  overpassSync.road = await overpass('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road|service)$"]["service"!~"^(parking_aisle|driveway|drive-through)$"]',
-    areaClause(new Set([3, 11]), 1), 'out tags geom;', 'osm-road3.json', '--osm-road');
+  // Erweitertes Netz höchstens 12 Minuten laden, sonst den älteren Stand nehmen (Zeitlimit des ganzen Schritts: 50 Min.)
+  overpassSync.road = await Promise.race([
+    overpass('way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|unclassified|residential|living_street|busway|road|service)$"]["service"!~"^(parking_aisle|driveway|drive-through)$"]',
+    areaClause(new Set([3, 11]), 1), 'out tags geom;', 'osm-road3.json', '--osm-road'),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('Zeitlimit')), 12 * 60 * 1000).unref()),
+  ]);
 } catch (e) {
   // Größere Abfrage fehlgeschlagen: auf den älteren, kleineren Stand zurückgreifen, falls vorhanden
   const old = path.join(DATA, 'osm-road2.json');
