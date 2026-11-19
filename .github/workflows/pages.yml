@@ -58,6 +58,14 @@ jobs:
             osm-v3-${{ steps.week.outputs.w }}-
             osm-v3-
 
+      # Gleis- und Straßendaten aus einer älteren Woche: neu laden (sonst bleiben sie für immer alt, z. B. ohne neu
+      # hinzugekommene Gebiete). Der alte Stand bleibt als .old liegen und springt ein, wenn Overpass nicht antwortet.
+      - name: Alte OpenStreetMap-Daten zum Auffrischen markieren
+        if: steps.osmcache.outputs.cache-matched-key != '' && !startsWith(steps.osmcache.outputs.cache-matched-key, format('osm-v3-{0}-', steps.week.outputs.w))
+        run: |
+          for f in data/osm-rail3.json data/osm-bus2.json data/osm-road2.json; do [ -f "$f" ] && mv "$f" "$f.old" || true; done
+          ls -la data/*.old || true
+
       # Größeres Straßennetz (mit Rand und Nebenstraßen) in eigenem Cache: ändert nichts am Gleis-Cache oben
       - name: Erweitertes Straßennetz aus dem Cache holen
         id: roadcache

@@ -69,11 +69,19 @@ async function overpass(sel, boxes, out, cacheName, argName) {
       if (p.key === key) { done = new Set(p.done); for (const el of p.elements) seen.set(`${el.type}${el.id}`, el); console.log(`${cacheName}: setze bei Paket ${done.size + 1} fort`); }
     } catch { /* kaputt: neu anfangen */ }
   }
+  const old = `${cache}.old`;
   for (let i = 0; i < boxes.length; i += PACK) {
     if (done.has(i)) continue;
     const part = boxes.slice(i, i + PACK);
     console.log(`Lade ${cacheName}: Paket ${i / PACK + 1} von ${Math.ceil(boxes.length / PACK)}`);
-    const json = await fetchOverpass(`[out:json][timeout:180];(${part.map((b) => `${sel}(${b});`).join('')});${out}`);
+    let json;
+    try {
+      json = await fetchOverpass(`[out:json][timeout:180];(${part.map((b) => `${sel}(${b});`).join('')});${out}`);
+    } catch (e) {
+      // Overpass antwortet nicht: alten Stand weiterverwenden (wird beim nächsten Lauf erneut aufgefrischt)
+      if (fs.existsSync(old)) { console.warn(`${cacheName}: Overpass nicht erreichbar, nutze alten Stand`); return JSON.parse(fs.readFileSync(old, 'utf8')); }
+      throw e;
+    }
     for (const el of json.elements || []) seen.set(`${el.type}${el.id}`, el);
     done.add(i);
     fs.writeFileSync(partFile, JSON.stringify({ key, done: [...done], elements: [...seen.values()] }));
@@ -177,8 +185,8 @@ try {
   ]);
 } catch (e) {
   // Größere Abfrage fehlgeschlagen: auf den älteren, kleineren Stand zurückgreifen, falls vorhanden
-  const old = path.join(DATA, 'osm-road2.json');
-  if (fs.existsSync(old)) { overpassSync.road = JSON.parse(fs.readFileSync(old, 'utf8')); console.warn('Strassennetz neu nicht geladen, nutze alten Stand:', e.message); }
+  const old = ['osm-road2.json', 'osm-road2.json.old'].map((f) => path.join(DATA, f)).find((f) => fs.existsSync(f));
+  if (old) { overpassSync.road = JSON.parse(fs.readFileSync(old, 'utf8')); console.warn('Strassennetz neu nicht geladen, nutze alten Stand:', e.message); }
   else console.warn('Strassennetz uebersprungen:', e.message);
 }
 // Buslinien-Relationen sind nur eine Verfeinerung und fuer Overpass sehr teuer: hoechstens 8 Minuten, sonst ohne
@@ -189,7 +197,9 @@ try {
     new Promise((_, rej) => setTimeout(() => rej(new Error('Zeitlimit')), 8 * 60 * 1000).unref()),
   ]);
 } catch (e) {
-  console.warn('Buslinien-Relationen uebersprungen, Busse nur ueber das Strassennetz:', e.message);
+  const old = path.join(DATA, 'osm-bus2.json.old');
+  if (fs.existsSync(old)) { busRel = JSON.parse(fs.readFileSync(old, 'utf8')); console.warn('Buslinien-Relationen neu nicht geladen, nutze alten Stand:', e.message); }
+  else console.warn('Buslinien-Relationen uebersprungen, Busse nur ueber das Strassennetz:', e.message);
 }
 try {
   const byRef = waysByRef(busRel.elements);
