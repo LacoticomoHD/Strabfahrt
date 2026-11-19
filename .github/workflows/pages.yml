@@ -116,6 +116,8 @@ jobs:
       - name: Fertige Seite prüfen
         run: |
           for f in index.html app.js model.json model.js local-api.js sw.js; do test -s "dist-static/$f" || { echo "fehlt: $f"; exit 1; }; done
+          # Ohne Streckenverläufe würden alle Fahrzeuge in Luftlinie fahren: dann lieber die alte Seite stehen lassen
+          test -s dist-static/shapes.json || { echo "fehlt: shapes.json (Streckenbau fehlgeschlagen), alte Seite bleibt online"; exit 1; }
 
       - name: Auf gh-pages veröffentlichen
         env:
