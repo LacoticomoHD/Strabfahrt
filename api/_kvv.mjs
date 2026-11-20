@@ -51,7 +51,21 @@ export const isMainlineRail = (d) => d.type === 100 || RAIL.test(String(d.line |
  * KVV ist Hauptquelle. MobiData BW gewinnt bei Regional-/Fernzügen und füllt sonst nur Lücken.
  * only: genau eine Quelle verwenden (Fehlersuche).
  */
-export async function kvvForStation(model, idx, deps, { only, when = null } = {}) {
+// Gekoppelte Fahrzeuge (Doppel-/Dreifachtraktion) aus allen KVV-Abfragen: Fahrt -> { n, at }.
+// Daraus bekommt die Karte die Zahl der Fahrzeuge, ohne zusätzliche Anfragen beim KVV.
+export const unitsSeen = new Map();
+
+export async function kvvForStation(model, idx, deps, opts = {}) {
+  const res = await kvvForStationRaw(model, idx, deps, opts);
+  if (res && res.map && !opts.when) {
+    const now = Date.now();
+    for (const [trip, v] of res.map) if (v.units >= 1) unitsSeen.set(trip, { n: v.units, at: now });
+    if (unitsSeen.size > 20000) for (const [k, v] of unitsSeen) if (now - v.at > 6 * 3600 * 1000) unitsSeen.delete(k);
+  }
+  return res;
+}
+
+async function kvvForStationRaw(model, idx, deps, { only, when = null } = {}) {
   if (!triasEnabled()) return null;
   const ref = triasStopRef(model, idx);
   if (!ref) return null;

@@ -156,6 +156,7 @@ const state = {
   hiddenLines: new Set(load('strab.hiddenLines', [])),
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
+  units: new Map(), // Fahrt-ID -> { n, live } gekoppelte Fahrzeuge (Doppeltraktion), nur n > 1
   course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
   canceled: new Set(), // ausgefallene Fahrten (Echtzeit)
@@ -476,6 +477,13 @@ state.kvv = new Map(); // trip -> { delay, canceled, at }
 function kvvOf(tripId) {
   const k = state.kvv.get(tripId);
   return k && Date.now() - k.at < 90000 ? k : null;
+}
+
+// Zahl der gekoppelten Fahrzeuge: frische KVV-Abfrage, sonst Live-Sammlung des Servers, sonst gelernt (live: false)
+function unitsOf(tripId) {
+  const k = kvvOf(tripId);
+  if (k && k.units >= 1) return { n: k.units, live: true };
+  return state.units.get(tripId) || { n: 1, live: false };
 }
 
 // Gekoppelte Einheiten laut KVV (Doppel- oder Dreifachtraktion)
@@ -816,6 +824,27 @@ function drawFrame() {
       const label = route0(v.route);
       let w = labelWidth.get(label);
       if (w === undefined) { w = Math.max(18, ctx.measureText(label).width + 8); labelWidth.set(label, w); }
+      // Doppeltraktion: zweites Schild dicht dahinter (entgegen der Fahrtrichtung), darüber „2×“
+      const un = state.demo ? { n: 1 } : unitsOf(v.trip.id);
+      let rearDx = 0;
+      if (un.n > 1) {
+        const ang0 = v.pos.heading === undefined ? 0 : v.pos.heading;
+        const c0 = Math.cos(ang0); const s0 = Math.sin(ang0);
+        const gap = 2;
+        const t = Math.min(Math.abs(c0) > 0.01 ? (w + gap) / Math.abs(c0) : Infinity, Math.abs(s0) > 0.01 ? (16 + gap) / Math.abs(s0) : Infinity);
+        for (let u = un.n - 1; u >= 1; u--) {
+          const rx = v.x - c0 * t * u; const ry = v.y - s0 * t * u;
+          ctx.fillStyle = v.style.bg;
+          roundRect(rx - w / 2, ry - 8, w, 16, 5);
+          ctx.fill();
+          ctx.lineWidth = sel ? 3 : 1.2;
+          ctx.strokeStyle = sel ? '#ffcc00' : '#ffffff';
+          ctx.stroke();
+          ctx.fillStyle = v.style.fg;
+          ctx.fillText(label, rx, ry + 0.5);
+          rearDx = Math.max(rearDx, rx - v.x);
+        }
+      }
       ctx.fillStyle = v.style.bg;
       roundRect(v.x - w / 2, v.y - 8, w, 16, 5);
       ctx.fill();
@@ -824,6 +853,20 @@ function drawFrame() {
       ctx.stroke();
       ctx.fillStyle = v.style.fg;
       ctx.fillText(label, v.x, v.y + 0.5);
+      if (un.n > 1) {
+        // „2×“ über dem Paar (gelernt: mit „~“, weil nur meistens so)
+        const tx = `${un.live ? '' : '~'}${un.n}×`;
+        ctx.font = 'bold 10px system-ui, sans-serif';
+        const tw = ctx.measureText(tx).width + 6;
+        const cx = v.x + Math.min(0, -rearDx) / 2 + Math.max(0, rearDx) / 2;
+        ctx.fillStyle = dark ? 'rgba(240,244,250,.95)' : 'rgba(20,26,36,.9)';
+        roundRect(cx - tw / 2, v.y - 24, tw, 13, 4);
+        ctx.fill();
+        ctx.fillStyle = dark ? '#10161d' : '#ffffff';
+        ctx.fillText(tx, cx, v.y - 17.5);
+        ctx.font = 'bold 11px system-ui, sans-serif';
+      }
+      v.rearDx = rearDx;
       const ang = v.pos.heading;
       if (ang !== undefined) {
         // Pfeil am Rand des Schilds in Fahrtrichtung
@@ -848,7 +891,7 @@ function drawFrame() {
         const c = delayColors(v.delay);
         ctx.font = 'bold 10px system-ui, sans-serif';
         const bw = ctx.measureText(text).width + 8;
-        const bx = v.x + w / 2 + 3 + bw / 2;
+        const bx = v.x + w / 2 + 3 + bw / 2 + Math.max(0, v.rearDx || 0); // rechts neben dem hinteren Schild, falls es rechts liegt
         ctx.fillStyle = c.bg;
         roundRect(bx - bw / 2, v.y - 7, bw, 14, 4);
         ctx.fill();
@@ -1352,6 +1395,8 @@ function renderVehiclePanel() {
   const facts = [];
   if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
+  const unv = state.demo ? { n: 1 } : unitsOf(trip.id);
+  if (unv.n > 1) facts.push(`${unv.n === 2 ? 'Doppeltraktion' : 'Dreifachtraktion'} (${unv.n} Fahrzeuge${unv.live ? '' : ', meistens so, heute nicht bestätigt'})`);
   const wc = (trip.flags || 0) & 3;
   facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
   const bk = ((trip.flags || 0) >> 2) & 3;
@@ -3354,6 +3399,9 @@ async function init() {
         // Quelle hängt (Stand älter als 20 Min.): alte Verspätungen nicht mehr anzeigen, sonst wären sie falsch
         const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
         state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
+        state.units = new Map();
+        for (const [k, n] of Object.entries(j.ul || {})) state.units.set(k, { n: Number(n), live: false });
+        for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });
         const off = wallNow() - Date.now() / 1000;
         state.course = old ? new Map() : new Map(Object.entries(j.p || {}).map(([k, v]) => [k, v.map((x, i) => (i % 2 ? Number(x) : Number(x) + off))]));
         state.canceled = old ? new Set() : new Set(j.c || []);

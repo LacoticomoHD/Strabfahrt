@@ -1,4 +1,4 @@
-import { getLive, send, addHit } from './_live.mjs';
+import { getLive, send, addHit, unitsForMap } from './_live.mjs';
 
 export default async function handler(req, res) {
   // Anonymer Zähler: der erste Abruf nach dem App-Start trägt ?hit=web|app (nur eine Zahl je Tag, keine Kennung).
@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   try {
     const rt = await getLive();
     // Nach einer Pause liefert das CDN sofort den letzten Stand (bis 10 Min. alt) und holt im Hintergrund frisch
-    send(res, 200, rt.snapshot(), 20, 600);
+    send(res, 200, { ...rt.snapshot(), ...unitsForMap() }, 20, 600);
   } catch (e) {
     send(res, 200, { enabled: true, updated: 0, error: e.message, d: {}, c: [], r: {} }, 10);
   }

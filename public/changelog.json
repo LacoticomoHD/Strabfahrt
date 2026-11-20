@@ -1,5 +1,18 @@
 [
   {
+    "id": "2026-11-20a",
+    "version": "3.19",
+    "date": "20.11.2026",
+    "title": "Doppeltraktion auf der Karte",
+    "neu": [
+      "Karte: Fahren zwei Bahnen gekoppelt, stehen zwei Linienschilder dicht hintereinander, darüber „2×“. Mit „~2×“, wenn die Fahrt sonst immer gekoppelt fährt, das heute aber noch nicht bestätigt ist",
+      "Fahrzeugfenster: „Doppeltraktion (2 Fahrzeuge)“"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-19c",
     "version": "3.18",
     "date": "19.11.2026",

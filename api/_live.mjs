@@ -4,6 +4,7 @@
 
 import { Model } from '../server/model.mjs';
 import { Realtime, RT_ATTRIBUTION } from '../server/realtime.mjs';
+import { unitsSeen } from './_kvv.mjs';
 
 const DATA_URL = (process.env.STRAB_DATA_URL || 'https://strabfahrt.de/').replace(/\/?$/, '/');
 const DATA_TTL = 6 * 3600 * 1000; // Fahrplan alle 6 Stunden neu pruefen
@@ -40,6 +41,22 @@ export async function readStats() {
 }
 
 // Anonymer Zähler für App-Starts: je Tag { web, app }. Wird mit der Statistik gespeichert (keine eigenen Schreibzugriffe).
+// Gelernte Doppeltraktionen: Fahrt -> Zahl der Fahrzeuge (nur > 1), mit der Statistik gespeichert
+let learnedUnits = {};
+const UNITS_LIVE_MS = 3 * 3600 * 1000;
+/** Fahrzeugzahl für die Karte: u = live vom KVV (letzte 3 Std.), ul = gelernt aus früheren Tagen. */
+export function unitsForMap() {
+  const now = Date.now();
+  const u = {};
+  for (const [trip, v] of unitsSeen) {
+    if (now - v.at > UNITS_LIVE_MS) continue;
+    if (v.n > 1) { u[trip] = v.n; learnedUnits[trip] = v.n; } else delete learnedUnits[trip];
+  }
+  const ul = {};
+  for (const [trip, n] of Object.entries(learnedUnits)) if (!(trip in u) && !(unitsSeen.has(trip) && now - unitsSeen.get(trip).at <= UNITS_LIVE_MS)) ul[trip] = n;
+  return { u, ul };
+}
+
 const pendingHits = {};
 let savedHits = {};
 const berlinDay = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date()).replace(/-/g, '');
@@ -95,7 +112,7 @@ async function saveStats(rt) {
   rt.flushStats();
   const { put } = await import('@vercel/blob');
   const hits = mergedHits(maxHits(remote ? remote.hits : null, savedHits));
-  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits, st: rt.stationStats });
+  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits, st: rt.stationStats, un: learnedUnits });
   await put(STATS_PATH, body, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60 });
   lastSave = Date.now();
   savedHits = hits;
@@ -108,6 +125,8 @@ function mergeRemote(rt, remote) {
   for (const [d, lines] of Object.entries(remote.stats || {})) {
     rt.stats[d] = { ...lines, ...(rt.stats[d] || {}) };
   }
+  // Gelernte Doppeltraktionen: eigene neuere Werte behalten
+  if (remote.un) learnedUnits = { ...remote.un, ...learnedUnits };
   // Haltestellen: je Tag und Haltestelle den Stand mit mehr gezählten Abfahrten nehmen (zwei Instanzen zählen dasselbe)
   for (const [d, sts] of Object.entries(remote.st || {})) {
     const own = (rt.stationStats[d] = rt.stationStats[d] || {});
