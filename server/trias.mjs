@@ -87,6 +87,8 @@ export function parseStopEvents(xml) {
       origin: text(service, 'OriginText') || '',
       stop: text(call, 'StopPointRef') || '',
       bay: normBay(text(call, 'EstimatedBay') || text(call, 'PlannedBay') || ''),
+      // Merkmale der Fahrt (z. B. Niederflur, Fahrradmitnahme, bei manchen Fahrten die Zuglänge)
+      attrs: all(service, 'Attribute').map((x) => `${text(x, 'Code') || ''}:${text(x, 'Text') || ''}`),
     });
   }
   return { error: events.length ? null : err, events };

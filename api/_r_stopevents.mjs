@@ -34,7 +34,7 @@ export default async function handler(req, res) {
         near: deps.filter((d) => Math.abs(k.dayStartUnix + d.t - e.planned) < 300).slice(0, 4).map((d) => `${d.line}@${fmt(k.dayStartUnix + d.t)}`),
       }));
       return send(res, 200, { source: k.source, status: k.status, url: k.url, error: k.error, events: k.events, mapped: k.map.size, withRt: k.list.filter((e) => e.estimated !== null).length, unmatched, units: u, tags: k.tags,
-        list: q.get('list') === '1' ? k.list.map((e) => ({ line: e.line, ref: e.ref, origin: e.origin, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null, bay: e.bay, journey: e.journey })) : undefined }, 25);
+        list: q.get('list') === '1' ? k.list.map((e) => ({ line: e.line, ref: e.ref, origin: e.origin, dest: e.dest, planned: fmt(e.planned), rt: e.estimated !== null, bay: e.bay, journey: e.journey, attrs: e.attrs })) : undefined }, 25);
     }
     send(res, 200, { source: k ? k.source : null, updated: Date.now(), events: k ? k.events : 0, matched: Object.keys(d).length, error: k ? k.error : null, d, c, bay, u }, at !== null ? 300 : 25);
   } catch (e) {
