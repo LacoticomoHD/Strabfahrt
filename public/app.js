@@ -3355,6 +3355,26 @@ if (!window.STRAB_NATIVE && 'serviceWorker' in navigator && (location.protocol =
 // Nur fuer automatische Tests: mit "dbg" im Hash ist der Zustand im Browser erreichbar
 if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map };
 
+// iPhone/iPad in Safari: einmal zeigen, wie man STRABFAHRT als App auf den Home-Bildschirm legt
+(function iosInstallHint() {
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const standalone = window.navigator.standalone === true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  if (!ios || standalone || window.StrabNative || load('strab.iosHint', false)) return;
+  const show = () => {
+    if (document.querySelector('dialog[open]')) { setTimeout(show, 5000); return; }
+    const close = el('button', { type: 'button', class: 'go' }, 'Verstanden');
+    const later = el('button', { type: 'button' }, 'Später');
+    const box = el('section', { id: 'ioshint', role: 'dialog', 'aria-label': 'Als App installieren' },
+      el('b', {}, '📲 STRABFAHRT als App'),
+      el('div', {}, 'Unten auf ', el('b', {}, 'Teilen'), ' (□↑) tippen, dann ', el('b', {}, '„Zum Home-Bildschirm“'), '. Danach startet STRABFAHRT wie eine App, im Vollbild und mit Erinnerungen.'),
+      el('div', { class: 'rbtns' }, close, later));
+    close.addEventListener('click', () => { save('strab.iosHint', true); box.remove(); });
+    later.addEventListener('click', () => box.remove());
+    document.body.append(box);
+  };
+  setTimeout(show, 8000);
+})();
+
 async function init() {
   const [meta, stops] = await Promise.all([api('/api/meta'), api('/api/stops')]);
   state.meta = meta;

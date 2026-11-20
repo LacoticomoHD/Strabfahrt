@@ -1,7 +1,7 @@
 {
   "name": "STRABFAHRT",
   "short_name": "STRABFAHRT",
-  "description": "Bahnen und Busse im Raum Karlsruhe nach Fahrplan",
+  "description": "Live-Karte aller Bahnen und Busse im KVV-Netz, mit Abfahrten und Verbindungssuche",
   "lang": "de",
   "start_url": "./",
   "scope": "./",
@@ -25,5 +25,11 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "id": "./",
+  "orientation": "any",
+  "categories": [
+    "travel",
+    "navigation"
   ]
 }

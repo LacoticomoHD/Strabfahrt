@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-20b",
+    "version": "3.20",
+    "date": "20.11.2026",
+    "title": "Besser auf dem iPhone",
+    "neu": [
+      "iPhone: Beim ersten Besuch in Safari erklärt ein Hinweis, wie STRABFAHRT als App auf den Home-Bildschirm kommt"
+    ],
+    "geaendert": [
+      "iPhone: eigenes App-Symbol und Start im Vollbild ohne Safari-Leisten, wenn STRABFAHRT vom Home-Bildschirm geöffnet wird"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-20a",
     "version": "3.19",
     "date": "20.11.2026",
