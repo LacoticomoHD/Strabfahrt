@@ -274,7 +274,69 @@ export class Realtime {
     this.stopTimes = stopTimes;
     this.updated = Date.now();
     this.feedTime = Number(feed.header && feed.header.timestamp) || 0;
+    this.incidents = this.detectIncidents(nowSec);
     this.flushStats();
+  }
+
+  /**
+   * Störungen selbst erkennen: an einer Haltestelle fallen in den 20 Minuten um jetzt viele Fahrten aus
+   * oder sind stark verspätet (z. B. Unfall, Notarzteinsatz). Der KVV meldet solche kurzfristigen Störungen
+   * nicht in seinen offenen Daten. Ergebnis: [{ station, name, lines, affected, total, since }]
+   */
+  detectIncidents(nowSec) {
+    const m = this.model;
+    if (!this.feedTime || nowSec - this.feedTime > 600) return []; // Quelle hängt: keine Fehlalarme
+    const LATE = 8 * 60; const WIN = 20 * 60;
+    const y = berlinToday();
+    const noon = Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8), 12);
+    const day0 = Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8)) / 1000 - berlinOffset(noon) * 60;
+    const byStation = new Map(); // Haltestellen-Index -> { total, affected, lines:Set, trips:Set }
+    const ids = new Set([...this.delays.keys(), ...this.canceled]);
+    for (const id of ids) {
+      const ti = this.tripIndex.get(id);
+      if (ti === undefined) continue;
+      const trip = m.trips[ti];
+      const pat = m.patterns[trip.pattern];
+      const prof = m.profiles[trip.profile];
+      const route = m.routes[pat.route];
+      const canceled = this.canceled.has(id);
+      // Verspätung je Halt aus dem Stream (Planzeit -> Verspätung), sonst die der Fahrt
+      const st = this.stopTimes.get(id) || [];
+      const perStop = new Map();
+      for (let i = 0; i < st.length; i += 4) { const t = st[i + 2] || st[i]; const d = st[i + 2] ? st[i + 3] : st[i + 1]; if (t && d !== null) perStop.set(t, d); }
+      const fallback = this.delays.get(id);
+      let base = day0 + trip.start;
+      if (trip.start >= 86400 && base - 86400 + prof[prof.length - 2] > nowSec - 3600) base -= 86400; // Fahrt von gestern nach Mitternacht
+      for (let k = 0; k < pat.stops.length; k++) {
+        const t = base + prof[2 * k + 1];
+        if (Math.abs(t - nowSec) > WIN) continue;
+        const sIdx = pat.stops[k];
+        const parent = m.stops[sIdx][4] >= 0 ? m.stops[sIdx][4] : sIdx;
+        let e = byStation.get(parent);
+        if (!e) byStation.set(parent, (e = { total: 0, affected: 0, lines: new Set() }));
+        e.total++;
+        const d = perStop.has(t) ? perStop.get(t) : fallback;
+        if (canceled || (d !== undefined && d >= LATE)) { e.affected++; e.lines.add(route[0]); }
+      }
+    }
+    this.incidentSince = this.incidentSince || new Map();
+    const out = [];
+    for (const [idx, e] of byStation) {
+      if (e.affected < 3 || e.affected / e.total < 0.5 || e.lines.size < 1) continue;
+      const sid = m.stops[idx][0];
+      if (!this.incidentSince.has(sid)) this.incidentSince.set(sid, nowSec);
+      out.push({ station: sid, name: m.stops[idx][1], lines: [...e.lines].sort((a, b) => a.localeCompare(b, 'de', { numeric: true })), affected: e.affected, total: e.total, since: this.incidentSince.get(sid) });
+    }
+    for (const sid of [...this.incidentSince.keys()]) if (!out.some((o) => o.station === sid)) this.incidentSince.delete(sid);
+    // Gleiche Störung zieht sich die Strecke entlang: je Liniengruppe nur die Haltestelle mit den meisten Betroffenen
+    out.sort((a, b) => b.affected - a.affected);
+    const kept = [];
+    for (const o of out) {
+      const dup = kept.find((k) => k.lines.some((l) => o.lines.includes(l)));
+      if (dup) { dup.more = (dup.more || 0) + 1; continue; }
+      kept.push(o);
+    }
+    return kept.slice(0, 5);
   }
 
   // Abfahrten an Haltestellen zählen, sobald sie vorbei sind (gemessene Zeit aus dem Stream)
@@ -391,7 +453,7 @@ export class Realtime {
   snapshot() {
     return {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
-      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons),
+      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [],
       p: this.delayCourse(),
     };
   }

@@ -1,5 +1,19 @@
 [
   {
+    "id": "2026-11-24a",
+    "version": "3.21",
+    "date": "24.11.2026",
+    "title": "Störungen selbst erkennen",
+    "neu": [
+      "Meldungen: STRABFAHRT erkennt Störungen jetzt selbst, wenn an einer Haltestelle viele Bahnen ausfallen oder mehr als 8 Minuten verspätet sind (z. B. bei einem Unfall). Diese stehen mit ⚠ oben in den Meldungen",
+      "Android: Betrifft so eine Störung eine Favoriten-Haltestelle oder deren Linien, kommt eine Benachrichtigung, auch bei geschlossener App",
+      "Web: Hinweis, wenn eine erkannte Störung eine Favoriten-Haltestelle oder die begleitete Fahrt betrifft (solange die Seite offen ist)"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
     "id": "2026-11-20b",
     "version": "3.20",
     "date": "20.11.2026",

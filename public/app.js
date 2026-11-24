@@ -2745,6 +2745,29 @@ function forecastBox(j) {
 }
 
 let journeyBox = null;
+// ---------- Selbst erkannte Störungen ----------
+// Hinweis, wenn eine erkannte Störung eine Favoriten-Haltestelle oder die begleitete Fahrt betrifft (einmal je Haltestelle und Tag).
+// In der Android-App kommt die Benachrichtigung auch bei geschlossener App (über die Meldungen).
+function notifyIncidents(list) {
+  if (!list.length || !state.stops) return;
+  const seen = load('strab.incSeen', {});
+  const day = ymdOf(wallNow());
+  const favIds = new Set(state.favorites);
+  const rideLines = new Set(state.ride ? state.ride.legs.filter((l) => l.type === 'ride').map((l) => l.line) : []);
+  let changed = false;
+  for (const x of list) {
+    const key = `${day}|${x.station}`;
+    if (seen[key]) continue;
+    const mine = favIds.has(x.station) || x.lines.some((l) => rideLines.has(l));
+    if (!mine) continue;
+    seen[key] = 1; changed = true;
+    const msg = `⚠ Vermutlich Störung an ${x.name}: ${x.lines.length > 1 ? 'Linien' : 'Linie'} ${x.lines.join(', ')} stark verspätet oder ausgefallen`;
+    if (!window.StrabNative && 'Notification' in window && Notification.permission === 'granted') new Notification('STRABFAHRT', { body: msg, icon: 'icon-192.png' });
+    toast(msg);
+  }
+  if (changed) { for (const k of Object.keys(seen)) if (!k.startsWith(day)) delete seen[k]; save('strab.incSeen', seen); }
+}
+
 // ---------- Meine Fahrt: Live-Begleitung ----------
 // Eine gewählte Verbindung wird begleitet: Countdown bis zur Abfahrt, unterwegs nächster Halt und Aussteigen,
 // Warnung bei gefährdetem Umstieg oder Ausfall mit Suche nach einer Alternative. Erinnerungen laufen über das
@@ -3177,10 +3200,14 @@ async function openAlerts() {
   let data = { alerts: [] };
   try { data = await rtGet('/api/alerts'); } catch (e) { console.error(e); }
   if (state.list !== 'alerts') return;
-  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Störungen und Bauarbeiten im KVV-Gebiet, aus dem Echtzeitstream von gtfs.de. Antippen zeigt die Einzelheiten.'));
+  body.replaceChildren(el('h2', {}, '📢 Meldungen'), el('div', { class: 'sub' }, 'Störungen und Bauarbeiten im KVV-Gebiet, aus dem Echtzeitstream von gtfs.de. Mit ⚠ markiert: von STRABFAHRT selbst erkannte Störungen (viele Ausfälle oder große Verspätungen an einer Stelle). Antippen zeigt die Einzelheiten.'));
   if (!data.alerts.length) body.append(el('div', { class: 'empty' }, 'Gerade keine Meldungen für das Gebiet.'));
   for (const a of data.alerts) {
-    const det = el('details', { class: 'block' }, el('summary', {}, a.header));
+    const det = el('details', a.inferred ? { class: 'block inferred', open: '' } : { class: 'block' }, el('summary', {}, a.inferred ? `⚠ ${a.header}` : a.header));
+    if (a.inferred && a.station) {
+      const i = state.stops.findIndex((x) => x[0] === a.station);
+      if (i >= 0) { const go = el('button', { class: 'chip', type: 'button' }, 'Haltestelle zeigen'); go.addEventListener('click', () => { const st = state.stops[i]; map.setView([st[2], st[3]], 16); openStation(i); }); det.append(go); }
+    }
     if (a.text && a.text !== a.header) det.append(el('div', { class: 'atext' }, a.text));
     if (a.url && /^https?:\/\//.test(a.url)) det.append(el('a', { href: a.url, target: '_blank', rel: 'noreferrer' }, 'Mehr dazu'));
     body.append(det);
@@ -3427,6 +3454,7 @@ async function init() {
         state.canceled = old ? new Set() : new Set(j.c || []);
         state.reasons = old ? new Map() : new Map(Object.entries(j.r || {}));
         state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error, okAt: Date.now() };
+        if (!old) notifyIncidents(j.inc || []);
       } catch (e) {
         state.rt = { ...state.rt, error: e.message };
         // Live-Server länger als 3 Minuten nicht erreichbar (z. B. Kontingent aufgebraucht): alte Verspätungen nicht weiter zeigen

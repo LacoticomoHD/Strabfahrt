@@ -432,3 +432,7 @@ table.past td.r { color: var(--muted, #8a94a6); }
 #ioshint .rbtns { display: flex; gap: 8px; margin-top: 10px; }
 #ioshint button { font: inherit; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--soft); color: var(--fg); cursor: pointer; }
 #ioshint button.go { background: #7fb2ff; border-color: #7fb2ff; color: #0b1a33; font-weight: 600; }
+
+/* Selbst erkannte Störung in den Meldungen */
+details.inferred { border-left: 4px solid #e5484d; padding-left: 8px; }
+details.inferred summary { color: #e5484d; }
