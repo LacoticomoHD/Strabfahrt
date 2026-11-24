@@ -156,6 +156,7 @@ const state = {
   hiddenLines: new Set(load('strab.hiddenLines', [])),
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
+  holds: new Map(), // Fahrt-ID -> [Index letzter gemeldeter Halt, Sekunden ohne neue Meldung] (Bahn steht vermutlich)
   units: new Map(), // Fahrt-ID -> { n, live } gekoppelte Fahrzeuge (Doppeltraktion), nur n > 1
   course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
@@ -762,8 +763,18 @@ function drawFrame() {
     if (!flagsOk(trip.flags)) continue;
     if (!state.demo && state.canceled.has(trip.id)) continue;
     const delay = delayOf(trip);
-    const pos = locate(trip, state.sim - (delay || 0));
+    let pos = locate(trip, state.sim - (delay || 0));
     if (!pos) continue;
+    // Meldungen stehen seit Minuten still (Bahn steht vermutlich auf der Strecke): nicht weiterfahren lassen,
+    // sondern am nächsten Halt nach der letzten Meldung festhalten, bis wieder etwas kommt
+    const hold = !state.demo && Math.abs(state.sim - wallNow()) < 120 ? state.holds.get(trip.id) : null;
+    if (hold) {
+      const capK = Math.min(hold[0] + 1, pat.s.length - 1);
+      if (pos.k > capK || (pos.k === capK && !pos.atStop)) {
+        const st = state.stops[pat.s[capK]];
+        pos = { lat: st[2], lon: st[3], k: capK, f: 0, atStop: true, heading: pos.heading, held: true };
+      }
+    }
     if (!inArea(pos.lat, pos.lon)) continue; // außerhalb des Gebiets nur Luftlinie: ausblenden
     // Unterwegs auf einem Abschnitt ohne Streckenverlauf, der aus dem Gebiet führt (z. B. ICE Karlsruhe–Mannheim):
     // die Luftlinie liefe quer durch die Stadt, also ausblenden
@@ -1395,6 +1406,8 @@ function renderVehiclePanel() {
   const facts = [];
   if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
+  const hv = state.holds.get(trip.id);
+  if (hv && !state.demo) facts.push(`⏸ Seit etwa ${Math.max(3, Math.round(hv[1] / 60))} Min. keine neue Meldung, die Bahn steht vermutlich`);
   const unv = state.demo ? { n: 1 } : unitsOf(trip.id);
   if (unv.n > 1) facts.push(`${unv.n === 2 ? 'Doppeltraktion' : 'Dreifachtraktion'} (${unv.n} Fahrzeuge${unv.live ? '' : ', meistens so, heute nicht bestätigt'})`);
   const wc = (trip.flags || 0) & 3;
@@ -3446,6 +3459,7 @@ async function init() {
         // Quelle hängt (Stand älter als 20 Min.): alte Verspätungen nicht mehr anzeigen, sonst wären sie falsch
         const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
         state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
+        state.holds = old ? new Map() : new Map(Object.entries(j.h || {}));
         state.units = new Map();
         for (const [k, n] of Object.entries(j.ul || {})) state.units.set(k, { n: Number(n), live: false });
         for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });

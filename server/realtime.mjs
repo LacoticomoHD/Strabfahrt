@@ -104,6 +104,7 @@ export class Realtime {
       try { this.stats = JSON.parse(fs.readFileSync(this.statsFile, 'utf8')); } catch { /* neu */ }
     }
     this.seen = new Map(); // "Datum|Fahrt" -> letzte Verspaetung (fuer die Statistik)
+    this.lastReport = new Map(); // Fahrt -> { seq, since, changes }: letzter gemeldeter Zwischenhalt
     // Pünktlichkeit je Haltestelle: Datum -> Haltestellen-ID -> [Abfahrten, Summe Verspätung, ab 3 Min. zu spät]
     this.stationStats = {};
     this.stationCounted = new Map(); // Datum -> Set(Fahrt-Index * 256 + Position), damit jeder Halt einmal zählt
@@ -223,6 +224,7 @@ export class Realtime {
     const alerts = [];
     const reasons = new Map();
     const stopTimes = new Map();
+    const reported = new Set();
     for (const e of feed.entity) {
       const tu = e.tripUpdate;
       if (tu && tu.trip && tu.trip.tripId) {
@@ -231,10 +233,19 @@ export class Realtime {
         const isCanceled = tu.trip.scheduleRelationship === CANCELED;
         const d = isCanceled ? null : tripDelay(tu, nowSec);
         const st = isCanceled ? [] : stopTimesOf(tu);
+        // Letzter gemeldeter Zwischenhalt (ohne Endhalt mit Prognose): daran sieht man, ob die Fahrt vorankommt
+        let lastSeq = -1; let maxSeq = -1;
+        for (const u of tu.stopTimeUpdate || []) { const q = Number(u.stopSequence); if (Number.isFinite(q)) maxSeq = Math.max(maxSeq, q); }
+        for (const u of tu.stopTimeUpdate || []) { const q = Number(u.stopSequence); if (Number.isFinite(q) && q < maxSeq) lastSeq = Math.max(lastSeq, q); }
         for (const id of ids) {
           if (st.length) { stopTimes.set(id, st); this.countStations(tu.trip.startDate, id, st, nowSec); }
           if (isCanceled) canceled.add(id);
           else if (d !== null && Number.isFinite(d)) delays.set(id, d);
+          if (!isCanceled && lastSeq >= 0) {
+            const prev = this.lastReport.get(id);
+            if (!prev || prev.seq !== lastSeq) this.lastReport.set(id, { seq: lastSeq, since: nowSec, changes: prev ? prev.changes + (lastSeq > prev.seq ? 1 : 0) : 0 });
+            reported.add(id);
+          }
           this.record(tu.trip.startDate, id, isCanceled ? 'X' : d);
         }
       } else if (e.alert) {
@@ -267,6 +278,7 @@ export class Realtime {
         alerts.push({ id: e.id, header: header || text.split('\n')[0].slice(0, 120), text, url: pick(e.alert.url), periods, local });
       }
     }
+    for (const id of [...this.lastReport.keys()]) if (!reported.has(id)) this.lastReport.delete(id);
     this.delays = delays;
     this.canceled = canceled;
     this.alerts = alerts.sort((x, y) => Number(y.local) - Number(x.local)).slice(0, 100);
@@ -455,7 +467,23 @@ export class Realtime {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
       d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [],
       p: this.delayCourse(),
+      h: this.reportHolds(),
     };
+  }
+
+  /**
+   * Für die Karte: Fahrten, deren Meldungen sonst Halt für Halt vorankommen, seit über 3 Minuten aber stehen.
+   * { Fahrt: [Index des letzten gemeldeten Halts im Linienverlauf, Sekunden seit der Meldung] }.
+   * Die Verspätung steht dann still, die Bahn vermutlich auch: die Karte hält sie am nächsten Halt fest.
+   */
+  reportHolds() {
+    const now = Math.floor(Date.now() / 1000);
+    const out = {};
+    for (const [id, r] of this.lastReport) {
+      if (r.changes < 2 || now - r.since < 180) continue;
+      out[id] = [Math.max(0, r.seq - 1), now - r.since]; // stopSequence zählt ab 1, Index im Linienverlauf ab 0
+    }
+    return out;
   }
 
   /**
