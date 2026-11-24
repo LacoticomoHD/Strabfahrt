@@ -9,9 +9,10 @@ import stats from './_r_stats.mjs';
 import trip from './_r_trip.mjs';
 import hits from './_r_hits.mjs';
 import stopevents from './_r_stopevents.mjs';
+import report from './_r_report.mjs';
 import { send } from './_live.mjs';
 
-const ROUTES = { delays, alerts, departures, tripstops, stats, trip, hits, stopevents };
+const ROUTES = { delays, alerts, departures, tripstops, stats, trip, hits, stopevents, report };
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');

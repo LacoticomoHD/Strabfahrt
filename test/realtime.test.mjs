@@ -86,3 +86,24 @@ test('Feed ohne Uhrzeiten: Planzeit aus der Zuordnung (stop_sequence), Einträge
   // Ohne jede Zuordnung: Verspätung der ersten Angabe
   assert.equal(tripDelay(r.withTimes({ trip: { tripId: 'x' }, stopTimeUpdate: [{ stopSequence: 1, departure: { delay: 30, time: 0 } }, { stopSequence: 5, arrival: { delay: 400, time: 0 } }] }), 0), 30);
 });
+
+test('Ausgelassene Halte (SKIPPED) werden gesammelt, nicht als Zeit gewertet', () => {
+  const r = new Realtime(model, dir);
+  r.map.seq = { s9: [0, 8 * 3600, 3, 8 * 3600 + 600] };
+  const nt = r.withTimes({ trip: { tripId: 's9', startDate: '20260105' }, stopTimeUpdate: [
+    { stopSequence: 0, departure: { delay: 60, time: 0 } },
+    { stopSequence: 3, scheduleRelationship: 1 },
+  ] });
+  assert.equal(nt.stopTimeUpdate.length, 1);
+  assert.deepEqual(nt.skipped, [r.dayStart('20260105') + 8 * 3600 + 600]);
+});
+
+test('Fahrgast-Meldung: einmal je Absender, Bahn gilt als stehend', () => {
+  const r = new Realtime(model, dir);
+  const id = model.trips[0].id;
+  assert.equal(r.addPassengerReport(id, 'a').n, 1);
+  assert.equal(r.addPassengerReport(id, 'a').n, 1);
+  assert.equal(r.addPassengerReport(id, 'b').n, 2);
+  assert.ok(r.standing.has(id));
+  assert.equal(r.addPassengerReport('gibt-es-nicht', 'a').ok, false);
+});

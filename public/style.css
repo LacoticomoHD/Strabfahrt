@@ -436,3 +436,7 @@ table.past td.r { color: var(--muted, #8a94a6); }
 /* Selbst erkannte Störung in den Meldungen */
 details.inferred { border-left: 4px solid #e5484d; padding-left: 8px; }
 details.inferred summary { color: #e5484d; }
+
+/* Heute ausgelassene Halte (Umleitung, vorzeitiges Wenden) */
+tr.skipped td { opacity: .45; }
+tr.skipped td .stop, tr.skipped td.t { text-decoration: line-through; }

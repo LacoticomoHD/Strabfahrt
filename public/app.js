@@ -159,6 +159,9 @@ const state = {
   holds: new Map(), // Fahrt-ID -> [Index letzter gemeldeter Halt, Sekunden ohne neue Meldung] (Bahn steht vermutlich)
   kvvShared: new Map(), // Fahrt-ID -> Verspätung laut KVV (vom Server gesammelt, genauer als gtfs.de)
   standing: new Map(), // Fahrt-ID -> [tau0, seit] (Zeiten wie state.sim): Fahrzeug steht, Position eingefroren
+  skips: new Map(), // Fahrt-ID -> Set(Haltestellen-Index): heute ausgelassen (Umleitung, vorzeitiges Wenden)
+  reports: new Map(), // Fahrt-ID -> [Anzahl, seit]: Fahrgäste melden, die Bahn steht
+  kvvLive: new Map(), // Fahrt-ID -> { delay, at, stop }: direkt beim KVV nachgefragt (verfolgtes Fahrzeug)
   units: new Map(), // Fahrt-ID -> { n, live } gekoppelte Fahrzeuge (Doppeltraktion), nur n > 1
   course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
@@ -501,6 +504,8 @@ function delayOf(trip) {
   // Steht das Fahrzeug (Vorhersage rutscht mit der Zeit nach hinten), bleibt es auf der Karte, wo es steht
   const sd = state.standing.get(trip.id);
   if (sd) return Math.round(state.sim - sd[0]);
+  const kl = state.kvvLive.get(trip.id);
+  if (kl && kl.delay !== null && Date.now() - kl.at < 150000) return kl.delay;
   const k = kvvOf(trip.id);
   if (k && k.delay !== undefined) return k.delay;
   if (state.kvvShared.has(trip.id)) return state.kvvShared.get(trip.id);
@@ -550,12 +555,39 @@ const liveNote = () => (state.rt.active ? 'mit Live-Verspätungen, wo verfügbar
 function rtOf(tripId) {
   if (state.demo) return { delay: demoDelay(tripId), canceled: false, reason: null };
   const k = kvvOf(tripId);
-  return { delay: k && k.delay !== undefined ? k.delay : state.delays.get(tripId), canceled: (k && k.canceled) || state.canceled.has(tripId), reason: state.reasons.get(tripId) || null, kvv: Boolean(k) };
+  const kl = state.kvvLive.get(tripId);
+  const live = kl && kl.delay !== null && Date.now() - kl.at < 150000 ? kl.delay : undefined;
+  return { delay: live !== undefined ? live : k && k.delay !== undefined ? k.delay : state.delays.get(tripId), canceled: (k && k.canceled) || state.canceled.has(tripId), reason: state.reasons.get(tripId) || null, kvv: Boolean(k) || live !== undefined };
+}
+
+// Hält die Fahrt heute an diesem Halt nicht (Umleitung, vorzeitiges Wenden)?
+const skipsStop = (tripId, stopIdx) => { const x = state.skips.get(tripId); return Boolean(x && x.has(stopIdx)); };
+
+// Ausgelassene Halte als kurzer Text: "fährt nur bis X", "beginnt erst in X", "hält nicht in X, Y"
+function skipText(trip, pat) {
+  const x = state.skips.get(trip.id);
+  if (!x || !x.size) return '';
+  const n = pat.s.length;
+  const sk = pat.s.map((si) => x.has(si));
+  const served = sk.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
+  if (!served.length) return '⚠ Fährt heute auf diesem Weg nicht';
+  const name = (i) => mapName(state.stops[pat.s[i]][1]);
+  const first = served[0]; const last = served[served.length - 1];
+  const parts = [];
+  if (last < n - 1) parts.push(`fährt heute nur bis ${name(last)}`);
+  if (first > 0) parts.push(`beginnt heute erst in ${name(first)}`);
+  const mid = [];
+  for (let i = first + 1; i < last; i++) if (sk[i]) mid.push(name(i));
+  if (mid.length) parts.push(`hält heute nicht in ${[...new Set(mid)].slice(0, 4).join(', ')}${mid.length > 4 ? ' …' : ''}`);
+  if (!parts.length) return '';
+  const t = parts.join(', ');
+  return `⚠ ${t[0].toUpperCase()}${t.slice(1)}`;
 }
 
 // Zeit-Zelle: Plan-Zeit, dazu farbige Abweichung oder "fällt aus"
 function depTime(d, override) {
   const r = override || rtOf(d.trip);
+  if (!override && skipsStop(d.trip, d.stop)) return el('span', { class: 'canc', title: 'Die Fahrt hält heute hier nicht (Umleitung oder vorzeitiges Wenden)' }, hhmm(d.t), ' hält hier nicht');
   const span = el('span', { class: r.canceled ? 'canc' : '' }, hhmm(d.t));
   if (r.canceled) {
     span.title = 'Fahrt fällt aus';
@@ -582,7 +614,7 @@ function depTime(d, override) {
 // Zeit für die Tafel: oben groß die erwartete Zeit, darunter klein Abweichung und Planzeit (passt in die schmale Spalte)
 function boardTime(d) {
   const r = rtOf(d.trip);
-  if (r.canceled) return el('span', { class: 'btime' }, el('span', { class: 'big canc' }, hhmm(d.t)), el('span', { class: 'small' }, 'fällt aus'));
+  if (r.canceled || skipsStop(d.trip, d.stop)) return el('span', { class: 'btime' }, el('span', { class: 'big canc' }, hhmm(d.t)), el('span', { class: 'small' }, r.canceled ? 'fällt aus' : 'hält hier nicht'));
   if (r.delay === undefined || r.delay === null) return el('span', { class: 'btime' }, el('span', { class: 'big' }, hhmm(d.t)));
   const c = delayColors(r.delay);
   const b = el('span', { class: 'dly' }, Math.abs(r.delay) < 30 ? `● ${fmtDelayExact(r.delay)}` : fmtDelayExact(r.delay));
@@ -597,6 +629,7 @@ function boardTime(d) {
 function depWhen(d, base, now, prefix = 'in ') {
   const r = rtOf(d.trip);
   if (r.canceled) return 'fällt aus';
+  if (skipsStop(d.trip, d.stop)) return 'hält hier nicht';
   const mins = Math.round((base + d.t + (r.delay || 0) - now) / 60);
   return mins <= 0 ? 'jetzt' : `${prefix}${mins} min`;
 }
@@ -780,6 +813,14 @@ function drawFrame() {
         const st = state.stops[pat.s[capK]];
         pos = { lat: st[2], lon: st[3], k: capK, f: 0, atStop: true, heading: pos.heading, held: true };
       }
+    }
+    // Fährt heute nur bis X (wendet vorzeitig): nach dem letzten bedienten Halt nicht weiterfahren lassen
+    if (!state.demo && state.skips.has(trip.id)) {
+      const x = state.skips.get(trip.id);
+      let last = -1; let first = -1;
+      pat.s.forEach((si, i) => { if (!x.has(si)) { last = i; if (first < 0) first = i; } });
+      if (last < 0 || pos.k > last || (pos.k === last && !pos.atStop && last < pat.s.length - 1)) continue;
+      if (pos.k < first) continue;
     }
     if (!inArea(pos.lat, pos.lon)) continue; // außerhalb des Gebiets nur Luftlinie: ausblenden
     // Unterwegs auf einem Abschnitt ohne Streckenverlauf, der aus dem Gebiet führt (z. B. ICE Karlsruhe–Mannheim):
@@ -1397,6 +1438,8 @@ async function lineStats() {
   return statsCache.data;
 }
 
+const reportSent = new Map(); // Fahrt-ID -> Zeitpunkt der eigenen Meldung
+
 function renderVehiclePanel() {
   const trip = state.selected;
   if (!trip) return;
@@ -1412,6 +1455,11 @@ function renderVehiclePanel() {
   const facts = [];
   if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
+  if (!state.demo) facts.push(skipText(trip, pat));
+  const rpv = state.reports.get(trip.id);
+  if (rpv && !state.demo) facts.push(`👤 ${rpv[0] === 1 ? 'Ein Fahrgast meldet' : `${rpv[0]} Fahrgäste melden`}: die Bahn steht (seit ${hhmm(rpv[1])})`);
+  const klv = state.kvvLive.get(trip.id);
+  if (klv && klv.delay !== null && klv.stop && Date.now() - klv.at < 150000) facts.push(`📡 direkt vom KVV, Stand Halt ${mapName(klv.stop)}`);
   const hv = state.holds.get(trip.id);
   if (hv && !state.demo && !state.standing.has(trip.id)) facts.push(`⏸ Seit etwa ${Math.max(3, Math.round(hv[1] / 60))} Min. keine neue Meldung, die Bahn steht vermutlich`);
   const stv = state.standing.get(trip.id);
@@ -1431,7 +1479,32 @@ function renderVehiclePanel() {
     if (state.follow && map.getZoom() < 15) map.setZoom(15, { animate: false });
     renderVehiclePanel();
   });
-  body.append(el('div', { class: 'chips' }, follow));
+  const chips = el('div', { class: 'chips' }, follow);
+  // Fahrgast-Meldung: nur jetzt (nicht beim Zurückspulen) und nur, solange die Fahrt unterwegs ist
+  const live = !state.demo && state.rt.active && Math.abs(state.sim - wallNow()) < 120;
+  const running = live && state.sim >= trip.t0 + (delayOf(trip) || 0) && state.sim <= trip.t0 + trip.prof[trip.prof.length - 1] + (delayOf(trip) || 0) + 300;
+  if (running) {
+    const sent = reportSent.get(trip.id);
+    const done = sent && Date.now() - sent < 300000;
+    const rb = el('button', { class: 'chip', type: 'button', ...(done ? { disabled: '' } : {}), title: 'Für die anderen Nutzer: die Bahn bleibt dann auch bei ihnen auf der Karte stehen' }, done ? '✓ Gemeldet, danke' : '🙋 Ich sitze in dieser Bahn, sie steht');
+    let armed = false;
+    rb.addEventListener('click', async () => {
+      if (!armed) { armed = true; rb.textContent = 'Wirklich melden? Nochmal tippen'; setTimeout(() => { if (rb.isConnected && armed) { armed = false; rb.textContent = '🙋 Ich sitze in dieser Bahn, sie steht'; } }, 5000); return; }
+      armed = false; rb.disabled = true; rb.textContent = 'Wird gemeldet …';
+      try {
+        const url = `${state.rtBase ? state.rtBase.replace(/\/$/, '') : ''}/api/report?id=${encodeURIComponent(trip.id)}`;
+        const j = await (await fetch(url, { method: 'POST' })).json();
+        if (!j.ok) throw new Error(j.error || 'Fehler');
+        reportSent.set(trip.id, Date.now());
+        const d = delayOf(trip) || 0;
+        if (!state.standing.has(trip.id)) state.standing.set(trip.id, [state.sim - d, state.sim]);
+        state.reports.set(trip.id, [j.n || 1, state.sim]);
+        renderVehiclePanel();
+      } catch (e) { rb.disabled = false; rb.textContent = `Nicht gesendet (${e.message}), nochmal versuchen`; }
+    });
+    chips.append(rb);
+  }
+  body.append(chips);
 
   // Ziel verfolgen: erwartete Ankunft am gewählten Halt, live
   const targetBox = el('div', { class: 'target', hidden: '' });
@@ -1451,7 +1524,7 @@ function renderVehiclePanel() {
     const goal = i > 0 ? el('button', { class: 'goal', type: 'button', title: 'Als Ziel verfolgen', 'aria-label': `Ankunft in ${s2[1]} verfolgen` }, '🎯') : '';
     if (goal) goal.addEventListener('click', () => { state.target = state.target && state.target.idx === i ? null : { trip: trip.id, idx: i }; renderVehiclePanel(); });
     const ist = el('td', { class: 'ist' }, '');
-    const tr = el('tr', { class: '' }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), ist, el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]} ` : '', goal));
+    const tr = el('tr', { class: skipsStop(trip.id, si) ? 'skipped' : '', ...(skipsStop(trip.id, si) ? { title: 'Heute ausgelassen' } : {}) }, el('td', { class: 't' }, hhmm(i === 0 ? dep : arr)), ist, el('td', {}, link), el('td', { class: 'r' }, s2[5] ? `Steig ${s2[5]} ` : '', goal));
     rows.push({ tr, dep, arr, ist });
     table.append(tr);
   });
@@ -3401,7 +3474,7 @@ if (!window.STRAB_NATIVE && 'serviceWorker' in navigator && (location.protocol =
 // ---------- Start ----------
 
 // Nur fuer automatische Tests: mit "dbg" im Hash ist der Zustand im Browser erreichbar
-if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map };
+if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map, renderVehiclePanel };
 
 // iPhone/iPad in Safari: einmal zeigen, wie man STRABFAHRT als App auf den Home-Bildschirm legt
 (function iosInstallHint() {
@@ -3471,6 +3544,8 @@ async function init() {
         const off0 = wallNow() - Date.now() / 1000;
         state.kvvShared = old ? new Map() : new Map(Object.entries(j.k || {}).map(([k, v]) => [k, Number(v)]));
         state.standing = old ? new Map() : new Map(Object.entries(j.s || {}).map(([k, v]) => [k, [Number(v[0]) + off0, Number(v[1]) + off0]]));
+        state.skips = old ? new Map() : new Map(Object.entries(j.x || {}).map(([k, v]) => [k, new Set(v.map(Number))]));
+        state.reports = old ? new Map() : new Map(Object.entries(j.rp || {}).map(([k, v]) => [k, [Number(v[0]), Number(v[1]) + off0]]));
         state.units = new Map();
         for (const [k, n] of Object.entries(j.ul || {})) state.units.set(k, { n: Number(n), live: false });
         for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });
@@ -3499,6 +3574,19 @@ async function init() {
     // Erster Abruf kann ein älterer Zwischenstand sein (schnelle Antwort nach einer Pause): kurz darauf frisch nachladen
     poll().then(() => { if (state.rt.feedTime && Date.now() / 1000 - state.rt.feedTime > 100) setTimeout(poll, 5000); });
     setInterval(poll, 30000);
+    // Verfolgtes oder gewähltes Fahrzeug einmal pro Minute direkt beim KVV nachfragen (an seinem nächsten Halt)
+    const pollLive = async () => {
+      const id = state.follow || (state.selected && state.selected.id);
+      if (!id || state.demo || document.visibilityState !== 'visible' || Math.abs(state.sim - wallNow()) > 120) return;
+      const prev = state.kvvLive.get(id);
+      if (prev && Date.now() - prev.at < 55000) return;
+      try {
+        const j = await rtGet(`/api/trip?id=${encodeURIComponent(id)}&live=1`);
+        if (j && j.at) state.kvvLive.set(id, { delay: j.delay, at: Date.now(), stop: j.at });
+        if (state.kvvLive.size > 20) state.kvvLive.delete(state.kvvLive.keys().next().value);
+      } catch { /* nächster Versuch in einer Minute */ }
+    };
+    setInterval(pollLive, 15000);
     // Zurück aus dem Hintergrund oder nach der Tastensperre: sofort frische Live-Daten holen statt auf den nächsten Takt zu warten
     let lastWake = 0;
     const wake = () => {

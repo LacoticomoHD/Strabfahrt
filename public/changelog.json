@@ -1,5 +1,18 @@
 [
   {
+    "id": "2026-11-24c",
+    "version": "3.23",
+    "date": "24.11.2026",
+    "title": "Genauer unterwegs",
+    "neu": [
+      "Fahrzeug folgen: Die gewählte oder verfolgte Bahn wird einmal pro Minute direkt beim KVV an ihrem nächsten Halt abgefragt. Das Fahrzeugfenster zeigt dann „direkt vom KVV“",
+      "Karte: Die App lernt, wie lange Bahnen und Busse je Abschnitt und Tageszeit wirklich brauchen, und schätzt damit die Verspätung für die nächsten Halte genauer",
+      "Umleitungen und vorzeitiges Wenden: Lässt eine Fahrt heute Halte aus, steht im Fahrzeugfenster z. B. „fährt nur bis …“, die Halte sind durchgestrichen und an der Haltestelle steht „hält hier nicht“",
+      "Neuer Knopf im Fahrzeugfenster: „Ich sitze in dieser Bahn, sie steht“. Die Bahn bleibt dann auch bei den anderen Nutzern auf der Karte stehen, bis sie den nächsten Halt erreicht (höchstens 20 Minuten)"
+    ],
+    "geaendert": []
+  },
+  {
     "id": "2026-11-24b",
     "version": "3.22",
     "date": "24.11.2026",

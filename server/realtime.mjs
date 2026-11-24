@@ -105,6 +105,10 @@ export class Realtime {
     }
     this.seen = new Map(); // "Datum|Fahrt" -> letzte Verspaetung (fuer die Statistik)
     this.lastReport = new Map(); // Fahrt -> { seq, since, changes }: letzter gemeldeter Zwischenhalt
+    // Gelernte Fahrzeiten: "Halt A>Halt B|Tageszeit" -> [mittlere Abweichung zum Plan in s, Anzahl]
+    this.runLearn = {};
+    this.passengerReports = new Map(); // Fahrt -> { at, tau0, seq, n, by: Set }: Fahrgäste melden, die Bahn steht
+    this.reportBudget = new Map(); // Absender -> [Zeitpunkte]
     // Pünktlichkeit je Haltestelle: Datum -> Haltestellen-ID -> [Abfahrten, Summe Verspätung, ab 3 Min. zu spät]
     this.stationStats = {};
     this.stationCounted = new Map(); // Datum -> Set(Fahrt-Index * 256 + Position), damit jeder Halt einmal zählt
@@ -224,7 +228,10 @@ export class Realtime {
     const alerts = [];
     const reasons = new Map();
     const stopTimes = new Map();
+    const skips = new Map(); // Fahrt -> Haltestellen-Indizes, die heute ausgelassen werden
     const reported = new Set();
+    const gap = this.lastIngest ? nowSec - this.lastIngest : Infinity;
+    this.lastIngest = nowSec;
     for (const e of feed.entity) {
       const tu = e.tripUpdate;
       if (tu && tu.trip && tu.trip.tripId) {
@@ -239,12 +246,18 @@ export class Realtime {
         for (const u of tu.stopTimeUpdate || []) { const q = Number(u.stopSequence); if (Number.isFinite(q)) maxSeq = Math.max(maxSeq, q); }
         for (const u of tu.stopTimeUpdate || []) { const q = Number(u.stopSequence); if (Number.isFinite(q) && q < maxSeq) lastSeq = Math.max(lastSeq, q); }
         for (const id of ids) {
+          if (!isCanceled && nt.skipped && nt.skipped.length) { const pos = this.positionsAt(id, tu.trip.startDate, nt.skipped); if (pos.length) skips.set(id, pos); }
           if (st.length) { stopTimes.set(id, st); this.countStations(tu.trip.startDate, id, st, nowSec); }
           if (isCanceled) canceled.add(id);
           else if (d !== null && Number.isFinite(d)) delays.set(id, d);
           if (!isCanceled && lastSeq >= 0) {
             const prev = this.lastReport.get(id);
-            if (!prev || prev.seq !== lastSeq) this.lastReport.set(id, { seq: lastSeq, since: nowSec, changes: prev ? prev.changes + (lastSeq > prev.seq ? 1 : 0) : 0 });
+            if (!prev || prev.seq !== lastSeq) {
+              // Zeitpunkt der Meldung nur genau, wenn der vorige Abruf höchstens 90 s her ist
+              const fresh = gap <= 90;
+              if (prev && fresh && prev.fresh && lastSeq === prev.seq + 1) this.learnRun(id, tu.trip.startDate, prev.seq - 1, nowSec - prev.since);
+              this.lastReport.set(id, { seq: lastSeq, since: nowSec, fresh, date: tu.trip.startDate, changes: prev ? prev.changes + (lastSeq > prev.seq ? 1 : 0) : 0 });
+            }
             reported.add(id);
           }
           this.record(tu.trip.startDate, id, isCanceled ? 'X' : d);
@@ -285,6 +298,7 @@ export class Realtime {
     this.alerts = alerts.sort((x, y) => Number(y.local) - Number(x.local)).slice(0, 100);
     this.reasons = reasons;
     this.stopTimes = stopTimes;
+    this.skips = skips;
     this.trackMotion(nowSec);
     this.updated = Date.now();
     this.feedTime = Number(feed.header && feed.header.timestamp) || 0;
@@ -332,6 +346,12 @@ export class Realtime {
       if (m.tau0 !== null) standing.set(id, [m.tau0, m.since]);
     }
     for (const id of [...this.motion.keys()]) if (!this.stopTimes.has(id)) this.motion.delete(id);
+    // Fahrgäste melden "steht": gilt bis 20 Min. danach oder bis die Fahrt den nächsten Halt meldet
+    for (const [rid, r] of this.passengerReports) {
+      const lr = this.lastReport.get(rid);
+      if (nowSec - r.at > 1200 || this.canceled.has(rid) || (lr && r.seq >= 0 && lr.seq > r.seq)) { this.passengerReports.delete(rid); continue; }
+      if (!standing.has(rid)) standing.set(rid, [r.tau0, r.at]);
+    }
     this.standing = standing;
   }
 
@@ -409,8 +429,14 @@ export class Realtime {
     if (seqList) { seqMap = new Map(); for (let i = 0; i < seqList.length; i += 2) seqMap.set(seqList[i], seqList[i + 1]); }
     const day0 = this.dayStart(tu.trip.startDate);
     const out = [];
+    const skipped = []; // Planzeiten ausgelassener Halte (SKIPPED): Umleitung, vorzeitiges Wenden
     let firstDelay = null;
     for (const u of ups) {
+      if (u.scheduleRelationship === 1) {
+        const plan = seqMap && seqMap.get(Number(u.stopSequence));
+        if (plan !== undefined && plan !== null && day0) skipped.push(day0 + plan);
+        continue;
+      }
       const fix = (ev) => {
         if (!ev || ev.delay === null || ev.delay === undefined) return null;
         const delay = Number(ev.delay);
@@ -424,7 +450,71 @@ export class Realtime {
       if (a || d) out.push({ stopSequence: u.stopSequence, stopId: u.stopId, arrival: a, departure: d });
     }
     // Gar keine Zeit bestimmbar: nur die Verspätung der Fahrt (erste Angabe) verwenden
-    return { trip: tu.trip, delay: out.length ? tu.delay : (tu.delay ?? firstDelay), stopTimeUpdate: out };
+    return { trip: tu.trip, delay: out.length ? tu.delay : (tu.delay ?? firstDelay), stopTimeUpdate: out, skipped };
+  }
+
+  // Planzeiten (Unix) -> Haltestellen-Indizes (wie in model.stops) der Fahrt
+  positionsAt(id, startDate, times) {
+    const ti = this.tripIndex.get(id);
+    if (ti === undefined) return [];
+    const m = this.model; const trip = m.trips[ti];
+    const prof = m.profiles[trip.profile]; const n = m.patterns[trip.pattern].stops.length;
+    const base = this.dayStart(startDate) + trip.start;
+    const want = new Set(times);
+    const out = [];
+    const stops = m.patterns[trip.pattern].stops;
+    for (let k = 0; k < n; k++) if (want.has(base + prof[2 * k]) || want.has(base + prof[2 * k + 1])) out.push(stops[k]);
+    return out;
+  }
+
+  // Fahrzeit zwischen Position k und k+1 gemessen: Abweichung zum Plan merken (gleitender Mittelwert)
+  learnRun(id, startDate, k, observed) {
+    const key = this.runKey(id, startDate, k);
+    if (!key) return;
+    const plan = key.plan;
+    const extra = observed - plan;
+    if (observed <= 0 || plan <= 0 || Math.abs(extra) > 600) return;
+    const e = this.runLearn[key.key] || [0, 0];
+    const n = Math.min(e[1] + 1, 30);
+    e[0] = Math.round(e[0] + (extra - e[0]) / n); e[1] = n;
+    this.runLearn[key.key] = e;
+  }
+
+  runKey(id, startDate, k) {
+    const ti = this.tripIndex.get(id);
+    if (ti === undefined || k < 0) return null;
+    const m = this.model; const trip = m.trips[ti];
+    const stops = m.patterns[trip.pattern].stops;
+    if (k + 1 >= stops.length) return null;
+    const prof = m.profiles[trip.profile];
+    const t = (trip.start + prof[2 * k + 1]) % 86400;
+    const h = Math.floor(t / 3600);
+    const y = Number(String(startDate).slice(0, 4)); const mo = Number(String(startDate).slice(4, 6)); const d = Number(String(startDate).slice(6, 8));
+    const wd = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+    const band = (wd === 0 || wd === 6 ? 'w' : '') + (h < 6 ? 0 : h < 9 ? 1 : h < 15 ? 2 : h < 19 ? 3 : 4);
+    return { key: `${m.stops[stops[k]][0]}>${m.stops[stops[k + 1]][0]}|${band}`, plan: prof[2 * (k + 1) + 1] - prof[2 * k + 1] };
+  }
+
+  // Verlauf für Fahrten ohne eigene Prognose: ab dem letzten Halt die gelernten Fahrzeiten aufaddieren
+  learnedCourse(id, delay) {
+    const r = this.lastReport.get(id);
+    const ti = this.tripIndex.get(id);
+    if (!r || ti === undefined) return null;
+    const m = this.model; const trip = m.trips[ti];
+    const prof = m.profiles[trip.profile]; const n = m.patterns[trip.pattern].stops.length;
+    const base = this.dayStart(r.date) + trip.start;
+    const k0 = Math.max(0, r.seq - 1);
+    const pts = [base + prof[2 * k0 + 1], delay];
+    let cum = 0; let moved = false;
+    for (let k = k0; k + 1 < n && k < k0 + 15; k++) {
+      const key = this.runKey(id, r.date, k);
+      const e = key && this.runLearn[key.key];
+      if (e && e[1] >= 3) cum += Math.max(-90, Math.min(180, e[0]));
+      const dd = Math.max(Math.min(delay, 0), delay + cum);
+      if (Math.abs(dd - delay) >= 20) moved = true;
+      pts.push(base + prof[2 * (k + 1)], dd);
+    }
+    return moved ? pts : null;
   }
 
   dayStart(ymd) {
@@ -548,10 +638,32 @@ export class Realtime {
     };
   }
 
+  // Meldung eines Fahrgasts: "Ich sitze in dieser Bahn, sie steht". who: grobe Absenderkennung gegen Missbrauch
+  addPassengerReport(id, who) {
+    if (!this.tripIndex.has(id) || this.canceled.has(id)) return { ok: false, error: 'Fahrt unbekannt' };
+    const now = Math.floor(Date.now() / 1000);
+    const b = (this.reportBudget.get(who) || []).filter((t) => now - t < 3600);
+    if (b.length >= 10) return { ok: false, error: 'Zu viele Meldungen, bitte später wieder' };
+    b.push(now); this.reportBudget.set(who, b);
+    if (this.reportBudget.size > 5000) this.reportBudget.delete(this.reportBudget.keys().next().value);
+    let r = this.passengerReports.get(id);
+    if (!r) {
+      const d = this.delays.has(id) ? this.delays.get(id) : 0;
+      const lr = this.lastReport.get(id);
+      r = { at: now, tau0: now - d, seq: lr ? lr.seq : -1, n: 0, by: new Set() };
+      this.passengerReports.set(id, r);
+    }
+    if (!r.by.has(who)) { r.by.add(who); r.n++; }
+    if (!this.standing) this.standing = new Map();
+    if (!this.standing.has(id)) this.standing.set(id, [r.tau0, r.at]);
+    return { ok: true, n: r.n };
+  }
+
   snapshot() {
     return {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
-      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [], s: Object.fromEntries(this.standing || []),
+      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [], s: Object.fromEntries(this.standing || []), x: Object.fromEntries(this.skips || []),
+      rp: Object.fromEntries([...this.passengerReports].map(([k, v]) => [k, [v.n, v.at]])),
       p: this.delayCourse(),
       h: this.reportHolds(),
     };
@@ -603,6 +715,12 @@ export class Realtime {
       let varies = false;
       for (let i = 3; i < keep.length; i += 2) if (Math.abs(keep[i] - keep[1]) >= 20) { varies = true; break; }
       if (varies) out[id] = keep;
+    }
+    // Ohne eigene Prognose: gelernte Fahrzeiten je Abschnitt und Tageszeit
+    for (const id of this.lastReport.keys()) {
+      if (out[id] || !this.delays.has(id) || (this.standing && this.standing.has(id))) continue;
+      const c = this.learnedCourse(id, this.delays.get(id));
+      if (c) out[id] = c;
     }
     return out;
   }
