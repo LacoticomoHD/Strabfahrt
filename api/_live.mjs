@@ -150,8 +150,19 @@ async function loadData() {
   return { model, realtime, loaded: Date.now() };
 }
 
+// Neuer Fahrplan veröffentlicht? Alle 10 Minuten an einer kleinen Datei prüfen statt erst nach 6 Stunden
+let versionCheck = 0;
+async function newerModel() {
+  if (!data || Date.now() - versionCheck < 10 * 60 * 1000) return false;
+  versionCheck = Date.now();
+  try {
+    const v = await getJson(`model-version.json?t=${Math.floor(Date.now() / 60000)}`);
+    return Boolean(v && v.built && v.built !== data.model.meta.built);
+  } catch { return false; }
+}
+
 async function ensureData() {
-  if (data && Date.now() - data.loaded < DATA_TTL) return data;
+  if (data && Date.now() - data.loaded < DATA_TTL && !(await newerModel())) return data;
   if (!dataPromise) {
     dataPromise = loadData().then((d) => {
       // Statistik eines frueheren Modells mitnehmen

@@ -22,6 +22,8 @@ fs.mkdirSync(path.join(OUT, 'vendor', 'qrcode'), { recursive: true });
 
 const copy = (from, to) => fs.copyFileSync(need(from), path.join(OUT, to));
 copy(path.join(ROOT, 'data', 'model.json'), 'model.json');
+// Kleine Versionsdatei: der Live-Server prüft daran alle paar Minuten, ob es einen neuen Fahrplan gibt
+fs.writeFileSync(path.join(OUT, 'model-version.json'), JSON.stringify({ built: JSON.parse(fs.readFileSync(path.join(ROOT, 'data', 'model.json'), 'utf8')).meta.built }));
 // .js statt .mjs, damit auch einfache Webserver die Datei als JavaScript ausliefern
 copy(path.join(ROOT, 'server', 'model.mjs'), 'model.js');
 for (const f of ['app.js', 'style.css', 'insets.js', 'info.html', 'info.js', 'changelog.json']) copy(path.join(ROOT, 'public', f), f);
