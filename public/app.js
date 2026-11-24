@@ -1413,7 +1413,7 @@ function renderVehiclePanel() {
   if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
   const hv = state.holds.get(trip.id);
-  if (hv && !state.demo) facts.push(`⏸ Seit etwa ${Math.max(3, Math.round(hv[1] / 60))} Min. keine neue Meldung, die Bahn steht vermutlich`);
+  if (hv && !state.demo && !state.standing.has(trip.id)) facts.push(`⏸ Seit etwa ${Math.max(3, Math.round(hv[1] / 60))} Min. keine neue Meldung, die Bahn steht vermutlich`);
   const stv = state.standing.get(trip.id);
   if (stv) facts.push(`⏸ steht seit etwa ${Math.max(1, Math.round((state.sim - stv[1]) / 60))} Min.`);
   const unv = state.demo ? { n: 1 } : unitsOf(trip.id);
