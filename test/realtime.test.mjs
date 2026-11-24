@@ -68,3 +68,21 @@ test('Statistik: Fahrten je Linie, Ausfaelle getrennt', () => {
   assert.equal(raw['3|0'].n, 1);
   assert.equal(raw['ICE 1|100'].canceled, 1);
 });
+
+test('Feed ohne Uhrzeiten: Planzeit aus der Zuordnung (stop_sequence), Einträge ohne Zuordnung fallen weg', () => {
+  const r = new Realtime(model, dir);
+  r.map.seq = { s9: [0, 8 * 3600, 3, 8 * 3600 + 600] };
+  const tu = { trip: { tripId: 's9', startDate: '20260105' }, stopTimeUpdate: [
+    { stopSequence: 0, departure: { delay: 60, time: 0 } },
+    { stopSequence: 3, arrival: { delay: 120, time: 0 } },
+    { stopSequence: 7, arrival: { delay: 999, time: 0 } },
+  ] };
+  const nt = r.withTimes(tu);
+  assert.equal(nt.stopTimeUpdate.length, 2);
+  const day0 = r.dayStart('20260105');
+  assert.equal(nt.stopTimeUpdate[0].departure.time, day0 + 8 * 3600 + 60);
+  // Zwischen den Halten zählt der zuletzt erreichte (erster), nicht der letzte Eintrag
+  assert.equal(tripDelay(nt, day0 + 8 * 3600 + 300), 60);
+  // Ohne jede Zuordnung: Verspätung der ersten Angabe
+  assert.equal(tripDelay(r.withTimes({ trip: { tripId: 'x' }, stopTimeUpdate: [{ stopSequence: 1, departure: { delay: 30, time: 0 } }, { stopSequence: 5, arrival: { delay: 400, time: 0 } }] }), 0), 30);
+});

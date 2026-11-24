@@ -3,6 +3,21 @@
     "id": "2026-11-24b",
     "version": "3.22",
     "date": "24.11.2026",
+    "title": "Genauere Positionen",
+    "neu": [
+      "Karte: Steht eine Bahn (z. B. vor einer Störung), bleibt sie auf der Karte stehen, statt weiterzufahren. Im Fahrzeugfenster steht „steht seit … Min.“",
+      "Karte: Verspätungen des KVV, die beim Öffnen von Haltestellen abgefragt werden, gelten jetzt für alle Nutzer und haben Vorrang vor gtfs.de"
+    ],
+    "geaendert": [],
+    "behoben": [
+      "Die Live-Quelle liefert seit Kurzem oft keine Uhrzeiten mehr, nur Verspätungen. Die Karte nahm dann die Vorhersage für die Endhaltestelle und setzte Bahnen an falsche Stellen. Jetzt werden die Planzeiten ergänzt"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-24b",
+    "version": "3.22",
+    "date": "24.11.2026",
     "title": "Stehende Bahnen bleiben stehen",
     "behoben": [
       "Karte: Stand eine Bahn auf der Strecke (z. B. bei einer Störung), fuhr sie auf der Karte trotzdem weiter, weil die Verspätung nicht mitwuchs. Kommen für eine Fahrt seit über 3 Minuten keine neuen Meldungen, hält die Karte sie jetzt am nächsten Halt fest. Das Fahrzeugfenster zeigt dann „keine neue Meldung, die Bahn steht vermutlich“"

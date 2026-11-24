@@ -157,6 +157,8 @@ const state = {
   favorites: load('strab.favorites', []), // stop_id-Strings der Stationen
   here: null, // { lat, lon } Standort
   holds: new Map(), // Fahrt-ID -> [Index letzter gemeldeter Halt, Sekunden ohne neue Meldung] (Bahn steht vermutlich)
+  kvvShared: new Map(), // Fahrt-ID -> Verspätung laut KVV (vom Server gesammelt, genauer als gtfs.de)
+  standing: new Map(), // Fahrt-ID -> [tau0, seit] (Zeiten wie state.sim): Fahrzeug steht, Position eingefroren
   units: new Map(), // Fahrt-ID -> { n, live } gekoppelte Fahrzeuge (Doppeltraktion), nur n > 1
   course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
@@ -496,8 +498,12 @@ function unitsBadge(tripId) {
 
 function delayOf(trip) {
   if (state.demo) return demoDelay(trip.id);
+  // Steht das Fahrzeug (Vorhersage rutscht mit der Zeit nach hinten), bleibt es auf der Karte, wo es steht
+  const sd = state.standing.get(trip.id);
+  if (sd) return Math.round(state.sim - sd[0]);
   const k = kvvOf(trip.id);
   if (k && k.delay !== undefined) return k.delay;
+  if (state.kvvShared.has(trip.id)) return state.kvvShared.get(trip.id);
   const c = state.course.get(trip.id);
   return c ? courseDelay(c, state.sim) : state.delays.get(trip.id);
 }
@@ -1408,6 +1414,8 @@ function renderVehiclePanel() {
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
   const hv = state.holds.get(trip.id);
   if (hv && !state.demo) facts.push(`⏸ Seit etwa ${Math.max(3, Math.round(hv[1] / 60))} Min. keine neue Meldung, die Bahn steht vermutlich`);
+  const stv = state.standing.get(trip.id);
+  if (stv) facts.push(`⏸ steht seit etwa ${Math.max(1, Math.round((state.sim - stv[1]) / 60))} Min.`);
   const unv = state.demo ? { n: 1 } : unitsOf(trip.id);
   if (unv.n > 1) facts.push(`${unv.n === 2 ? 'Doppeltraktion' : 'Dreifachtraktion'} (${unv.n} Fahrzeuge${unv.live ? '' : ', meistens so, heute nicht bestätigt'})`);
   const wc = (trip.flags || 0) & 3;
@@ -3460,6 +3468,9 @@ async function init() {
         const old = j.feedTime && Date.now() / 1000 - j.feedTime > 1200;
         state.delays = old ? new Map() : new Map(Object.entries(j.d || {}).map(([k, v]) => [k, Number(v)]));
         state.holds = old ? new Map() : new Map(Object.entries(j.h || {}));
+        const off0 = wallNow() - Date.now() / 1000;
+        state.kvvShared = old ? new Map() : new Map(Object.entries(j.k || {}).map(([k, v]) => [k, Number(v)]));
+        state.standing = old ? new Map() : new Map(Object.entries(j.s || {}).map(([k, v]) => [k, [Number(v[0]) + off0, Number(v[1]) + off0]]));
         state.units = new Map();
         for (const [k, n] of Object.entries(j.ul || {})) state.units.set(k, { n: Number(n), live: false });
         for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });

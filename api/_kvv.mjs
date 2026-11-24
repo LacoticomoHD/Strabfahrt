@@ -54,12 +54,18 @@ export const isMainlineRail = (d) => d.type === 100 || RAIL.test(String(d.line |
 // Gekoppelte Fahrzeuge (Doppel-/Dreifachtraktion) aus allen KVV-Abfragen: Fahrt -> { n, at }.
 // Daraus bekommt die Karte die Zahl der Fahrzeuge, ohne zusätzliche Anfragen beim KVV.
 export const unitsSeen = new Map();
+// Verspätungen aus allen KVV-Abfragen (genauer als gtfs.de): Fahrt -> { d, at }. Gehen an die Karte aller Nutzer.
+export const kvvSeen = new Map();
 
 export async function kvvForStation(model, idx, deps, opts = {}) {
   const res = await kvvForStationRaw(model, idx, deps, opts);
   if (res && res.map && !opts.when) {
     const now = Date.now();
-    for (const [trip, v] of res.map) if (v.units >= 1) unitsSeen.set(trip, { n: v.units, at: now });
+    for (const [trip, v] of res.map) {
+      if (v.units >= 1) unitsSeen.set(trip, { n: v.units, at: now });
+      if (v.delay !== null && v.delay !== undefined) kvvSeen.set(trip, { d: v.delay, at: now });
+    }
+    if (kvvSeen.size > 20000) for (const [k, v] of kvvSeen) if (now - v.at > 3600 * 1000) kvvSeen.delete(k);
     if (unitsSeen.size > 20000) for (const [k, v] of unitsSeen) if (now - v.at > 6 * 3600 * 1000) unitsSeen.delete(k);
   }
   return res;

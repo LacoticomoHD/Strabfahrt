@@ -231,8 +231,9 @@ export class Realtime {
         const ids = this.ownIds(tu.trip.tripId, tu.trip.startDate);
         if (!ids.length) continue;
         const isCanceled = tu.trip.scheduleRelationship === CANCELED;
-        const d = isCanceled ? null : tripDelay(tu, nowSec);
-        const st = isCanceled ? [] : stopTimesOf(tu);
+        const nt = isCanceled ? tu : this.withTimes(tu);
+        const d = isCanceled ? null : tripDelay(nt, nowSec);
+        const st = isCanceled ? [] : stopTimesOf(nt);
         // Letzter gemeldeter Zwischenhalt (ohne Endhalt mit Prognose): daran sieht man, ob die Fahrt vorankommt
         let lastSeq = -1; let maxSeq = -1;
         for (const u of tu.stopTimeUpdate || []) { const q = Number(u.stopSequence); if (Number.isFinite(q)) maxSeq = Math.max(maxSeq, q); }
@@ -284,10 +285,54 @@ export class Realtime {
     this.alerts = alerts.sort((x, y) => Number(y.local) - Number(x.local)).slice(0, 100);
     this.reasons = reasons;
     this.stopTimes = stopTimes;
+    this.trackMotion(nowSec);
     this.updated = Date.now();
     this.feedTime = Number(feed.header && feed.header.timestamp) || 0;
     this.incidents = this.detectIncidents(nowSec);
     this.flushStats();
+  }
+
+  /**
+   * Stehende Fahrzeuge erkennen: Rutscht die Vorhersage für den nächsten Halt bei jeder Aktualisierung um etwa
+   * die vergangene Zeit nach hinten, steht das Fahrzeug (z. B. auf freier Strecke vor einem Unfall). Dann soll es
+   * auf der Karte stehen bleiben, statt mit der alten Verspätung weiterzufahren.
+   * Ergebnis in this.standing: Fahrt -> tau0 (Planzeit, an der das Fahrzeug steht; Unix-Sekunden).
+   */
+  trackMotion(nowSec) {
+    this.motion = this.motion || new Map();
+    const standing = new Map();
+    for (const [id, st] of this.stopTimes) {
+      if (this.canceled.has(id)) continue;
+      // nächster Halt: erster mit vorhergesagter Zeit in der Zukunft
+      let np = 0; let pred = 0;
+      for (let i = 0; i < st.length; i += 4) {
+        for (const [pt, d] of [[st[i], st[i + 1]], [st[i + 2], st[i + 3]]]) {
+          if (!pt || d === null) continue;
+          if (pt + d > nowSec) { np = pt; pred = pt + d; break; }
+        }
+        if (np) break;
+      }
+      const prev = this.motion.get(id);
+      if (!np) { this.motion.delete(id); continue; }
+      let m = prev && prev.np === np ? prev : { np, pred, at: nowSec, slips: 0, tau0: null, since: null };
+      const dt = nowSec - m.at;
+      if (m === prev && pred !== m.pred && dt >= 45) {
+        const slip = pred - m.pred;
+        if (slip >= 0.7 * dt) {
+          m.slips++;
+          if (m.slips >= 2 && m.tau0 === null) {
+            // Position einfrieren: Planzeit-Stand, an dem das Fahrzeug laut bisheriger Verspätung gerade ist
+            const d = this.delays.has(id) ? this.delays.get(id) : 0;
+            m.tau0 = nowSec - d; m.since = m.at;
+          }
+        } else if (slip < 0.3 * dt) { m.slips = 0; m.tau0 = null; m.since = null; }
+        m.pred = pred; m.at = nowSec;
+      } else if (m !== prev) { m.pred = pred; m.at = nowSec; }
+      this.motion.set(id, m);
+      if (m.tau0 !== null) standing.set(id, [m.tau0, m.since]);
+    }
+    for (const id of [...this.motion.keys()]) if (!this.stopTimes.has(id)) this.motion.delete(id);
+    this.standing = standing;
   }
 
   /**
@@ -349,6 +394,47 @@ export class Realtime {
       kept.push(o);
     }
     return kept.slice(0, 5);
+  }
+
+  /**
+   * Uhrzeiten ergänzen: gtfs.de liefert (seit Nov. 2026) oft nur stop_sequence und Verspätung, ohne Uhrzeit.
+   * Die Planzeit kommt dann aus der Zuordnung (rt-map.json: seq), die Ist-Zeit ist Planzeit + Verspätung.
+   * Einträge ohne Uhrzeit und ohne Zuordnung fallen weg, sonst gälten sie als "schon erreicht".
+   */
+  withTimes(tu) {
+    const ups = tu.stopTimeUpdate || [];
+    if (!ups.length) return tu;
+    const seqList = this.map.seq && this.map.seq[tu.trip.tripId];
+    let seqMap = null;
+    if (seqList) { seqMap = new Map(); for (let i = 0; i < seqList.length; i += 2) seqMap.set(seqList[i], seqList[i + 1]); }
+    const day0 = this.dayStart(tu.trip.startDate);
+    const out = [];
+    let firstDelay = null;
+    for (const u of ups) {
+      const fix = (ev) => {
+        if (!ev || ev.delay === null || ev.delay === undefined) return null;
+        const delay = Number(ev.delay);
+        if (firstDelay === null) firstDelay = delay;
+        const time = Number(ev.time) || 0;
+        if (time > 0) return { delay, time };
+        const plan = seqMap && seqMap.get(Number(u.stopSequence));
+        return plan !== undefined && plan !== null && day0 ? { delay, time: day0 + plan + delay } : null;
+      };
+      const a = fix(u.arrival); const d = fix(u.departure);
+      if (a || d) out.push({ stopSequence: u.stopSequence, stopId: u.stopId, arrival: a, departure: d });
+    }
+    // Gar keine Zeit bestimmbar: nur die Verspätung der Fahrt (erste Angabe) verwenden
+    return { trip: tu.trip, delay: out.length ? tu.delay : (tu.delay ?? firstDelay), stopTimeUpdate: out };
+  }
+
+  dayStart(ymd) {
+    const y = ymd && /^\d{8}$/.test(ymd) ? ymd : berlinToday();
+    this.dayCache = this.dayCache || new Map();
+    if (!this.dayCache.has(y)) {
+      const noon = Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8), 12);
+      this.dayCache.set(y, Date.UTC(+y.slice(0, 4), +y.slice(4, 6) - 1, +y.slice(6, 8)) / 1000 - berlinOffset(noon) * 60);
+    }
+    return this.dayCache.get(y);
   }
 
   // Abfahrten an Haltestellen zählen, sobald sie vorbei sind (gemessene Zeit aus dem Stream)
@@ -465,7 +551,7 @@ export class Realtime {
   snapshot() {
     return {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
-      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [],
+      d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [], s: Object.fromEntries(this.standing || []),
       p: this.delayCourse(),
       h: this.reportHolds(),
     };

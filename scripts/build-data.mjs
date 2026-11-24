@@ -206,6 +206,7 @@ const shared = {
   feedMeta: [],
   kvvKeys: new Map(), // "Linie|erste Abfahrt|letzte Ankunft" -> KVV-Fahrt-IDs
   rtTrips: new Map(), // Fahrt-ID im gtfs.de-Stream -> eigene Fahrt-IDs
+  rtSeq: new Map(), // Fahrt-ID im gtfs.de-Stream -> [stop_sequence, Planzeit (Sek. seit Tagesbeginn), ...] der Halte im Gebiet
   rtRoutes: new Set(), // gtfs.de-Linien-IDs mit Fahrten im Gebiet (fuer Meldungen)
   rtStops: new Set(), // gtfs.de-Halte-IDs im Gebiet (fuer Meldungen)
 };
@@ -297,7 +298,13 @@ async function processFeed(feed, raw) {
       list.sort((a, b) => a.seq - b.seq);
       const key = `${matchRoutes.get(trip.route)}|${list[0].dep ?? list[0].arr}|${list[list.length - 1].arr ?? list[list.length - 1].dep}`;
       const ids = shared.kvvKeys.get(key);
-      if (ids) { shared.rtTrips.set(id, ids); stats.matched = (stats.matched || 0) + 1; } else stats.unmatched = (stats.unmatched || 0) + 1;
+      if (ids) {
+        shared.rtTrips.set(id, ids); stats.matched = (stats.matched || 0) + 1;
+        // Planzeit je Halt: der Stream liefert oft nur stop_sequence und Verspätung, keine Uhrzeit
+        const seq = [];
+        for (const r of list) { if (!areaStops.has(r.stop)) continue; const t = r.dep ?? r.arr; if (t !== null && t !== undefined) seq.push(r.seq, t); }
+        if (seq.length) shared.rtSeq.set(id, seq);
+      } else stats.unmatched = (stats.unmatched || 0) + 1;
       return;
     }
     list.sort((a, b) => a.seq - b.seq);
@@ -535,7 +542,7 @@ async function main() {
   fs.writeFileSync(outFile, JSON.stringify(model));
   const rtFile = path.join(DATA_DIR, 'rt-map.json');
   fs.writeFileSync(rtFile, JSON.stringify({
-    modelBuilt: model.meta.built, trips: Object.fromEntries(shared.rtTrips), routes: [...shared.rtRoutes], stops: [...shared.rtStops],
+    modelBuilt: model.meta.built, trips: Object.fromEntries(shared.rtTrips), routes: [...shared.rtRoutes], stops: [...shared.rtStops], seq: Object.fromEntries(shared.rtSeq),
   }));
   console.log(`Echtzeit-Zuordnung: ${shared.rtTrips.size} Stream-Fahrten auf KVV-Fahrten, ${shared.rtRoutes.size} Linien, ${shared.rtStops.size} Halte im Gebiet -> ${rtFile}`);
   const mb = (fs.statSync(outFile).size / 1048576).toFixed(1);
