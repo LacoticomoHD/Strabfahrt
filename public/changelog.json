@@ -1,5 +1,16 @@
 [
   {
+    "id": "2026-11-25a",
+    "version": "3.24",
+    "date": "25.11.2026",
+    "title": "Fahrrad-Angabe entfernt",
+    "neu": [],
+    "geaendert": [
+      "Fahrzeugfenster: „Fahrrad nicht erlaubt“ wird nicht mehr angezeigt. Der Fahrplan markiert fast alle Bahnen und Busse pauschal so, obwohl die Mitnahme in Bahnen möglich ist (zu manchen Zeiten kostenpflichtig)",
+      "Filter „Fahrrad nicht verboten“ entfernt, er hätte aus demselben Grund fast alle Bahnen ausgeblendet"
+    ]
+  },
+  {
     "id": "2026-11-24c",
     "version": "3.23",
     "date": "24.11.2026",

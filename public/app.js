@@ -116,8 +116,7 @@ function pill(line, style, onClick) {
 
 const accessible = (flags) => ((flags || 0) & 3) === 1;
 // Der KVV-Feed nennt bei Fahrraedern nur "unbekannt" (0) oder "nicht erlaubt" (2), nie "erlaubt": Filter blendet nur Verbote aus
-const bikeOk = (flags) => (((flags || 0) >> 2) & 3) !== 2;
-const flagsOk = (flags) => (!state.onlyAccessible || accessible(flags)) && (!state.onlyBikes || bikeOk(flags));
+const flagsOk = (flags) => !state.onlyAccessible || accessible(flags);
 const isDetour = (headsign) => /umleitung|\bsev\b|ersatzverkehr|schienenersatz/i.test(headsign || '');
 const fmtDate = (ymd) => `${ymd.slice(6, 8)}.${ymd.slice(4, 6)}.${ymd.slice(0, 4)}`;
 
@@ -170,7 +169,6 @@ const state = {
   rt: { active: false, updated: 0, feedTime: 0, error: null },
   demo: false, // erfundene Werte, nur zum Ansehen der Darstellung
   onlyAccessible: false,
-  onlyBikes: false,
   trails: false,
   myReverse: null, // null = nach Tageszeit, sonst 'there' oder 'back'
   routeAcc: false, // barrierefrei reisen in der Verbindungssuche
@@ -1157,7 +1155,6 @@ $('play').addEventListener('click', () => {
 });
 $('demo').addEventListener('change', (e) => { state.demo = e.target.checked; if (state.selected) renderVehiclePanel(); });
 $('acc').addEventListener('change', (e) => { state.onlyAccessible = e.target.checked; if (state.station !== null) renderStation(); });
-$('bike').addEventListener('change', (e) => { state.onlyBikes = e.target.checked; if (state.station !== null) renderStation(); });
 $('trails').addEventListener('change', (e) => { state.trails = e.target.checked; needsDraw = true; });
 $('basemap').value = load('strab.basemap', 'osm');
 $('basemap').closest('label').hidden = !TILES;
@@ -1468,8 +1465,8 @@ function renderVehiclePanel() {
   if (unv.n > 1) facts.push(`${unv.n === 2 ? 'Doppeltraktion' : 'Dreifachtraktion'} (${unv.n} Fahrzeuge${unv.live ? '' : ', meistens so, heute nicht bestätigt'})`);
   const wc = (trip.flags || 0) & 3;
   facts.push(wc === 1 ? '♿ barrierefrei' : wc === 2 ? 'nicht barrierefrei' : '');
-  const bk = ((trip.flags || 0) >> 2) & 3;
-  facts.push(bk === 1 ? '🚲 Fahrrad erlaubt' : bk === 2 ? 'Fahrrad nicht erlaubt' : '');
+  // Fahrradmitnahme: Der Fahrplan des KVV markiert fast alle Bahnen und Busse pauschal mit "nicht erlaubt",
+  // obwohl Mitnahme in Bahnen möglich ist (teils kostenpflichtig). Die Angabe ist unzuverlässig, deshalb keine Anzeige.
   const info = facts.filter(Boolean).join(' · ');
   if (info) body.append(el('div', { class: 'sub' }, info));
 
