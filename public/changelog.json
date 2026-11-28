@@ -1,5 +1,15 @@
 [
   {
+    "id": "2026-11-28d",
+    "version": "3.28",
+    "date": "28.11.2026",
+    "title": "Ausfälle vom KVV",
+    "neu": [
+      "Ausfälle: Meldet der KVV „Fahrt entfällt“ (wie auf den Anzeigern an der Haltestelle), zeigt die App das jetzt überall: an der Haltestelle „fällt aus“, auf der Karte verschwindet die Bahn, im Fahrzeugfenster steht „Fahrt fällt aus (laut KVV)“. Entfällt nur ein Teil der Fahrt, steht dort z. B. „hält heute nicht in …“"
+    ],
+    "geaendert": []
+  },
+  {
     "id": "2026-11-28c",
     "version": "3.27",
     "date": "28.11.2026",

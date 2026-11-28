@@ -57,15 +57,35 @@ export const unitsSeen = new Map();
 // Verspätungen aus allen KVV-Abfragen (genauer als gtfs.de): Fahrt -> { d, at }. Gehen an die Karte aller Nutzer.
 export const kvvSeen = new Map();
 
+// Ausfälle laut KVV je Fahrt: Fahrt -> { c: Set(Station), s: Set(Station), at }. c = dort "fällt aus", s = dort normal gemeldet.
+// Daraus: ganze Fahrt fällt aus (an mehreren Stationen aus, nirgends normal) oder nur einzelne Halte entfallen.
+export const kvvCancel = new Map();
+
+export function cancelsForMap() {
+  const now = Date.now(); const kc = []; const kx = {};
+  for (const [trip, v] of kvvCancel) {
+    if (now - v.at > 30 * 60 * 1000) { kvvCancel.delete(trip); continue; }
+    if (!v.c.size) continue;
+    if (v.c.size >= 2 && !v.s.size) kc.push(trip);
+    else kx[trip] = [...v.c];
+  }
+  return { kc, kx };
+}
+
 export async function kvvForStation(model, idx, deps, opts = {}) {
   const res = await kvvForStationRaw(model, idx, deps, opts);
   if (res && res.map && !opts.when) {
     const now = Date.now();
     for (const [trip, v] of res.map) {
+      // Alle Fahrten merken (auch normale): nur so ist eine Teilstrecke von einem ganzen Ausfall zu unterscheiden
+      const e = kvvCancel.get(trip) || { c: new Set(), s: new Set(), at: now };
+      if (v.canceled) { e.c.add(idx); e.s.delete(idx); } else { e.s.add(idx); e.c.delete(idx); }
+      e.at = now; kvvCancel.set(trip, e);
       if (v.units >= 1) unitsSeen.set(trip, { n: v.units, at: now });
       if (v.delay !== null && v.delay !== undefined) kvvSeen.set(trip, { d: v.delay, at: now });
     }
     if (kvvSeen.size > 20000) for (const [k, v] of kvvSeen) if (now - v.at > 3600 * 1000) kvvSeen.delete(k);
+    if (kvvCancel.size > 8000) for (const [k, v] of kvvCancel) if (now - v.at > 30 * 60 * 1000) kvvCancel.delete(k);
     if (unitsSeen.size > 20000) for (const [k, v] of unitsSeen) if (now - v.at > 6 * 3600 * 1000) unitsSeen.delete(k);
   }
   return res;

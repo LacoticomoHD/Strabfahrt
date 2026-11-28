@@ -570,14 +570,15 @@ function rtOf(tripId) {
 }
 
 // Hält die Fahrt heute an diesem Halt nicht (Umleitung, vorzeitiges Wenden)?
-const skipsStop = (tripId, stopIdx) => { const x = state.skips.get(tripId); return Boolean(x && x.has(stopIdx)); };
+const stationOf = (i) => (state.stops[i] && state.stops[i][4] >= 0 ? state.stops[i][4] : i);
+const skipsStop = (tripId, stopIdx) => { const x = state.skips.get(tripId); return Boolean(x && (x.has(stopIdx) || x.has(stationOf(stopIdx)))); };
 
 // Ausgelassene Halte als kurzer Text: "fährt nur bis X", "beginnt erst in X", "hält nicht in X, Y"
 function skipText(trip, pat) {
   const x = state.skips.get(trip.id);
   if (!x || !x.size) return '';
   const n = pat.s.length;
-  const sk = pat.s.map((si) => x.has(si));
+  const sk = pat.s.map((si) => skipsStop(trip.id, si));
   const served = sk.map((v, i) => (v ? -1 : i)).filter((i) => i >= 0);
   if (!served.length) return '⚠ Fährt heute auf diesem Weg nicht';
   const name = (i) => mapName(state.stops[pat.s[i]][1]);
@@ -825,9 +826,8 @@ function drawFrame() {
     }
     // Fährt heute nur bis X (wendet vorzeitig): nach dem letzten bedienten Halt nicht weiterfahren lassen
     if (!state.demo && state.skips.has(trip.id)) {
-      const x = state.skips.get(trip.id);
       let last = -1; let first = -1;
-      pat.s.forEach((si, i) => { if (!x.has(si)) { last = i; if (first < 0) first = i; } });
+      pat.s.forEach((si, i) => { if (!skipsStop(trip.id, si)) { last = i; if (first < 0) first = i; } });
       if (last < 0 || pos.k > last || (pos.k === last && !pos.atStop && last < pat.s.length - 1)) continue;
       if (pos.k < first) continue;
     }
@@ -1506,7 +1506,8 @@ function renderVehiclePanel() {
   const facts = [];
   if (trip.num) facts.push(numLabel(trip.num));
   if (isDetour(pat.h)) facts.push('⚠ Umleitung oder Ersatzverkehr');
-  if (!state.demo) facts.push(skipText(trip, pat));
+  if (!state.demo && state.canceled.has(trip.id)) facts.push(`❌ Fahrt fällt aus${state.kvvCanceled && state.kvvCanceled.has(trip.id) ? ' (laut KVV)' : ''}`);
+  else if (!state.demo) facts.push(skipText(trip, pat));
   const rpv = state.reports.get(trip.id);
   if (rpv && !state.demo) facts.push(`👤 ${rpv[0] === 1 ? 'Ein Fahrgast meldet' : `${rpv[0]} Fahrgäste melden`}: die Bahn steht (seit ${hhmm(rpv[1])})`);
   const cwv = !state.demo && crowdOf(trip.id);
@@ -3729,7 +3730,15 @@ async function init() {
         for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });
         const off = wallNow() - Date.now() / 1000;
         state.course = old ? new Map() : new Map(Object.entries(j.p || {}).map(([k, v]) => [k, v.map((x, i) => (i % 2 ? Number(x) : Number(x) + off))]));
-        state.canceled = old ? new Set() : new Set(j.c || []);
+        // Ausfälle: gtfs.de und KVV (ganze Fahrt fällt laut KVV an mehreren Haltestellen aus, nirgends normal gemeldet)
+        state.canceled = old ? new Set() : new Set([...(j.c || []), ...(j.kc || [])]);
+        state.kvvCanceled = old ? new Set() : new Set(j.kc || []);
+        // Einzelne Halte entfallen laut KVV: wie ausgelassene Halte behandeln (Stationen, nicht Steige)
+        if (!old) for (const [t, sts] of Object.entries(j.kx || {})) {
+          const set = state.skips.get(t) || new Set();
+          for (const x of sts) set.add(Number(x));
+          state.skips.set(t, set);
+        }
         state.reasons = old ? new Map() : new Map(Object.entries(j.r || {}));
         state.rt = { active: !!j.updated && !old, outdated: old, updated: j.updated, feedTime: j.feedTime, error: j.error, okAt: Date.now() };
         if (!old) notifyIncidents(j.inc || []);
