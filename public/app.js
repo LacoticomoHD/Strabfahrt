@@ -1830,7 +1830,10 @@ async function renderStation() {
     body.append(chips);
   }
 
-  const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && flagsOk(d.flags)).slice(0, 40);
+  // Nach erwarteter Abfahrt sortieren (wie die Anzeiger am Bahnsteig): eine stark verspätete Bahn rutscht nach hinten
+  const expected = (d) => { const r = rtOf(d.trip); return d.t + (r.canceled ? 0 : r.delay || 0); };
+  const shown = list.filter((d) => (!platformFilter || d.platform === platformFilter) && flagsOk(d.flags))
+    .map((d) => [expected(d), d]).sort((x, y) => x[0] - y[0]).map((x) => x[1]).slice(0, 40);
   // Frühere Fahrten (nur heute und nur, wenn die Abfahrten ab jetzt gezeigt werden)
   const startSec = Math.floor(state.sim - base);
   const live = Math.abs(state.sim - wallNow()) < 120;
@@ -2433,7 +2436,8 @@ async function renderBoard() {
       col.append(el('div', { class: 'bsub' }, state.stops[idx][1], ' ', rm));
     }
     const rows = el('div', { class: 'brows' });
-    const list = data[n].filter((d) => flagsOk(d.flags));
+    const exp = (d) => { const r = rtOf(d.trip); return d.t + (r.canceled ? 0 : r.delay || 0); };
+    const list = data[n].filter((d) => flagsOk(d.flags)).map((d) => [exp(d), d]).sort((x, y) => x[0] - y[0]).map((x) => x[1]);
     if (!list.length) rows.append(el('div', { class: 'empty' }, 'Keine Abfahrten in den nächsten Stunden.'));
     for (const d of list) {
       rows.append(el('div', { class: 'brow' },

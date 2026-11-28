@@ -107,3 +107,13 @@ test('Fahrgast-Meldung: einmal je Absender, Bahn gilt als stehend', () => {
   assert.ok(r.standing.has(id));
   assert.equal(r.addPassengerReport('gibt-es-nicht', 'a').ok, false);
 });
+
+test('stopSequence -> Position im Linienverlauf über die Planzeit (Zählung ab 0)', () => {
+  const r = new Realtime(model, dir);
+  r.map.seq = { s1: [0, 8 * 3600, 1, 8 * 3600 + 600] };
+  assert.equal(r.seqPosition('k-werktag', 's1', '20260105', 1), 1);
+  assert.equal(r.seqPosition('k-werktag', 's1', '20260105', 0), 0);
+  // ohne Zuordnung: stopSequence direkt, außerhalb des Verlaufs -1
+  assert.equal(r.seqPosition('k-werktag', 'unbekannt', '20260105', 1), 1);
+  assert.equal(r.seqPosition('k-werktag', 'unbekannt', '20260105', 5), -1);
+});

@@ -1,5 +1,18 @@
 [
   {
+    "id": "2026-11-28a",
+    "version": "3.25",
+    "date": "28.11.2026",
+    "title": "Fehler behoben",
+    "neu": [],
+    "geaendert": [
+      "Abfahrten und Tafel sind jetzt nach der erwarteten Abfahrt sortiert, wie die Anzeiger am Bahnsteig. Eine stark verspätete Bahn steht also hinter den pünktlichen, die vor ihr fahren",
+      "Karte: Steht eine Bahn, weil seit Minuten keine Meldung kommt, hält die App sie jetzt am richtigen Halt fest. Bisher lag sie einen Halt zu weit hinten",
+      "Gelernte Fahrzeiten: Die Messungen waren einem falschen Abschnitt zugeordnet (um einen Halt verschoben). Das ist behoben, die App lernt ab jetzt neu",
+      "Info und Datenschutz: Hinweis zur Meldung „Ich sitze in dieser Bahn, sie steht“ ergänzt"
+    ]
+  },
+  {
     "id": "2026-11-25a",
     "version": "3.24",
     "date": "25.11.2026",

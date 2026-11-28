@@ -118,7 +118,7 @@ async function saveStats(rt) {
   rt.flushStats();
   const { put } = await import('@vercel/blob');
   const hits = mergedHits(maxHits(remote ? remote.hits : null, savedHits));
-  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits, st: rt.stationStats, un: learnedUnits, rl: runsToSave(rt.runLearn) });
+  const body = JSON.stringify({ savedAt: Date.now(), stats: rt.stats, seen: [...rt.seen], hits, st: rt.stationStats, un: learnedUnits, rl2: runsToSave(rt.runLearn) });
   await put(STATS_PATH, body, { access: 'public', addRandomSuffix: false, allowOverwrite: true, contentType: 'application/json', cacheControlMaxAge: 60 });
   lastSave = Date.now();
   savedHits = hits;
@@ -131,8 +131,8 @@ function mergeRemote(rt, remote) {
   for (const [d, lines] of Object.entries(remote.stats || {})) {
     rt.stats[d] = { ...lines, ...(rt.stats[d] || {}) };
   }
-  // Gelernte Fahrzeiten: je Abschnitt den Stand mit mehr Messungen
-  for (const [k, e] of Object.entries(remote.rl || {})) if (!rt.runLearn[k] || rt.runLearn[k][1] < e[1]) rt.runLearn[k] = e;
+  // Gelernte Fahrzeiten (rl2: Abschnitte richtig gezählt; das alte rl war um einen Halt verschoben und wird verworfen)
+  for (const [k, e] of Object.entries(remote.rl2 || {})) if (!rt.runLearn[k] || rt.runLearn[k][1] < e[1]) rt.runLearn[k] = e;
   // Gelernte Doppeltraktionen: eigene neuere Werte behalten
   if (remote.un) learnedUnits = { ...remote.un, ...learnedUnits };
   // Haltestellen: je Tag und Haltestelle den Stand mit mehr gezählten Abfahrten nehmen (zwei Instanzen zählen dasselbe)

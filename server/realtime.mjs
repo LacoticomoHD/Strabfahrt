@@ -104,7 +104,7 @@ export class Realtime {
       try { this.stats = JSON.parse(fs.readFileSync(this.statsFile, 'utf8')); } catch { /* neu */ }
     }
     this.seen = new Map(); // "Datum|Fahrt" -> letzte Verspaetung (fuer die Statistik)
-    this.lastReport = new Map(); // Fahrt -> { seq, since, changes }: letzter gemeldeter Zwischenhalt
+    this.lastReport = new Map(); // Fahrt -> { seq (Position im Linienverlauf, ab 0), since, changes }: letzter gemeldeter Zwischenhalt
     // Gelernte Fahrzeiten: "Halt A>Halt B|Tageszeit" -> [mittlere Abweichung zum Plan in s, Anzahl]
     this.runLearn = {};
     this.passengerReports = new Map(); // Fahrt -> { at, tau0, seq, n, by: Set }: Fahrgäste melden, die Bahn steht
@@ -250,13 +250,15 @@ export class Realtime {
           if (st.length) { stopTimes.set(id, st); this.countStations(tu.trip.startDate, id, st, nowSec); }
           if (isCanceled) canceled.add(id);
           else if (d !== null && Number.isFinite(d)) delays.set(id, d);
-          if (!isCanceled && lastSeq >= 0) {
+          // stopSequence aus dem Stream -> Position im eigenen Linienverlauf (über die Planzeit; Zählweise und Halte außerhalb des Gebiets können abweichen)
+          const lastPos = !isCanceled && lastSeq >= 0 ? this.seqPosition(id, tu.trip.tripId, tu.trip.startDate, lastSeq) : -1;
+          if (lastPos >= 0) {
             const prev = this.lastReport.get(id);
-            if (!prev || prev.seq !== lastSeq) {
+            if (!prev || prev.seq !== lastPos) {
               // Zeitpunkt der Meldung nur genau, wenn der vorige Abruf höchstens 90 s her ist
               const fresh = gap <= 90;
-              if (prev && fresh && prev.fresh && lastSeq === prev.seq + 1) this.learnRun(id, tu.trip.startDate, prev.seq - 1, nowSec - prev.since);
-              this.lastReport.set(id, { seq: lastSeq, since: nowSec, fresh, date: tu.trip.startDate, changes: prev ? prev.changes + (lastSeq > prev.seq ? 1 : 0) : 0 });
+              if (prev && fresh && prev.fresh && lastPos === prev.seq + 1) this.learnRun(id, tu.trip.startDate, prev.seq, nowSec - prev.since);
+              this.lastReport.set(id, { seq: lastPos, since: nowSec, fresh, date: tu.trip.startDate, changes: prev ? prev.changes + (lastPos > prev.seq ? 1 : 0) : 0 });
             }
             reported.add(id);
           }
@@ -453,6 +455,22 @@ export class Realtime {
     return { trip: tu.trip, delay: out.length ? tu.delay : (tu.delay ?? firstDelay), stopTimeUpdate: out, skipped };
   }
 
+  // stopSequence des Streams -> Position im eigenen Linienverlauf, -1 wenn nicht zuzuordnen
+  seqPosition(id, streamId, startDate, seq) {
+    const list = this.map.seq && this.map.seq[streamId];
+    const ti = this.tripIndex.get(id);
+    if (ti === undefined) return -1;
+    const m = this.model; const trip = m.trips[ti];
+    const prof = m.profiles[trip.profile]; const n = m.patterns[trip.pattern].stops.length;
+    let plan = null;
+    if (list) for (let i = 0; i < list.length; i += 2) if (list[i] === seq) { plan = list[i + 1]; break; }
+    if (plan === null) return seq < n ? seq : -1;
+    const rel = plan - trip.start; // Planzeit relativ zum Fahrtbeginn
+    for (let k = 0; k < n; k++) if (prof[2 * k] === rel || prof[2 * k + 1] === rel) return k;
+    // Planzeit weicht ab (z. B. andere Minute im Stream): stopSequence zählt ab 0 wie der Linienverlauf
+    return seq < n ? seq : -1;
+  }
+
   // Planzeiten (Unix) -> Haltestellen-Indizes (wie in model.stops) der Fahrt
   positionsAt(id, startDate, times) {
     const ti = this.tripIndex.get(id);
@@ -503,7 +521,7 @@ export class Realtime {
     const m = this.model; const trip = m.trips[ti];
     const prof = m.profiles[trip.profile]; const n = m.patterns[trip.pattern].stops.length;
     const base = this.dayStart(r.date) + trip.start;
-    const k0 = Math.max(0, r.seq - 1);
+    const k0 = Math.max(0, r.seq);
     const pts = [base + prof[2 * k0 + 1], delay];
     let cum = 0; let moved = false;
     for (let k = k0; k + 1 < n && k < k0 + 15; k++) {
@@ -642,6 +660,8 @@ export class Realtime {
   addPassengerReport(id, who) {
     if (!this.tripIndex.has(id) || this.canceled.has(id)) return { ok: false, error: 'Fahrt unbekannt' };
     const now = Math.floor(Date.now() / 1000);
+    // Prüfsummen älter als eine Stunde vergessen
+    for (const [w, ts] of this.reportBudget) if (now - ts[ts.length - 1] >= 3600) this.reportBudget.delete(w);
     const b = (this.reportBudget.get(who) || []).filter((t) => now - t < 3600);
     if (b.length >= 10) return { ok: false, error: 'Zu viele Meldungen, bitte später wieder' };
     b.push(now); this.reportBudget.set(who, b);
@@ -679,7 +699,7 @@ export class Realtime {
     const out = {};
     for (const [id, r] of this.lastReport) {
       if (r.changes < 2 || now - r.since < 180) continue;
-      out[id] = [Math.max(0, r.seq - 1), now - r.since]; // stopSequence zählt ab 1, Index im Linienverlauf ab 0
+      out[id] = [Math.max(0, r.seq), now - r.since]; // Position des letzten gemeldeten Halts im Linienverlauf
     }
     return out;
   }
