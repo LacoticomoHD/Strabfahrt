@@ -1,0 +1,419 @@
+[
+  {
+    "id": "2026-11-28d",
+    "version": "3.28",
+    "date": "28.11.2026",
+    "title": "Ausfälle vom KVV",
+    "neu": [
+      "Ausfälle: Meldet der KVV „Fahrt entfällt“ (wie auf den Anzeigern an der Haltestelle), zeigt die App das jetzt überall: an der Haltestelle „fällt aus“, auf der Karte verschwindet die Bahn, im Fahrzeugfenster steht „Fahrt fällt aus (laut KVV)“. Entfällt nur ein Teil der Fahrt, steht dort z. B. „hält heute nicht in …“"
+    ],
+    "geaendert": []
+  },
+  {
+    "id": "2026-11-28c",
+    "version": "3.27",
+    "date": "28.11.2026",
+    "title": "Fenster wischen",
+    "neu": [
+      "Handy: Das Fenster unten (Fahrzeug, Haltestelle) lässt sich jetzt am Griff oder an der Überschrift nach oben und unten wischen: einklappen, normal, groß. Antippen am Griff klappt es wie bisher ein und aus"
+    ],
+    "geaendert": []
+  },
+  {
+    "id": "2026-11-28b",
+    "version": "3.26",
+    "date": "28.11.2026",
+    "title": "Mehr KVV-Daten und Standort teilen",
+    "neu": [
+      "Karte: Der Server fragt jede Minute 18 Knotenpunkte beim KVV ab (z. B. Marktplatz, Hauptbahnhof, Durlach, Europaplatz, Entenfang). Dadurch haben deutlich mehr Bahnen die genaueren KVV-Verspätungen, nicht nur die an gerade geöffneten Haltestellen",
+      "„Meine Fahrt“: Neuer Knopf „📍 Standort teilen“. Freiwillig und anonym: Dein Gerät rechnet deinen Standort in die Verspätung der Bahn um und sendet nur diese Zahl. Die Bahn steht dann auch bei allen anderen genau richtig auf der Karte. Das Fahrzeugfenster zeigt „Position von Mitfahrenden“"
+    ],
+    "geaendert": [
+      "Info und Datenschutz: Hinweis zum Standort teilen ergänzt"
+    ]
+  },
+  {
+    "id": "2026-11-28a",
+    "version": "3.25",
+    "date": "28.11.2026",
+    "title": "Fehler behoben",
+    "neu": [],
+    "geaendert": [
+      "Abfahrten und Tafel sind jetzt nach der erwarteten Abfahrt sortiert, wie die Anzeiger am Bahnsteig. Eine stark verspätete Bahn steht also hinter den pünktlichen, die vor ihr fahren",
+      "Karte: Steht eine Bahn, weil seit Minuten keine Meldung kommt, hält die App sie jetzt am richtigen Halt fest. Bisher lag sie einen Halt zu weit hinten",
+      "Gelernte Fahrzeiten: Die Messungen waren einem falschen Abschnitt zugeordnet (um einen Halt verschoben). Das ist behoben, die App lernt ab jetzt neu",
+      "Info und Datenschutz: Hinweis zur Meldung „Ich sitze in dieser Bahn, sie steht“ ergänzt"
+    ]
+  },
+  {
+    "id": "2026-11-25a",
+    "version": "3.24",
+    "date": "25.11.2026",
+    "title": "Fahrrad-Angabe entfernt",
+    "neu": [],
+    "geaendert": [
+      "Fahrzeugfenster: „Fahrrad nicht erlaubt“ wird nicht mehr angezeigt. Der Fahrplan markiert fast alle Bahnen und Busse pauschal so, obwohl die Mitnahme in Bahnen möglich ist (zu manchen Zeiten kostenpflichtig)",
+      "Filter „Fahrrad nicht verboten“ entfernt, er hätte aus demselben Grund fast alle Bahnen ausgeblendet"
+    ]
+  },
+  {
+    "id": "2026-11-24c",
+    "version": "3.23",
+    "date": "24.11.2026",
+    "title": "Genauer unterwegs",
+    "neu": [
+      "Fahrzeug folgen: Die gewählte oder verfolgte Bahn wird einmal pro Minute direkt beim KVV an ihrem nächsten Halt abgefragt. Das Fahrzeugfenster zeigt dann „direkt vom KVV“",
+      "Karte: Die App lernt, wie lange Bahnen und Busse je Abschnitt und Tageszeit wirklich brauchen, und schätzt damit die Verspätung für die nächsten Halte genauer",
+      "Umleitungen und vorzeitiges Wenden: Lässt eine Fahrt heute Halte aus, steht im Fahrzeugfenster z. B. „fährt nur bis …“, die Halte sind durchgestrichen und an der Haltestelle steht „hält hier nicht“",
+      "Neuer Knopf im Fahrzeugfenster: „Ich sitze in dieser Bahn, sie steht“. Die Bahn bleibt dann auch bei den anderen Nutzern auf der Karte stehen, bis sie den nächsten Halt erreicht (höchstens 20 Minuten)"
+    ],
+    "geaendert": []
+  },
+  {
+    "id": "2026-11-24b",
+    "version": "3.22",
+    "date": "24.11.2026",
+    "title": "Genauere Positionen und stehende Bahnen",
+    "neu": [
+      "Karte: Steht eine Bahn (z. B. vor einer Störung), bleibt sie auf der Karte stehen, statt weiterzufahren. Erkannt wird das, wenn die Vorhersage mit der Zeit nach hinten rutscht oder seit über 3 Minuten keine neue Meldung kommt. Das Fahrzeugfenster zeigt das an",
+      "Karte: Verspätungen des KVV, die beim Öffnen von Haltestellen abgefragt werden, gelten jetzt für alle Nutzer und haben Vorrang vor gtfs.de"
+    ],
+    "geaendert": [],
+    "behoben": [
+      "Die Live-Quelle liefert seit Kurzem oft keine Uhrzeiten mehr, nur Verspätungen. Die Karte nahm dann die Vorhersage für die Endhaltestelle und setzte Bahnen an falsche Stellen. Jetzt werden die Planzeiten ergänzt"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-24a",
+    "version": "3.21",
+    "date": "24.11.2026",
+    "title": "Störungen selbst erkennen",
+    "neu": [
+      "Meldungen: STRABFAHRT erkennt Störungen jetzt selbst, wenn an einer Haltestelle viele Bahnen ausfallen oder mehr als 8 Minuten verspätet sind (z. B. bei einem Unfall). Diese stehen mit ⚠ oben in den Meldungen",
+      "Android: Betrifft so eine Störung eine Favoriten-Haltestelle oder deren Linien, kommt eine Benachrichtigung, auch bei geschlossener App",
+      "Web: Hinweis, wenn eine erkannte Störung eine Favoriten-Haltestelle oder die begleitete Fahrt betrifft (solange die Seite offen ist)"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-20b",
+    "version": "3.20",
+    "date": "20.11.2026",
+    "title": "Besser auf dem iPhone",
+    "neu": [
+      "iPhone: Beim ersten Besuch in Safari erklärt ein Hinweis, wie STRABFAHRT als App auf den Home-Bildschirm kommt"
+    ],
+    "geaendert": [
+      "iPhone: eigenes App-Symbol und Start im Vollbild ohne Safari-Leisten, wenn STRABFAHRT vom Home-Bildschirm geöffnet wird"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-20a",
+    "version": "3.19",
+    "date": "20.11.2026",
+    "title": "Doppeltraktion auf der Karte",
+    "neu": [
+      "Karte: Meldet der KVV gekoppelte Fahrzeuge, stehen zwei Linienschilder dicht hintereinander, darüber „2×“. Mit „~2×“, wenn die Fahrt sonst gekoppelt fährt, das heute aber noch nicht bestätigt ist",
+      "Fahrzeugfenster: „Doppeltraktion (2 Fahrzeuge)“"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-19c",
+    "version": "3.18",
+    "date": "19.11.2026",
+    "title": "Natürlichere Fahrt auf der Karte",
+    "neu": [],
+    "geaendert": [
+      "Karte: Bahnen und Busse fahren an, rollen und bremsen, statt mit gleichmäßigem Tempo von Halt zu Halt zu gleiten",
+      "Ohne Haltezeit im Fahrplan steht das Fahrzeug kurz an der Haltestelle, statt durchzufahren",
+      "Streckenverläufe: großzügigere Zuordnung zu Gleisen und Straßen, damit weniger Abschnitte als gerade Linie erscheinen (wirkt nach dem nächsten Daten-Neubau)"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-19b",
+    "version": "3.17",
+    "date": "19.11.2026",
+    "title": "Mehr Karte beim Mitfahren",
+    "neu": [
+      "Handy: Das Fenster unten hat einen Griff. Antippen klappt es auf eine Kopfzeile zusammen und wieder auf"
+    ],
+    "geaendert": [
+      "Handy: Beim Folgen eines Fahrzeugs ist das Fenster unten höchstens ein Drittel des Bildschirms hoch",
+      "Meine Fahrt: Ist unten ein Fenster offen, wird die Begleitkarte schmal (ohne Knöpfe)",
+      "Beim Folgen steht das Fahrzeug in der Mitte des freien Kartenbereichs, auch mit Begleitkarte oben"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-19a",
+    "version": "3.16",
+    "date": "19.11.2026",
+    "title": "Meine Fahrt: Live-Begleitung",
+    "neu": [
+      "Verbindung: „▶ Fahrt begleiten“ startet die Live-Begleitung. Oben auf der Karte steht immer, was als Nächstes kommt: Abfahrt mit Countdown, unterwegs der nächste Halt und wann du aussteigst",
+      "Begleitung warnt, wenn ein Umstieg knapp wird oder eine Fahrt ausfällt, und sucht auf Knopfdruck eine Alternative",
+      "Erinnerungen werden automatisch gesetzt: vor der Abfahrt, vor jedem Umstieg und 2 Minuten vor dem Aussteigen. In der Android-App auch bei geschlossener App, mit Live-Verspätung"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-18d",
+    "version": "3.15",
+    "date": "18.11.2026",
+    "title": "Aufgeräumt und sparsamer",
+    "neu": [],
+    "geaendert": [
+      "Live-Server: alle Live-Abfragen laufen jetzt über einen gemeinsamen Abruf statt über sechs getrennte. Antworten kommen nach Pausen schneller, und der Server braucht deutlich weniger Rechenzeit"
+    ],
+    "behoben": [
+      "Verbindung: kurze Fahrten zeigten „0 min“, jetzt passt die Dauer zu den angezeigten Uhrzeiten",
+      "Tafel: lässt sich mit der Escape-Taste schließen"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-18c",
+    "version": "3.14",
+    "date": "18.11.2026",
+    "title": "Verbindungssuche in der Haltestelle",
+    "neu": [],
+    "geaendert": [
+      "Haltestelle: Statt der kleinen Knöpfe gibt es jetzt ein großes Feld „Wohin?“. Ziel eintippen, auswählen, fertig. Mit „Hierhin“ wird die Haltestelle zum Ziel"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-18b",
+    "version": "3.13",
+    "date": "18.11.2026",
+    "title": "Verbindung direkt von der Haltestelle",
+    "neu": [
+      "Haltestelle: „Von hier“ und „Hierhin“ öffnen die Verbindungssuche mit dieser Haltestelle als Start oder Ziel. Ist die andere Seite schon gesetzt, wird gleich gesucht"
+    ],
+    "geaendert": [],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-18a",
+    "version": "3.12",
+    "date": "18.11.2026",
+    "title": "Genauere Live-Daten",
+    "neu": [
+      "Haltestelle: unter „Mehr zur Haltestelle“ steht, wie pünktlich die Abfahrten genau hier sind (gemessen, ab heute gesammelt)"
+    ],
+    "geaendert": [
+      "Live-Daten werden alle 30 Sekunden geholt statt alle 2 Minuten",
+      "Karte: Holt eine Bahn Verspätung auf oder wird langsamer, bewegt sie sich nach der Prognose je Halt statt mit einer festen Verspätung",
+      "Pünktlichkeits-Statistik wird alle 10 statt alle 25 Minuten gespeichert"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-17a",
+    "version": "3.11",
+    "date": "17.11.2026",
+    "title": "Kürzere Namen auf der Karte",
+    "neu": [],
+    "geaendert": [
+      "Karte: Haltestellennamen ohne „Karlsruhe“ bzw. „KA“ davor, das spart Platz. Suche, Abfahrten und Tafel zeigen weiter den vollen Namen"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-14b",
+    "version": "3.10",
+    "date": "14.11.2026",
+    "title": "Frühere Fahrten an der Haltestelle",
+    "neu": [
+      "Haltestelle: „↑ Frühere Fahrten“ zeigt die Abfahrten der letzten Stunden, jede weitere Berührung eine Stunde mehr. Für etwa die letzten 2 Stunden mit tatsächlicher Abfahrtszeit, davor nur nach Fahrplan"
+    ],
+    "geaendert": [],
+    "behoben": [
+      "Nach einem neuen Fahrplan fehlten auf der Karte bei vielen Fahrten die Verspätungen"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-14a",
+    "version": "3.9",
+    "date": "14.11.2026",
+    "title": "Fahrzeuge wieder kräftig",
+    "neu": [],
+    "geaendert": [
+      "Fahrzeuge ohne Live-Daten werden nicht mehr blass gezeichnet, sondern wie alle anderen"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12g",
+    "version": "3.8",
+    "date": "12.11.2026",
+    "title": "Keine falschen „7 Minuten zu früh“ mehr",
+    "neu": [],
+    "geaendert": [],
+    "behoben": [
+      "Bahnen und Busse wurden manchmal als 5 bis 10 Minuten zu früh angezeigt. Die Live-Quelle ordnet dann die Bahn davor der nächsten Fahrt zu. Solche Werte (mehr als 3 Minuten zu früh) werden jetzt verworfen, das Fahrzeug fährt dann blass nach Fahrplan"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12f",
+    "version": "3.7",
+    "date": "12.11.2026",
+    "title": "OpenStreetMap als Standardkarte",
+    "neu": [],
+    "geaendert": [
+      "Neue Besucher sehen zuerst die OpenStreetMap-Karte; die graue und die farbige basemap.de-Karte bleiben unter Einstellungen → Karte wählbar. Eine bereits gewählte Karte bleibt erhalten"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12e",
+    "version": "3.6",
+    "date": "12.11.2026",
+    "title": "Update per Fingertipp und klarere Zeiten",
+    "neu": [
+      "Android: „Jetzt aktualisieren“ lädt und installiert die neue Version direkt in der App (Android fragt beim ersten Mal nach der Erlaubnis)",
+      "Unter ⓘ → „Nutzung“ steht, wie oft die App pro Tag geöffnet wird (anonym gezählt, siehe Info & Datenschutz)"
+    ],
+    "geaendert": [
+      "Fahrzeugfenster: gemessene Zeiten kräftig, geschätzte blass und kursiv",
+      "Tafel: „Zur Karte“ vorn, QR-Code und Vollbild unter „Mehr“",
+      "Favoriten, Nähe, Linien und Meldungen im neuen Stil"
+    ],
+    "behoben": [
+      "Info & Datenschutz nannte die neue Grundkarte (basemap.de) noch nicht"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12d",
+    "version": "3.5",
+    "date": "12.11.2026",
+    "title": "Verbindungssuche verzeiht mehr",
+    "neu": [],
+    "geaendert": [
+      "Route: Start und Ziel müssen nicht mehr aus der Liste gewählt werden, „Verbindungen suchen“ nimmt den besten Treffer",
+      "Route: Enter übernimmt den ersten Vorschlag"
+    ],
+    "behoben": [
+      "Route: offene Vorschlagsliste verdeckte Felder und den Suchknopf"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12c",
+    "version": "3.4",
+    "date": "12.11.2026",
+    "title": "Fahrplan oder live: jetzt sichtbar",
+    "neu": [
+      "Fahrzeuge ohne Live-Daten sind blass: Ihre Position ist reiner Fahrplan und kann von der Wirklichkeit abweichen (z. B. bei Ausfällen)"
+    ],
+    "geaendert": [
+      "Info-Fenster erklärt, wie die Positionen berechnet werden"
+    ],
+    "behoben": [],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-12b",
+    "version": "3.3",
+    "date": "12.11.2026",
+    "title": "Nur noch Meldungen aus dem KVV-Gebiet",
+    "neu": [],
+    "geaendert": [
+      "Meldungen und Benachrichtigungen zeigen nur noch Störungen und Bauarbeiten im KVV-Gebiet (keine Stuttgart-, Tübingen- oder Würzburg-Meldungen mehr)"
+    ],
+    "behoben": [
+      "Dieselbe Meldung kam als Benachrichtigung mehrfach",
+      "Ausgeblendete Elemente blieben teils sichtbar"
+    ],
+    "entfernt": [
+      "Reine Zughinweise wie „Zug wird in Offenburg getrennt“ aus den Meldungen"
+    ]
+  },
+  {
+    "id": "2026-11-12a",
+    "version": "3.2",
+    "date": "12.11.2026",
+    "title": "Abfahrtstafel aufgeräumt",
+    "neu": [],
+    "geaendert": [
+      "Tafel: erwartete Zeit groß, Abweichung und Planzeit klein darunter",
+      "Tafel: Knöpfe kompakter, Überschrift nicht mehr unter der Statusleiste des Handys"
+    ],
+    "behoben": [
+      "Tafel: Verspätung bzw. Verfrühung wurde vom Liniensymbol überdeckt"
+    ],
+    "entfernt": []
+  },
+  {
+    "id": "2026-11-11b",
+    "version": "3.1",
+    "date": "11.11.2026",
+    "title": "Neuer Aufbau und mehr Verbindungen",
+    "neu": [
+      "„Was ist neu“: Nach einem Update siehst du hier, was sich geändert hat",
+      "Verbindungssuche zeigt bis zu 5 Abfahrten statt nur der nächsten",
+      "Info-Fenster (ⓘ) mit kurzer Anleitung, öffnet sich beim ersten Besuch von selbst",
+      "Grundkarte wählbar: basemap.de grau (Standard), basemap.de farbig oder OpenStreetMap"
+    ],
+    "geaendert": [
+      "Neuer Aufbau: Suche und Route oben, Kartenwerkzeuge als runde Knöpfe rechts, schmale Statuszeile unten",
+      "Optionen (⚙) als eigenes Fenster, neu sortiert; Dunkelmodus liegt jetzt dort",
+      "Haltestelle: Abfahrten im Mittelpunkt, Umsteigen, Stufenfreiheit und Pünktlichkeit unter „Mehr“",
+      "Route: ein großer Suchknopf, Seltenes unter „Mehr“",
+      "Fahrzeug: „Fahrzeug folgen“ hervorgehoben, keine „keine Angabe“-Zeilen mehr"
+    ],
+    "behoben": [
+      "Fernzüge fuhren am Hbf in Luftlinie durch die Innenstadt (z. B. ICE über die Ettlinger Straße)",
+      "Android-Widget blieb bei manchen Handys (z. B. Xiaomi) leer",
+      "Neues Fenster begann an der alten Scrollposition"
+    ],
+    "entfernt": [
+      "Langer Hinweistext unten in den Optionen (steht jetzt im Info-Fenster)"
+    ]
+  },
+  {
+    "id": "2026-11-10",
+    "version": "3.0",
+    "date": "10.11.2026",
+    "title": "Ganzes KVV-Netz und eigene Adresse",
+    "neu": [
+      "Ganzes KVV-Netz: von Freudenstadt und Achern bis Heilbronn und Mosbach, mit Südpfalz",
+      "Eigene Adresse: strabfahrt.de",
+      "Gebietsgrenze als gestrichelte Linie auf der Karte",
+      "Haltestellennamen lassen sich unter ⚙ → Anzeige ausblenden",
+      "Zug- und Kursnummern: Suche danach und Anzeige unter den Fahrzeugen",
+      "Fahrzeug-Fenster zeigt die tatsächlichen Zeiten je Halt"
+    ],
+    "geaendert": [
+      "Fahrzeuge fahren fast überall auf echten Gleisen und Straßen statt in Luftlinie",
+      "Verfolgtes Fahrzeug bleibt sichtbar und liegt nicht mehr unter dem Fenster"
+    ],
+    "behoben": [
+      "Linie 47 fuhr quer durch den Oberwald, RE2 quer durch den Weiherwald",
+      "Doppelte Abfahrten aus zwei Datenquellen, uneinheitliche Steig-Namen"
+    ],
+    "entfernt": []
+  }
+]
