@@ -161,6 +161,7 @@ const state = {
   skips: new Map(), // Fahrt-ID -> Set(Haltestellen-Index): heute ausgelassen (Umleitung, vorzeitiges Wenden)
   reports: new Map(), // Fahrt-ID -> [Anzahl, seit]: Fahrgäste melden, die Bahn steht
   kvvLive: new Map(), // Fahrt-ID -> { delay, at, stop }: direkt beim KVV nachgefragt (verfolgtes Fahrzeug)
+  crowd: new Map(), // Fahrt-ID -> [Verspätung, Zeitpunkt (wie state.sim), Anzahl]: aus dem Standort von Mitfahrenden
   units: new Map(), // Fahrt-ID -> { n, live } gekoppelte Fahrzeuge (Doppeltraktion), nur n > 1
   course: new Map(), // Fahrt-ID -> [Planzeit, Verspätung, ...] (Zeiten wie state.sim), wenn sich die Verspätung unterwegs ändert
   delays: new Map(), // Fahrt-ID -> Verspaetung in Sekunden (+ zu spaet, - zu frueh), aus Echtzeitquelle
@@ -497,8 +498,17 @@ function unitsBadge(tripId) {
   return el('span', { class: 'units', title: `${k.units} gekoppelte Fahrzeuge` }, ` ${k.units}×`);
 }
 
+// Position von Mitfahrenden (höchstens 2 Min. alt), sonst undefined
+function crowdOf(tripId) {
+  const c = state.crowd.get(tripId);
+  return c && Math.abs(wallNow() - c[1]) < 120 ? c : undefined;
+}
+
 function delayOf(trip) {
   if (state.demo) return demoDelay(trip.id);
+  // Mitfahrende teilen ihren Standort: genauer geht es nicht
+  const cw = crowdOf(trip.id);
+  if (cw) return cw[0];
   // Steht das Fahrzeug (Vorhersage rutscht mit der Zeit nach hinten), bleibt es auf der Karte, wo es steht
   const sd = state.standing.get(trip.id);
   if (sd) return Math.round(state.sim - sd[0]);
@@ -554,7 +564,8 @@ function rtOf(tripId) {
   if (state.demo) return { delay: demoDelay(tripId), canceled: false, reason: null };
   const k = kvvOf(tripId);
   const kl = state.kvvLive.get(tripId);
-  const live = kl && kl.delay !== null && Date.now() - kl.at < 150000 ? kl.delay : undefined;
+  const cw = crowdOf(tripId);
+  const live = cw ? cw[0] : kl && kl.delay !== null && Date.now() - kl.at < 150000 ? kl.delay : undefined;
   return { delay: live !== undefined ? live : k && k.delay !== undefined ? k.delay : state.delays.get(tripId), canceled: (k && k.canceled) || state.canceled.has(tripId), reason: state.reasons.get(tripId) || null, kvv: Boolean(k) || live !== undefined };
 }
 
@@ -1455,6 +1466,8 @@ function renderVehiclePanel() {
   if (!state.demo) facts.push(skipText(trip, pat));
   const rpv = state.reports.get(trip.id);
   if (rpv && !state.demo) facts.push(`👤 ${rpv[0] === 1 ? 'Ein Fahrgast meldet' : `${rpv[0]} Fahrgäste melden`}: die Bahn steht (seit ${hhmm(rpv[1])})`);
+  const cwv = !state.demo && crowdOf(trip.id);
+  if (cwv) facts.push(`📍 Position von ${cwv[2] > 1 ? `${cwv[2]} Mitfahrenden` : 'einem Mitfahrenden'} (vor ${Math.max(1, Math.round((wallNow() - cwv[1]) / 10) * 10)} s)`);
   const klv = state.kvvLive.get(trip.id);
   if (klv && klv.delay !== null && klv.stop && Date.now() - klv.at < 150000) facts.push(`📡 direkt vom KVV, Stand Halt ${mapName(klv.stop)}`);
   const hv = state.holds.get(trip.id);
@@ -2871,6 +2884,103 @@ state.ride = load('strab.ride', null);
 // Element für die Begleitkarte (falls eine ältere index.html es noch nicht enthält, z. B. in der App)
 if (!$('ride')) document.body.append(el('section', { id: 'ride', 'aria-live': 'polite', hidden: '' }));
 
+// ---------- Standort teilen beim Mitfahren ----------
+// Freiwillig: während „Meine Fahrt“ rechnet das Gerät den eigenen Standort in die Verspätung der Bahn um
+// (Position auf der Strecke gegen Fahrplan) und sendet nur diese Zahl und die Fahrt-Kennung, keine Koordinaten.
+const gpsShare = { on: load('strab.shareGps', false), watch: null, trip: null, lastSent: 0, status: '' };
+
+function gpsShareSync(tripId) {
+  const want = gpsShare.on && tripId && navigator.geolocation ? tripId : null;
+  if (want === gpsShare.trip && (want === null || gpsShare.watch !== null)) return;
+  if (gpsShare.watch !== null) { navigator.geolocation.clearWatch(gpsShare.watch); gpsShare.watch = null; }
+  gpsShare.trip = want; gpsShare.status = '';
+  if (!want) return;
+  gpsShare.watch = navigator.geolocation.watchPosition((pos) => gpsShareFix(pos), (err) => {
+    gpsShare.status = err.code === 1 ? 'nicht erlaubt' : 'kein GPS';
+    if (err.code === 1) { gpsShare.on = false; save('strab.shareGps', false); toast('Standort nicht erlaubt. Bitte in den Einstellungen freigeben.'); }
+    updateRide(true);
+  }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
+}
+
+// Nächster Punkt auf einer Abschnittsgeometrie: { dist (m), f (Anteil der Strecke 0..1) }
+function projectOnGeom(g, lat, lon) {
+  const kx = Math.cos((lat * Math.PI) / 180) * 111320; const ky = 110540;
+  let best = { dist: Infinity, f: 0 };
+  for (let i = 1; i < g.pts.length; i++) {
+    const a = g.pts[i - 1]; const b = g.pts[i];
+    const ax = (a[1] - lon) * kx; const ay = (a[0] - lat) * ky;
+    const bx = (b[1] - lon) * kx; const by = (b[0] - lat) * ky;
+    const dx = bx - ax; const dy = by - ay; const len2 = dx * dx + dy * dy;
+    const t = len2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / len2)) : 0;
+    const dist = Math.hypot(ax + t * dx, ay + t * dy);
+    if (dist < best.dist) best = { dist, f: g.total ? (g.cum[i - 1] + t * (g.cum[i] - g.cum[i - 1])) / g.total : 0 };
+  }
+  return best;
+}
+
+// Umkehrung von easeTravel: welcher Zeitanteil gehört zum Streckenanteil f?
+function invEase(f) {
+  let lo = 0; let hi = 1;
+  for (let i = 0; i < 30; i++) { const mid = (lo + hi) / 2; if (easeTravel(mid) < f) lo = mid; else hi = mid; }
+  return (lo + hi) / 2;
+}
+
+// Standort -> Verspätung der Fahrt (Sekunden) oder null, wenn der Standort nicht auf ihrer Strecke liegt
+function delayFromFix(trip, lat, lon, acc) {
+  const pat = state.patterns.get(trip.pid);
+  if (!pat) return null;
+  const prof = trip.prof; const n = pat.s.length;
+  const rel = state.sim - trip.t0;
+  const cur = delayOf(trip) || 0;
+  let k0 = 0;
+  for (let i = 0; i < n; i++) if (prof[2 * i + 1] <= rel - cur) k0 = i;
+  const tol = Math.max(40, Math.min(acc, 100));
+  let best = null;
+  for (let k = Math.max(0, k0 - 3); k <= Math.min(n - 2, k0 + 3); k++) {
+    const p = projectOnGeom(segGeom(pat.s[k], pat.s[k + 1]), lat, lon);
+    if (!best || p.dist < best.dist) best = { ...p, k };
+  }
+  if (!best || best.dist > tol) return null;
+  const g = segGeom(pat.s[best.k], pat.s[best.k + 1]);
+  const atStop = (j) => { const st = state.stops[pat.s[j]]; return projectOnGeom({ pts: [[st[2], st[3]], [st[2], st[3]]], cum: [0, 0], total: 0 }, lat, lon).dist < 30; };
+  let tau;
+  const j = atStop(best.k) ? best.k : atStop(best.k + 1) ? best.k + 1 : -1;
+  if (j >= 0 || best.f * g.total < 25 || (1 - best.f) * g.total < 25) {
+    // An der Haltestelle: irgendwo zwischen Ankunft und Abfahrt, nahe der bisherigen Schätzung
+    const s2 = j >= 0 ? j : best.f < 0.5 ? best.k : best.k + 1;
+    tau = Math.max(prof[2 * s2], Math.min(prof[2 * s2 + 1], rel - cur));
+  } else {
+    const t0 = prof[2 * best.k + 1];
+    let t1 = prof[2 * (best.k + 1)];
+    const nextDwell = best.k + 1 < n - 1 ? prof[2 * (best.k + 1) + 1] - prof[2 * (best.k + 1)] : 99;
+    if (nextDwell < 15 && t1 - t0 > 60) t1 -= Math.min(15 - nextDwell, (t1 - t0) * 0.15);
+    tau = t0 + invEase(best.f) * (t1 - t0);
+  }
+  return Math.round(rel - tau);
+}
+
+async function gpsShareFix(pos) {
+  const id = gpsShare.trip;
+  if (!id || !gpsShare.on) return;
+  if (Math.abs(state.sim - wallNow()) > 120) return; // nur live, nicht beim Zurückspulen
+  const acc = pos.coords.accuracy || 999;
+  if (acc > 80) { gpsShare.status = 'GPS ungenau'; updateRide(true); return; }
+  const trip = state.trips.find((t) => t.id === id);
+  if (!trip) return;
+  const d = delayFromFix(trip, pos.coords.latitude, pos.coords.longitude, acc);
+  if (d === null) { if (gpsShare.status !== 'nicht auf der Strecke') { gpsShare.status = 'nicht auf der Strecke'; updateRide(true); } return; }
+  const prevN = (state.crowd.get(id) || [0, 0, 1])[2];
+  state.crowd.set(id, [d, wallNow(), prevN]);
+  if (Date.now() - gpsShare.lastSent < 20000) return;
+  gpsShare.lastSent = Date.now();
+  try {
+    const base = state.rtBase ? state.rtBase.replace(/\/$/, '') : '';
+    const r = await fetch(`${base}/api/pos?id=${encodeURIComponent(id)}&d=${d}`, { method: 'POST' });
+    const st = r.ok ? 'wird geteilt' : 'Senden fehlgeschlagen';
+    if (gpsShare.status !== st) { gpsShare.status = st; updateRide(true); }
+  } catch { gpsShare.status = 'offline'; updateRide(true); }
+}
+
 function startRide(j) {
   endRide(true);
   const base = dayStart(ymdOf(state.sim));
@@ -2912,6 +3022,7 @@ function endRide(silent = false) {
   saveAlarms();
   state.ride = null;
   save('strab.ride', null);
+  gpsShareSync(null);
   $('ride').hidden = true;
   if (!silent) toast('Begleitung beendet');
 }
@@ -3002,7 +3113,8 @@ function updateRide(force = false) {
     const end = r.to && r.to.name ? r.to.name : name(last.to);
     sub = `${end} · Ankunft ${hhmm(last.arr + dly(last))}`;
   }
-  const html = JSON.stringify([kicker, main.map((x) => (typeof x === 'string' ? x : x.textContent)), sub, alert, level, phase]);
+  gpsShareSync(phase === 'ride' ? follow : null);
+  const html = JSON.stringify([kicker, main.map((x) => (typeof x === 'string' ? x : x.textContent)), sub, alert, level, phase, gpsShare.on, gpsShare.status]);
   if (!force && html === rideLastHtml && !box.hidden) return;
   rideLastHtml = html;
   box.className = level === 'ok' ? '' : level;
@@ -3032,6 +3144,24 @@ function updateRide(force = false) {
       setTimeout(() => { const t2 = state.trips.find((x) => x.id === follow); if (t2) { state.follow = t2.id; selectVehicle(t2); } }, 2500);
     });
     btns.append(show);
+  }
+  if (phase === 'ride' && navigator.geolocation && state.rtBase !== undefined) {
+    const share = el('button', { type: 'button', title: 'Freiwillig und anonym: dein Gerät rechnet den Standort in die Verspätung der Bahn um und sendet nur diese Zahl. So steht die Bahn auch bei den anderen richtig auf der Karte.' },
+      gpsShare.on ? `📍 Standort teilen: an${gpsShare.status ? ` (${gpsShare.status})` : ''}` : '📍 Standort teilen');
+    let armed = false;
+    share.addEventListener('click', () => {
+      if (gpsShare.on) { gpsShare.on = false; save('strab.shareGps', false); gpsShareSync(null); updateRide(true); return; }
+      if (!load('strab.shareGpsOk', false) && !armed) {
+        armed = true;
+        share.textContent = 'Nur Position auf der Strecke, keine Koordinaten. Nochmal tippen';
+        setTimeout(() => { if (share.isConnected && armed) { armed = false; share.textContent = '📍 Standort teilen'; } }, 6000);
+        return;
+      }
+      save('strab.shareGpsOk', true);
+      gpsShare.on = true; save('strab.shareGps', true);
+      gpsShareSync(follow); updateRide(true);
+    });
+    btns.append(share);
   }
   const stop = el('button', { type: 'button' }, phase === 'done' ? 'Schließen' : 'Beenden');
   stop.addEventListener('click', () => endRide());
@@ -3475,7 +3605,7 @@ if (!window.STRAB_NATIVE && 'serviceWorker' in navigator && (location.protocol =
 // ---------- Start ----------
 
 // Nur fuer automatische Tests: mit "dbg" im Hash ist der Zustand im Browser erreichbar
-if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map, renderVehiclePanel };
+if (new URLSearchParams(location.hash.slice(1)).has('dbg')) window.__strab = { state, map, renderVehiclePanel, delayFromFix, delayOf };
 
 // iPhone/iPad in Safari: einmal zeigen, wie man STRABFAHRT als App auf den Home-Bildschirm legt
 (function iosInstallHint() {
@@ -3547,6 +3677,10 @@ async function init() {
         state.standing = old ? new Map() : new Map(Object.entries(j.s || {}).map(([k, v]) => [k, [Number(v[0]) + off0, Number(v[1]) + off0]]));
         state.skips = old ? new Map() : new Map(Object.entries(j.x || {}).map(([k, v]) => [k, new Set(v.map(Number))]));
         state.reports = old ? new Map() : new Map(Object.entries(j.rp || {}).map(([k, v]) => [k, [Number(v[0]), Number(v[1]) + off0]]));
+        // Eigene, gerade gesendete Position behalten, falls der Server sie noch nicht kennt
+        const ownCrowd = gpsShare.trip && state.crowd.get(gpsShare.trip);
+        state.crowd = old ? new Map() : new Map(Object.entries(j.gp || {}).map(([k, v]) => [k, [Number(v[0]), Number(v[1]) + off0, Number(v[2]) || 1]]));
+        if (ownCrowd && (!state.crowd.has(gpsShare.trip) || state.crowd.get(gpsShare.trip)[1] < ownCrowd[1])) state.crowd.set(gpsShare.trip, ownCrowd);
         state.units = new Map();
         for (const [k, n] of Object.entries(j.ul || {})) state.units.set(k, { n: Number(n), live: false });
         for (const [k, n] of Object.entries(j.u || {})) state.units.set(k, { n: Number(n), live: true });

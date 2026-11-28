@@ -117,3 +117,16 @@ test('stopSequence -> Position im Linienverlauf über die Planzeit (Zählung ab 
   assert.equal(r.seqPosition('k-werktag', 'unbekannt', '20260105', 1), 1);
   assert.equal(r.seqPosition('k-werktag', 'unbekannt', '20260105', 5), -1);
 });
+
+test('Mitfahrer-Position: Median, Takt je Absender, verfällt nach 2 Min.', () => {
+  const r = new Realtime(model, dir);
+  const id = model.trips[0].id;
+  assert.equal(r.addCrowdDelay(id, 120, 'a').ok, true);
+  assert.equal(r.addCrowdDelay(id, 130, 'a').ok, false); // zu schnell hintereinander
+  r.addCrowdDelay(id, 300, 'b'); r.addCrowdDelay(id, 180, 'c');
+  assert.deepEqual(r.crowdSnapshot()[id].slice(0, 1), [180]);
+  assert.equal(r.crowdSnapshot()[id][2], 3);
+  for (const x of r.crowd.get(id)) x.at -= 200;
+  assert.equal(r.crowdSnapshot()[id], undefined);
+  assert.equal(r.addCrowdDelay(id, 99999, 'd').ok, false);
+});

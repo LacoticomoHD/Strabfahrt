@@ -1,5 +1,18 @@
 [
   {
+    "id": "2026-11-28b",
+    "version": "3.26",
+    "date": "28.11.2026",
+    "title": "Mehr KVV-Daten und Standort teilen",
+    "neu": [
+      "Karte: Der Server fragt jede Minute 18 Knotenpunkte beim KVV ab (z. B. Marktplatz, Hauptbahnhof, Durlach, Europaplatz, Entenfang). Dadurch haben deutlich mehr Bahnen die genaueren KVV-Verspätungen, nicht nur die an gerade geöffneten Haltestellen",
+      "„Meine Fahrt“: Neuer Knopf „📍 Standort teilen“. Freiwillig und anonym: Dein Gerät rechnet deinen Standort in die Verspätung der Bahn um und sendet nur diese Zahl. Die Bahn steht dann auch bei allen anderen genau richtig auf der Karte. Das Fahrzeugfenster zeigt „Position von Mitfahrenden“"
+    ],
+    "geaendert": [
+      "Info und Datenschutz: Hinweis zum Standort teilen ergänzt"
+    ]
+  },
+  {
     "id": "2026-11-28a",
     "version": "3.25",
     "date": "28.11.2026",

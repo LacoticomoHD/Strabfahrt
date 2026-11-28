@@ -104,3 +104,41 @@ async function kvvForStationRaw(model, idx, deps, { only, when = null } = {}) {
   }
   return { ...kvv, map, source: used ? 'kvv+mobidata' : 'kvv' };
 }
+
+// Knotenpunkte regelmäßig beim KVV abfragen, damit möglichst viele Bahnen KVV-Verspätungen haben, nicht nur die
+// an gerade geöffneten Haltestellen. Läuft nur, solange jemand die Karte offen hat (angestoßen von /api/delays),
+// je Knoten höchstens einmal pro Minute. Die Ergebnisse landen über kvvSeen bei allen auf der Karte.
+const HUB_COUNT = Number(process.env.KVV_HUBS) || 18;
+let hubs = null; // { model, list: [Stationsindex] }
+const hubAt = new Map(); // Stationsindex -> letzter Abruf (ms)
+
+function pickHubs(model) {
+  if (hubs && hubs.model === model) return hubs.list;
+  const count = new Map();
+  for (const [sIdx, pats] of model.stopPatterns) {
+    const st = model.stops[sIdx][4] >= 0 ? model.stops[sIdx][4] : sIdx;
+    for (const [pid] of pats) {
+      const type = model.routes[model.patterns[pid].route][1];
+      if (type !== 0 && type !== 2) continue; // Tram und S-Bahn
+      count.set(st, (count.get(st) || 0) + model.patternTrips[pid].length);
+    }
+  }
+  const list = [...count].sort((a, b) => b[1] - a[1]).slice(0, HUB_COUNT).map(([i]) => i);
+  hubs = { model, list };
+  return list;
+}
+
+export async function sweepHubs(model, max = 5) {
+  if (!triasEnabled()) return 0;
+  const now = Date.now();
+  const due = pickHubs(model).filter((i) => now - (hubAt.get(i) || 0) > 60 * 1000).slice(0, max);
+  if (!due.length) return 0;
+  const { ymd, sec } = berlinNow();
+  for (const i of due) hubAt.set(i, now);
+  await Promise.all(due.map((i) => kvvForStation(model, i, model.departures(i, ymd, sec - 30 * 60, sec + 3 * 3600, 400)).catch(() => null)));
+  return due.length;
+}
+
+export function hubNames(model) {
+  return pickHubs(model).map((i) => model.stops[i][1]);
+}

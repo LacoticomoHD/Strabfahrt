@@ -109,6 +109,10 @@ export class Realtime {
     this.runLearn = {};
     this.passengerReports = new Map(); // Fahrt -> { at, tau0, seq, n, by: Set }: Fahrgäste melden, die Bahn steht
     this.reportBudget = new Map(); // Absender -> [Zeitpunkte]
+    // Standort von Mitfahrenden, auf dem Gerät schon in eine Verspätung umgerechnet (keine Koordinaten):
+    // Fahrt -> [{ d, at, who }]
+    this.crowd = new Map();
+    this.crowdBudget = new Map(); // Absender -> letzter Zeitpunkt
     // Pünktlichkeit je Haltestelle: Datum -> Haltestellen-ID -> [Abfahrten, Summe Verspätung, ab 3 Min. zu spät]
     this.stationStats = {};
     this.stationCounted = new Map(); // Datum -> Set(Fahrt-Index * 256 + Position), damit jeder Halt einmal zählt
@@ -354,6 +358,8 @@ export class Realtime {
       if (nowSec - r.at > 1200 || this.canceled.has(rid) || (lr && r.seq >= 0 && lr.seq > r.seq)) { this.passengerReports.delete(rid); continue; }
       if (!standing.has(rid)) standing.set(rid, [r.tau0, r.at]);
     }
+    // Mitfahrende melden eine Position: die gilt, nicht die Vermutung "steht"
+    if (this.crowd) for (const [cid, list] of this.crowd) if (list.some((x) => nowSec - x.at < 90)) standing.delete(cid);
     this.standing = standing;
   }
 
@@ -679,10 +685,39 @@ export class Realtime {
     return { ok: true, n: r.n };
   }
 
+  // Position eines Mitfahrenden als Verspätung (Sekunden) der Fahrt, auf dem Gerät aus GPS und Streckenverlauf berechnet
+  addCrowdDelay(id, d, who) {
+    if (!this.tripIndex.has(id) || !Number.isFinite(d) || Math.abs(d) > 3 * 3600) return { ok: false, error: 'ungültig' };
+    const now = Math.floor(Date.now() / 1000);
+    for (const [w, t] of this.crowdBudget) if (now - t > 600) this.crowdBudget.delete(w);
+    const last = this.crowdBudget.get(who);
+    if (last && now - last < 10) return { ok: false, error: 'zu oft' };
+    this.crowdBudget.set(who, now);
+    const list = (this.crowd.get(id) || []).filter((x) => now - x.at < 120 && x.who !== who);
+    list.push({ d: Math.round(d), at: now, who });
+    this.crowd.set(id, list);
+    if (this.crowd.size > 3000) this.crowd.delete(this.crowd.keys().next().value);
+    return { ok: true, n: list.length };
+  }
+
+  // Für die Karte: { Fahrt: [Verspätung (Median der letzten 2 Min.), Zeitpunkt der neuesten Meldung, Anzahl] }
+  crowdSnapshot() {
+    const now = Math.floor(Date.now() / 1000);
+    const out = {};
+    for (const [id, list] of this.crowd) {
+      const fresh = list.filter((x) => now - x.at < 120);
+      if (!fresh.length) { this.crowd.delete(id); continue; }
+      const ds = fresh.map((x) => x.d).sort((a, b) => a - b);
+      out[id] = [ds[Math.floor(ds.length / 2)], Math.max(...fresh.map((x) => x.at)), fresh.length];
+    }
+    return out;
+  }
+
   snapshot() {
     return {
       enabled: this.enabled, updated: this.updated, feedTime: this.feedTime, error: this.error,
       d: Object.fromEntries(this.delays), c: [...this.canceled], r: Object.fromEntries(this.reasons), inc: this.incidents || [], s: Object.fromEntries(this.standing || []), x: Object.fromEntries(this.skips || []),
+      gp: this.crowdSnapshot(),
       rp: Object.fromEntries([...this.passengerReports].map(([k, v]) => [k, [v.n, v.at]])),
       p: this.delayCourse(),
       h: this.reportHolds(),

@@ -13,7 +13,7 @@
   },
   "rewrites": [
     {
-      "source": "/api/:f(delays|alerts|departures|tripstops|stats|trip|hits|stopevents|report)",
+      "source": "/api/:f(delays|alerts|departures|tripstops|stats|trip|hits|stopevents|report|pos)",
       "destination": "/api/live?f=:f"
     }
   ]
