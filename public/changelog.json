@@ -1,5 +1,15 @@
 [
   {
+    "id": "2026-11-28c",
+    "version": "3.27",
+    "date": "28.11.2026",
+    "title": "Fenster wischen",
+    "neu": [
+      "Handy: Das Fenster unten (Fahrzeug, Haltestelle) lässt sich jetzt am Griff oder an der Überschrift nach oben und unten wischen: einklappen, normal, groß. Antippen am Griff klappt es wie bisher ein und aus"
+    ],
+    "geaendert": []
+  },
+  {
     "id": "2026-11-28b",
     "version": "3.26",
     "date": "28.11.2026",

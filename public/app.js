@@ -1300,14 +1300,57 @@ map.on('click', (e) => {
 let panelKey = '';
 // Handy: Griff oben am Fenster klappt es auf eine Kopfzeile zusammen, damit die Karte frei ist
 const panelGrip = el('button', { id: 'panel-grip', type: 'button', 'aria-label': 'Fenster ein- oder ausklappen' });
-panelGrip.addEventListener('click', () => {
-  const min = !document.body.classList.contains('sheet-min');
-  document.body.classList.toggle('sheet-min', min);
-  panelGrip.setAttribute('aria-expanded', String(!min));
-  if (min) $('panel').scrollTop = 0;
+// Drei Stufen: eingeklappt (nur Kopfzeile), normal, groß. Antippen klappt ein und aus, Wischen nach oben/unten wechselt die Stufe.
+function setSheet(level) {
+  const body = document.body;
+  body.classList.toggle('sheet-min', level === 'min');
+  body.classList.toggle('sheet-full', level === 'full');
+  panelGrip.setAttribute('aria-expanded', String(level !== 'min'));
+  if (level === 'min') $('panel').scrollTop = 0;
   needsDraw = true;
+}
+const sheetLevel = () => (document.body.classList.contains('sheet-min') ? 'min' : document.body.classList.contains('sheet-full') ? 'full' : 'normal');
+let gripDragged = false;
+panelGrip.addEventListener('click', () => {
+  if (gripDragged) { gripDragged = false; return; }
+  setSheet(sheetLevel() === 'min' ? 'normal' : 'min');
 });
 $('panel').prepend(panelGrip);
+// Wischen am Griff oder an der Überschrift; das Fenster folgt dabei dem Finger
+(() => {
+  const panel = $('panel');
+  let drag = null;
+  panel.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || window.innerWidth > 700) return;
+    const t = e.target;
+    const onHead = t === panelGrip || (t.closest && t.closest('#panel-body > h2') && panel.scrollTop === 0);
+    if (!onHead || (t.closest && t.closest('button:not(#panel-grip), a'))) return;
+    drag = { y0: e.touches[0].clientY, h0: panel.getBoundingClientRect().height, moved: false };
+  }, { passive: true });
+  panel.addEventListener('touchmove', (e) => {
+    if (!drag) return;
+    const dy = e.touches[0].clientY - drag.y0;
+    if (!drag.moved && Math.abs(dy) < 8) return;
+    drag.moved = true;
+    e.preventDefault();
+    panel.style.maxHeight = `${Math.max(60, Math.min(window.innerHeight * 0.9, drag.h0 - dy))}px`;
+    panel.style.transition = 'none';
+  }, { passive: false });
+  const end = (e) => {
+    if (!drag) return;
+    const d = drag; drag = null;
+    panel.style.maxHeight = ''; panel.style.transition = '';
+    if (!d.moved) return;
+    gripDragged = e.target === panelGrip; // der Klick nach dem Wischen soll nicht noch einmal umschalten
+    setTimeout(() => { gripDragged = false; }, 400);
+    const dy = (e.changedTouches[0] || {}).clientY - d.y0;
+    const lv = sheetLevel();
+    if (dy < -40) setSheet(lv === 'min' ? 'normal' : 'full');
+    else if (dy > 40) setSheet(lv === 'full' ? 'normal' : 'min');
+  };
+  panel.addEventListener('touchend', end);
+  panel.addEventListener('touchcancel', () => { drag = null; panel.style.maxHeight = ''; panel.style.transition = ''; });
+})();
 
 function showPanel() {
   closeSettings();
@@ -1328,7 +1371,7 @@ function closePanel() {
   clearInterval(stationTimer);
   scheduleHash();
   $('panel').hidden = true;
-  document.body.classList.remove('panel-open');
+  document.body.classList.remove('panel-open', 'sheet-full');
 }
 $('panel-close').addEventListener('click', closePanel);
 // Android-Zurücktaste: erst Tafel, dann Fenster schließen. true = erledigt, false = App darf in den Hintergrund

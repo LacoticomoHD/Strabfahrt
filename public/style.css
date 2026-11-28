@@ -419,6 +419,9 @@ table.past td.r { color: var(--muted, #8a94a6); }
   #panel-grip::before { content: ''; display: block; width: 44px; height: 5px; margin: 8px auto; border-radius: 3px; background: var(--muted); opacity: .6; }
   body.following #panel { max-height: calc(33vh + var(--sab)); }
   body.sheet-min #panel { max-height: calc(112px + var(--sab)); overflow: hidden; }
+  body.sheet-full #panel { max-height: calc(88vh + var(--sab)); }
+  #panel-grip { height: 28px; touch-action: none; }
+  #panel-body > h2 { touch-action: pan-x; }
   /* Begleitkarte schlank, solange unten ein Fenster offen ist */
   body.panel-open #ride { padding: 6px 10px; font-size: 13px; }
   body.panel-open #ride .rbtns, body.panel-open #ride .rk { display: none; }
