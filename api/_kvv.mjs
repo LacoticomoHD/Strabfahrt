@@ -61,10 +61,11 @@ export const kvvSeen = new Map();
 // Daraus: ganze Fahrt fällt aus (an mehreren Stationen aus, nirgends normal) oder nur einzelne Halte entfallen.
 export const kvvCancel = new Map();
 
-export function cancelsForMap() {
+export function cancelsForMap(model = null) {
   const now = Date.now(); const kc = []; const kx = {};
   for (const [trip, v] of kvvCancel) {
-    if (now - v.at > 30 * 60 * 1000) { kvvCancel.delete(trip); continue; }
+    // Nach einem neuen Fahrplan stimmen die Stationsnummern nicht mehr: alte Einträge verwerfen
+    if (now - v.at > 30 * 60 * 1000 || (model && v.m && v.m !== model)) { kvvCancel.delete(trip); continue; }
     if (!v.c.size) continue;
     if (v.c.size >= 2 && !v.s.size) kc.push(trip);
     else kx[trip] = [...v.c];
@@ -78,7 +79,8 @@ export async function kvvForStation(model, idx, deps, opts = {}) {
     const now = Date.now();
     for (const [trip, v] of res.map) {
       // Alle Fahrten merken (auch normale): nur so ist eine Teilstrecke von einem ganzen Ausfall zu unterscheiden
-      const e = kvvCancel.get(trip) || { c: new Set(), s: new Set(), at: now };
+      let e = kvvCancel.get(trip);
+      if (!e || e.m !== model) e = { c: new Set(), s: new Set(), at: now, m: model };
       if (v.canceled) { e.c.add(idx); e.s.delete(idx); } else { e.s.add(idx); e.c.delete(idx); }
       e.at = now; kvvCancel.set(trip, e);
       if (v.units >= 1) unitsSeen.set(trip, { n: v.units, at: now });

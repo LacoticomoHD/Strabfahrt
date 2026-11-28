@@ -15,7 +15,7 @@ export default async function handler(req, res) {
     // KVV-Verspätungen der letzten 4 Minuten mitgeben: genauer als gtfs.de, die Karte bevorzugt sie
     const now = Date.now(); const k = {};
     for (const [trip, v] of kvvSeen) if (now - v.at < 4 * 60 * 1000) k[trip] = v.d;
-    send(res, 200, { ...rt.snapshot(), ...unitsForMap(), k, ...cancelsForMap() }, 20, 600);
+    send(res, 200, { ...rt.snapshot(), ...unitsForMap(), k, ...cancelsForMap(await getModel().catch(() => null)) }, 20, 600);
   } catch (e) {
     send(res, 200, { enabled: true, updated: 0, error: e.message, d: {}, c: [], r: {} }, 10);
   }
